@@ -1,13 +1,23 @@
 #!/usr/bin/env python3
+"""
+Pipeline-as-a-Product CDK App
+Serverless Data Platform following best practices for modular, scalable architecture.
+"""
 import aws_cdk as cdk
-from infrastructure.stacks.data_pipeline_stack import DataPipelineStack
-from infrastructure.stacks.storage_stack import StorageStack
-from infrastructure.stacks.compute_stack import ComputeStack
-from infrastructure.stacks.orchestration_stack import OrchestrationStack
-from infrastructure.stacks.messaging_stack import MessagingStack
-from infrastructure.stacks.analytics_stack import AnalyticsStack
-from infrastructure.stacks.monitoring_stack import MonitoringStack
-from infrastructure.stacks.security_stack import SecurityStack
+
+# Core Infrastructure
+from infrastructure.core.security_stack import SecurityStack
+from infrastructure.core.shared_storage_stack import SharedStorageStack
+
+# Domain Pipelines  
+from infrastructure.pipelines.customer_data.ingestion_stack import CustomerDataIngestionStack
+from infrastructure.pipelines.customer_data.processing_stack import CustomerDataProcessingStack
+
+# Platform Services
+from infrastructure.monitoring.observability_stack import ObservabilityStack
+from infrastructure.governance.catalog_stack import DataCatalogStack
+
+# Configuration
 from infrastructure.config.environments import get_environment_config
 
 app = cdk.App()
@@ -26,82 +36,100 @@ stack_props = {
     "config": config,
 }
 
-stack_prefix = f"DataPipeline-{environment}"
+stack_prefix = f"DataPlatform-{environment}"
 
-# Security Stack (IAM roles, policies)
+# ========================================
+# CORE INFRASTRUCTURE LAYER
+# ========================================
+
+# Security Foundation - IAM roles, policies, least privilege
 security_stack = SecurityStack(
-    app, f"{stack_prefix}-Security", **stack_props
+    app, f"{stack_prefix}-Core-Security", **stack_props
 )
 
-# Storage Stack (S3 buckets)
-storage_stack = StorageStack(
-    app, f"{stack_prefix}-Storage", **stack_props
+# Shared Storage - S3 buckets, DynamoDB tables for platform-wide use
+shared_storage_stack = SharedStorageStack(
+    app, f"{stack_prefix}-Core-SharedStorage", **stack_props
 )
 
-# Analytics Stack (Glue Database, Athena)
-analytics_stack = AnalyticsStack(
-    app, f"{stack_prefix}-Analytics",
-    raw_bucket=storage_stack.raw_bucket,
-    curated_bucket=storage_stack.curated_bucket,
+# ========================================
+# GOVERNANCE LAYER
+# ========================================
+
+# Data Catalog & Governance - Glue Data Catalog, Athena, Lake Formation
+catalog_stack = DataCatalogStack(
+    app, f"{stack_prefix}-Governance-Catalog",
+    shared_storage_stack=shared_storage_stack,
     **stack_props
 )
 
-# Compute Stack (Lambda functions, Glue jobs)
-compute_stack = ComputeStack(
-    app, f"{stack_prefix}-Compute",
-    storage_stack=storage_stack,
-    analytics_stack=analytics_stack,
+# ========================================
+# MONITORING & OBSERVABILITY LAYER
+# ========================================
+
+# Unified Observability - CloudWatch dashboards, alarms, SNS notifications
+observability_stack = ObservabilityStack(
+    app, f"{stack_prefix}-Monitoring-Observability", **stack_props
+)
+
+# ========================================
+# DOMAIN-SPECIFIC PIPELINE LAYER
+# ========================================
+
+# Customer Data Pipeline
+customer_ingestion_stack = CustomerDataIngestionStack(
+    app, f"{stack_prefix}-Pipeline-CustomerData-Ingestion",
+    shared_storage_stack=shared_storage_stack,
     security_stack=security_stack,
     **stack_props
 )
 
-# Orchestration Stack (Step Functions)
-orchestration_stack = OrchestrationStack(
-    app, f"{stack_prefix}-Orchestration",
-    compute_stack=compute_stack,
+customer_processing_stack = CustomerDataProcessingStack(
+    app, f"{stack_prefix}-Pipeline-CustomerData-Processing",
+    shared_storage_stack=shared_storage_stack,
+    security_stack=security_stack,
     **stack_props
 )
 
-# Messaging Stack (EventBridge, SQS, SNS)
-messaging_stack = MessagingStack(
-    app, f"{stack_prefix}-Messaging",
-    orchestration_stack=orchestration_stack,
-    **stack_props
-)
+# TODO: Add more domain pipelines
+# - ProductAnalyticsIngestionStack
+# - ProductAnalyticsProcessingStack
+# - OrderProcessingIngestionStack
+# - OrderProcessingProcessingStack
+# - FinanceReportingIngestionStack
+# - FinanceReportingProcessingStack
 
-# Main Data Pipeline Stack (combines all components)
-data_pipeline_stack = DataPipelineStack(
-    app, f"{stack_prefix}-Pipeline",
-    storage_stack=storage_stack,
-    compute_stack=compute_stack,
-    orchestration_stack=orchestration_stack,
-    messaging_stack=messaging_stack,
-    analytics_stack=analytics_stack,
-    **stack_props
-)
+# ========================================
+# STACK DEPENDENCIES
+# ========================================
 
-# Monitoring Stack (CloudWatch, Alarms, Dashboards)
-monitoring_stack = MonitoringStack(
-    app, f"{stack_prefix}-Monitoring",
-    compute_stack=compute_stack,
-    orchestration_stack=orchestration_stack,
-    **stack_props
-)
+# Core dependencies
+shared_storage_stack.add_dependency(security_stack)
+catalog_stack.add_dependency(shared_storage_stack)
 
-# Set up dependencies
-analytics_stack.add_dependency(storage_stack)
-compute_stack.add_dependency(security_stack)
-compute_stack.add_dependency(storage_stack)
-compute_stack.add_dependency(analytics_stack)
-orchestration_stack.add_dependency(compute_stack)
-messaging_stack.add_dependency(orchestration_stack)
-data_pipeline_stack.add_dependency(messaging_stack)
-monitoring_stack.add_dependency(compute_stack)
-monitoring_stack.add_dependency(orchestration_stack)
+# Pipeline dependencies
+customer_ingestion_stack.add_dependency(shared_storage_stack)
+customer_ingestion_stack.add_dependency(security_stack)
 
-# Add common tags
+customer_processing_stack.add_dependency(shared_storage_stack)
+customer_processing_stack.add_dependency(security_stack)
+customer_processing_stack.add_dependency(customer_ingestion_stack)
+
+# ========================================
+# TAGGING STRATEGY
+# ========================================
+
+# Platform-wide tags
 cdk.Tags.of(app).add("Environment", environment)
-cdk.Tags.of(app).add("Project", "ServerlessDataPipeline")
+cdk.Tags.of(app).add("Platform", "ServerlessDataPipeline")
+cdk.Tags.of(app).add("Architecture", "Pipeline-as-a-Product")
 cdk.Tags.of(app).add("ManagedBy", "CDK")
+cdk.Tags.of(app).add("CostCenter", "DataEngineering")
+
+# Domain-specific tags
+cdk.Tags.of(customer_ingestion_stack).add("Domain", "CustomerData")
+cdk.Tags.of(customer_processing_stack).add("Domain", "CustomerData")
+cdk.Tags.of(customer_ingestion_stack).add("PipelineType", "Ingestion")
+cdk.Tags.of(customer_processing_stack).add("PipelineType", "Processing")
 
 app.synth()
