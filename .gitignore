@@ -29,6 +29,7 @@ venv/
 ENV/
 env/
 .venv/
+finge/
 
 # IDE
 .vscode/
@@ -60,3 +61,5 @@ htmlcov/
 
 #coding
 CLAUDE.md
+
+
