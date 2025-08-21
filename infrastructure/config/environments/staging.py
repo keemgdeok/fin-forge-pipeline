@@ -6,7 +6,7 @@ staging_config = {
     "region": "us-east-1",
     "lambda_memory": 512,
     "lambda_timeout": 600,
-    "glue_max_capacity": 5,
+    "glue_max_capacity": 2,
     "step_function_timeout_hours": 4,
     "s3_retention_days": 90,
     "log_retention_days": 30,
