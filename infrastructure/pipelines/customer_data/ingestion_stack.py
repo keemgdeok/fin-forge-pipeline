@@ -71,7 +71,7 @@ class CustomerDataIngestionStack(Stack):
             rule_name=f"{self.environment}-customer-ingestion-schedule",
             schedule=events.Schedule.cron(
                 minute="0",
-                hour="2",  # Daily at 2 AM
+                hour="22",  # Daily at 7 AM (KST)
             ),
         )
 
