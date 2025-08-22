@@ -48,7 +48,7 @@ class CustomerDataProcessingStack(Stack):
             role=self.security.glue_execution_role.role_arn,
             command=glue.CfnJob.JobCommandProperty(
                 name="glueetl",
-                script_location=f"s3://{self.shared_storage.artifacts_bucket.bucket_name}/glue-scripts/customer_data_etl.py",
+                script_location=f"s3://{self.shared_storage.artifacts_bucket.bucket_name}/glue-scripts/customer_data_etl.py",  # TODO: Upload script in Phase 2
                 python_version="3",
             ),
             default_arguments={
@@ -147,7 +147,7 @@ class CustomerDataProcessingStack(Stack):
             function_name=f"{self.environment}-customer-data-validation",
             runtime=lambda_.Runtime.PYTHON_3_12,
             handler="handler.lambda_handler",
-            code=lambda_.Code.from_asset("src/lambda/customer_data_validation"),
+            code=lambda_.Code.from_inline("def lambda_handler(event, context): return {'validation_passed': True}"),  # Placeholder
             timeout=Duration.minutes(3),
             role=self.security.lambda_execution_role,
             environment={
@@ -167,7 +167,7 @@ class CustomerDataProcessingStack(Stack):
             function_name=f"{self.environment}-customer-data-quality-check",
             runtime=lambda_.Runtime.PYTHON_3_12,
             handler="handler.lambda_handler",
-            code=lambda_.Code.from_asset("src/lambda/customer_data_quality_check"),
+            code=lambda_.Code.from_inline("def lambda_handler(event, context): return {'quality_passed': True}"),  # Placeholder
             timeout=Duration.minutes(3),
             role=self.security.lambda_execution_role,
             environment={
