@@ -47,19 +47,19 @@ class CustomerDataIngestionStack(Stack):
             function_name=f"{self.environment}-customer-data-ingestion",
             runtime=lambda_.Runtime.PYTHON_3_12,
             handler="handler.lambda_handler",
-            code=lambda_.Code.from_asset("src/lambda/customer_data_ingestion"),
+            code=lambda_.Code.from_inline("def lambda_handler(event, context): return {'statusCode': 200}"),  # Placeholder until Phase 2
             timeout=Duration.minutes(5),
             role=self.security.lambda_execution_role,
             environment={
                 "ENVIRONMENT": self.environment,
                 "RAW_BUCKET": self.shared_storage.raw_bucket.bucket_name,
-                "PIPELINE_STATE_TABLE": self.shared_storage.pipeline_state_table.table_name,
+                # "PIPELINE_STATE_TABLE": self.shared_storage.pipeline_state_table.table_name,  # Phase 2
             },
         )
 
         # Grant S3 permissions
         self.shared_storage.raw_bucket.grant_write(function)
-        self.shared_storage.pipeline_state_table.grant_read_write_data(function)
+        # self.shared_storage.pipeline_state_table.grant_read_write_data(function)  # Phase 2
 
         return function
 
@@ -71,7 +71,7 @@ class CustomerDataIngestionStack(Stack):
             rule_name=f"{self.environment}-customer-ingestion-schedule",
             schedule=events.Schedule.cron(
                 minute="0",
-                hour="2",  # Daily at 2 AM
+                hour="22",  # Daily at 7 AM (KST)
             ),
         )
 
