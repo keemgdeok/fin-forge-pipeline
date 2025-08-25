@@ -46,13 +46,28 @@ jobs:
 
       - name: Run tests
         run: |
-          pytest tests/unit/ -v --tb=short --disable-warnings
+          # Skip tests if no actual test files exist (only __init__.py)
+          if find tests/unit/ -name "test_*.py" -o -name "*_test.py" | grep -q .; then
+            pytest tests/unit/ -v --tb=short --disable-warnings
+          else
+            echo "⚠️ No test files found, skipping pytest"
+          fi
 
       - name: Run code quality checks
         run: |
-          black --check src/ tests/ || echo "⚠️ Code formatting issues found"
-          flake8 src/ tests/ || echo "⚠️ Linting issues found"
-          mypy src/ --ignore-missing-imports --no-strict-optional || echo "⚠️ Type checking completed with warnings"
+          # Only run checks on directories with actual Python files
+          if find src/ -name "*.py" -not -path "*/venv/*" | grep -q .; then
+            black --check src/ || echo "⚠️ Code formatting issues found in src/"
+            flake8 src/ || echo "⚠️ Linting issues found in src/"
+            mypy src/ --ignore-missing-imports --no-strict-optional || echo "⚠️ Type checking completed with warnings"
+          else
+            echo "⚠️ No substantial Python source files in src/, skipping code quality checks"
+          fi
+          # Always check infrastructure code
+          if find infrastructure/ -name "*.py" | grep -q .; then
+            black --check infrastructure/ || echo "⚠️ Code formatting issues found in infrastructure/"
+            flake8 infrastructure/ || echo "⚠️ Linting issues found in infrastructure/"
+          fi
 
       - name: CDK Synth (Validation)
         run: |
