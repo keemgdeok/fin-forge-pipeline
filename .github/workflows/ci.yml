@@ -1,399 +1,90 @@
-name: Continuous Integration
+name: CI
 
 on:
   push:
     branches: [main, develop]
-    paths:
-      - 'src/**'
-      - 'infrastructure/**'
-      - 'tests/**'
-      - 'requirements.txt'
-      - 'app.py'
-      - 'cdk.json'
   pull_request:
     branches: [main, develop]
-    types: [opened, synchronize, reopened]
-    paths:
-      - 'src/**'
-      - 'infrastructure/**'
-      - 'tests/**'
-      - 'requirements.txt'
-      - 'app.py'
-      - 'cdk.json'
   workflow_dispatch:
 
 env:
-  AWS_REGION: us-east-1
   PYTHON_VERSION: '3.12'
   NODE_VERSION: '18'
 
 jobs:
-  # Fast feedback job - runs basic validation
-  quick-check:
-    name: Quick Validation
+  test:
     runs-on: ubuntu-latest
-    outputs:
-      has-tests: ${{ steps.check-tests.outputs.has-tests }}
-      has-src: ${{ steps.check-src.outputs.has-src }}
-    
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Check for test files
-        id: check-tests
-        run: |
-          if find tests/ -name "test_*.py" -o -name "*_test.py" | grep -q .; then
-            echo "has-tests=true" >> $GITHUB_OUTPUT
-            echo "✅ Test files found"
-          else
-            echo "has-tests=false" >> $GITHUB_OUTPUT
-            echo "⚠️ No test files found"
-          fi
-
-      - name: Check for source files
-        id: check-src
-        run: |
-          if find src/ -name "*.py" -not -path "*/venv/*" | grep -q .; then
-            echo "has-src=true" >> $GITHUB_OUTPUT
-            echo "✅ Source files found"
-          else
-            echo "has-src=false" >> $GITHUB_OUTPUT
-            echo "⚠️ No substantial source files found"
-          fi
-
-      - name: Repository structure validation
-        run: |
-          echo "📋 Repository Structure:"
-          echo "- Infrastructure: $(find infrastructure/ -name "*.py" | wc -l) files"
-          echo "- Source code: $(find src/ -name "*.py" -not -path "*/venv/*" | wc -l) files"
-          echo "- Tests: $(find tests/ -name "*.py" | wc -l) files"
-
-  # Code quality and testing - runs in parallel
-  quality-and-tests:
-    name: Code Quality & Tests
-    runs-on: ubuntu-latest
-    needs: quick-check
-    
     strategy:
-      fail-fast: false
       matrix:
-        check-type: [linting, typing, testing]
+        check: [format, test, infra]
     
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Set up Python
-        uses: actions/setup-python@v5
+      - uses: actions/checkout@v4
+      
+      - uses: actions/setup-python@v5
         with:
           python-version: ${{ env.PYTHON_VERSION }}
           cache: 'pip'
-          cache-dependency-path: 'requirements.txt'
-
-      - name: Install dependencies
-        run: |
-          python -m pip install --upgrade pip
-          pip install -r requirements.txt
-
-      # Linting job
-      - name: Code formatting check
-        if: matrix.check-type == 'linting'
-        run: |
-          echo "🔍 Running code formatting checks..."
-          
-          # Check infrastructure code (always present)
-          if find infrastructure/ -name "*.py" | grep -q .; then
-            echo "Checking infrastructure formatting..."
-            if ! black --check --diff infrastructure/; then
-              echo ""
-              echo "❌ Infrastructure code formatting issues found"
-              echo ""
-              echo "🔧 Step-by-step fix guide:"
-              echo "1. Install black: pip install black"
-              echo "2. Fix infrastructure: black infrastructure/"
-              echo "3. Review changes: git diff"
-              echo "4. Commit: git add -A && git commit -m 'fix: format infrastructure code'"
-              echo ""
-              echo "💡 Prevent future issues: pip install pre-commit"
-              exit 1
-            fi
-            
-            echo "Running infrastructure linting..."
-            flake8 infrastructure/ --max-line-length=88 --extend-ignore=E203,W503 || {
-              echo "❌ Infrastructure linting issues found"
-              exit 1
-            }
-          fi
-          
-          # Check source code if present
-          if [[ "${{ needs.quick-check.outputs.has-src }}" == "true" ]]; then
-            echo "Checking source code formatting..."
-            if ! black --check --diff src/; then
-              echo ""
-              echo "❌ Source code formatting issues found"
-              echo ""
-              echo "🔧 Step-by-step fix guide:"
-              echo "1. Install black: pip install black"
-              echo "2. Fix source code: black src/"
-              echo "3. Review changes: git diff"
-              echo "4. Commit: git add -A && git commit -m 'fix: format source code'"
-              echo ""
-              echo "💡 Prevent future issues: pip install pre-commit"
-              exit 1
-            fi
-            
-            echo "Running source code linting..."
-            flake8 src/ --max-line-length=88 --extend-ignore=E203,W503 || {
-              echo "❌ Source linting issues found"
-              exit 1
-            }
-          fi
-          
-          # Check test code if present
-          if [[ "${{ needs.quick-check.outputs.has-tests }}" == "true" ]]; then
-            echo "Checking test code formatting..."
-            if ! black --check --diff tests/; then
-              echo ""
-              echo "❌ Test code formatting issues found"
-              echo ""
-              echo "🔧 Step-by-step fix guide:"
-              echo "1. Install black: pip install black"
-              echo "2. Fix tests: black tests/"
-              echo "3. Review changes: git diff"
-              echo "4. Commit: git add -A && git commit -m 'fix: format test code'"
-              echo ""
-              echo "💡 Prevent future issues: pip install pre-commit"
-              exit 1
-            fi
-          fi
-          
-          echo "✅ All formatting and linting checks passed"
-
-      # Type checking job
-      - name: Type checking
-        if: matrix.check-type == 'typing'
-        run: |
-          echo "🔍 Running type checks..."
-          
-          # Check infrastructure types (always present)
-          echo "Type checking infrastructure..."
-          mypy infrastructure/ --ignore-missing-imports --no-strict-optional || {
-            echo "⚠️ Infrastructure type checking completed with warnings"
-          }
-          
-          # Check source code types if present
-          if [[ "${{ needs.quick-check.outputs.has-src }}" == "true" ]]; then
-            echo "Type checking source code..."
-            mypy src/ --ignore-missing-imports --no-strict-optional || {
-              echo "⚠️ Source code type checking completed with warnings"
-            }
-          fi
-          
-          echo "✅ Type checking completed"
-
-      # Testing job
-      - name: Unit tests
-        if: matrix.check-type == 'testing'
-        run: |
-          echo "🧪 Running tests..."
-          
-          if [[ "${{ needs.quick-check.outputs.has-tests }}" == "true" ]]; then
-            echo "Running pytest with coverage..."
-            pytest tests/unit/ -v --cov=src/ --cov=infrastructure/ --cov-report=xml --cov-report=term-missing || {
-              echo "❌ Some tests failed"
-              exit 1
-            }
-            echo "✅ All tests passed"
-          else
-            echo "⚠️ No test files found, creating minimal coverage report"
-            echo "<?xml version='1.0' ?><coverage></coverage>" > coverage.xml
-            echo "✅ Test validation completed (no tests to run)"
-          fi
-
-      - name: Upload coverage reports
-        if: matrix.check-type == 'testing' && needs.quick-check.outputs.has-tests == 'true'
-        uses: actions/upload-artifact@v4
-        with:
-          name: coverage-report
-          path: coverage.xml
-          retention-days: 7
-
-  # Infrastructure validation
-  infrastructure-check:
-    name: Infrastructure Validation
-    runs-on: ubuntu-latest
-    needs: quick-check
-    
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: ${{ env.PYTHON_VERSION }}
-          cache: 'pip'
-
-      - name: Set up Node.js
-        uses: actions/setup-node@v4
+      
+      - uses: actions/setup-node@v4
+        if: matrix.check == 'infra'
         with:
           node-version: ${{ env.NODE_VERSION }}
-          # 소규모 팀 최적화: CDK는 global 설치이므로 npm cache 불필요
-
+      
       - name: Install dependencies
         run: |
-          python -m pip install --upgrade pip
           pip install -r requirements.txt
-          
-          # CDK 스마트 설치 (소규모 팀 최적화: 재실행 시 시간 절약)
-          if ! command -v cdk &> /dev/null; then
-            echo "📦 Installing AWS CDK..."
+          if [[ "${{ matrix.check }}" == "infra" ]]; then
             npm install -g aws-cdk@latest
-          else
-            echo "✅ CDK already available: $(cdk --version)"
           fi
-
-      - name: CDK Synth validation
+      
+      - name: Format check
+        if: matrix.check == 'format'
         run: |
-          echo "🏗️ Validating CDK infrastructure..."
-          
-          # Test dev environment synthesis
-          echo "Testing dev environment synthesis..."
-          cdk synth --context environment=dev --quiet || {
-            echo "❌ CDK synthesis failed for dev environment"
+          black --check --diff src/ infrastructure/ tests/ || {
+            echo "Fix: black src/ infrastructure/ tests/"
             exit 1
           }
-          
-          # Test prod environment synthesis  
-          echo "Testing prod environment synthesis..."
-          cdk synth --context environment=prod --quiet || {
-            echo "❌ CDK synthesis failed for prod environment"
-            exit 1
-          }
-          
-          echo "✅ CDK synthesis validation successful for all environments"
-
-      - name: Upload CDK outputs
-        uses: actions/upload-artifact@v4
-        with:
-          name: cdk-synth-output
-          path: cdk.out/
-          retention-days: 7
-
-  # Security scanning (smart conditional execution for small teams)
-  security-scan:
-    name: Security Scan
+          flake8 src/ infrastructure/ tests/ --max-line-length=88 --extend-ignore=E203,W503
+      
+      - name: Run tests
+        if: matrix.check == 'test'
+        run: |
+          if find tests/ -name "test_*.py" | grep -q .; then
+            pytest tests/ -v
+          else
+            echo "No tests found"
+          fi
+      
+      - name: CDK check
+        if: matrix.check == 'infra'
+        run: |
+          cdk synth --context environment=dev
+          cdk synth --context environment=prod
+  
+  security:
     runs-on: ubuntu-latest
-    needs: quick-check
-    # 소규모 팀 최적화: 더 스마트한 보안 스캔 트리거
-    if: |
-      github.ref == 'refs/heads/main' || 
-      contains(github.event.head_commit.message, '[security]') ||
-      contains(github.event.head_commit.message, '[scan]') ||
-      (github.event_name == 'pull_request' && contains(github.event.pull_request.title, '[security]')) ||
-      (github.event_name == 'workflow_dispatch')
-    
+    if: github.ref == 'refs/heads/main' || contains(github.event.head_commit.message, '[security]')
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Set up Python
-        uses: actions/setup-python@v5
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
         with:
           python-version: ${{ env.PYTHON_VERSION }}
           cache: 'pip'
+      - run: |
+          pip install bandit safety
+          bandit -r infrastructure/ src/ || true
+          safety check || true
 
-      - name: Install security tools
-        run: |
-          pip install bandit safety semgrep
-
-      - name: Run Bandit security scan
-        run: |
-          echo "🔒 Running Bandit security scan..."
-          # 소규모 팀 최적화: 에러 처리 단순화, 실패해도 계속 진행
-          bandit -r infrastructure/ src/ -f json -o bandit-report.json || {
-            echo "⚠️ Bandit found potential security issues (non-blocking for small teams)"
-            if [ -f bandit-report.json ]; then
-              echo "📋 Security issues summary:"
-              cat bandit-report.json | jq -r '.results[] | "- \(.filename):\(.line_number): \(.issue_text)"' 2>/dev/null || echo "Run 'bandit -r .' locally for details"
-            fi
-          }
-
-      - name: Run Safety dependency check
-        run: |
-          echo "🔒 Running Safety dependency check..."
-          # 소규모 팀 최적화: 취약점 체크를 비차단적으로 실행
-          safety check --json --output safety-report.json || {
-            echo "⚠️ Safety found vulnerable dependencies (non-blocking for small teams)"
-            if [ -f safety-report.json ]; then
-              echo "📋 Vulnerability summary:"
-              cat safety-report.json | jq -r '.vulnerabilities[]? | "- \(.package_name) \(.installed_version): \(.vulnerability_id)"' 2>/dev/null || echo "Run 'safety check' locally for details"
-            fi
-          }
-
-      - name: Upload security reports
-        uses: actions/upload-artifact@v4
-        with:
-          name: security-reports
-          path: |
-            bandit-report.json
-            safety-report.json
-          retention-days: 30
-
-  # Final status check (소규모 팀 최적화: 보안 스캔 포함한 종합 체크)
-  ci-success:
-    name: CI Success
+  result:
     runs-on: ubuntu-latest
-    needs: [quick-check, quality-and-tests, infrastructure-check, security-scan]
+    needs: test
     if: always()
-    
     steps:
-      - name: Check all jobs status
-        run: |
-          echo "📊 CI Pipeline Results Summary:"
-          echo "- Quick Check: ${{ needs.quick-check.result }}"
-          echo "- Quality & Tests: ${{ needs.quality-and-tests.result }}"  
-          echo "- Infrastructure: ${{ needs.infrastructure-check.result }}"
-          echo "- Security Scan: ${{ needs.security-scan.result }}"
-          
-          # 소규모 팀 최적화: 각 작업 결과를 명확하게 분석
-          FAILED_JOBS=""
-          
-          if [[ "${{ needs.quick-check.result }}" != "success" ]]; then
-            FAILED_JOBS="$FAILED_JOBS quick-check"
-          fi
-          
-          if [[ "${{ needs.quality-and-tests.result }}" != "success" ]]; then
-            FAILED_JOBS="$FAILED_JOBS quality-tests"
-          fi
-          
-          if [[ "${{ needs.infrastructure-check.result }}" != "success" ]]; then
-            FAILED_JOBS="$FAILED_JOBS infrastructure"
-          fi
-          
-          # 보안 스캔은 선택적이므로 skipped는 성공으로 간주
-          if [[ "${{ needs.security-scan.result }}" == "failure" ]]; then
-            FAILED_JOBS="$FAILED_JOBS security"
-          fi
-          
-          if [[ -n "$FAILED_JOBS" ]]; then
-            echo ""
-            echo "❌ Failed jobs: $FAILED_JOBS"
-            echo ""
-            echo "🔧 Quick fixes for small teams:"
-            [[ "$FAILED_JOBS" == *"quality"* ]] && echo "- Run 'black src/ tests/ infrastructure/' to fix formatting"
-            [[ "$FAILED_JOBS" == *"infrastructure"* ]] && echo "- Run 'cdk synth' locally to debug CDK issues"
-            [[ "$FAILED_JOBS" == *"security"* ]] && echo "- Security issues found - check artifacts for details"
-            echo ""
+      - run: |
+          if [[ "${{ needs.test.result }}" == "success" ]]; then
+            echo "✅ CI passed"
+          else
+            echo "❌ CI failed"
             exit 1
           fi
-          
-          echo ""
-          echo "✅ All CI checks passed successfully!"
-          echo "🚀 Ready for deployment or merge"
-          echo ""
-          echo "📈 Pipeline efficiency stats:"
-          echo "- Parallel execution: Quality, Tests, Infrastructure checks"
-          echo "- Conditional execution: Security scan when needed"
-          echo "- Smart caching: Python packages, CDK installs"
