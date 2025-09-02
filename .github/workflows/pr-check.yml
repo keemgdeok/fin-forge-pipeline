@@ -43,9 +43,11 @@ jobs:
           # CDK syntax check if infrastructure changed
           if echo "$CHANGED" | grep -E "(infrastructure/|app\.py)" > /dev/null; then
             pip install -r requirements.txt
-            curl -fsSL https://deb.nodesource.com/setup_18.x | sudo -E bash -
-            sudo apt-get install -y nodejs
+            
+            # Install Node.js and CDK
+            curl -fsSL https://deb.nodesource.com/setup_18.x | sudo -E bash - && sudo apt-get install -y nodejs
             npm install -g aws-cdk@latest
+            
             cdk synth --context environment=dev > /dev/null || {
               echo "❌ CDK syntax error. Run 'cdk synth' locally"
               exit 1

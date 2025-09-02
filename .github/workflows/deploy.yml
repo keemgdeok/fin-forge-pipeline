@@ -8,7 +8,7 @@ on:
     inputs:
       environment:
         type: choice
-        options: [dev, staging, prod]
+        options: [dev, prod]
         default: dev
 
 env:
