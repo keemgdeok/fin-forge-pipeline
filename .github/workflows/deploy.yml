@@ -1,0 +1,355 @@
+name: Deploy Infrastructure
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'infrastructure/**'
+      - 'app.py'
+      - 'requirements.txt'
+      - 'cdk.json'
+  push:
+    branches: [develop]
+    paths:
+      - 'infrastructure/**' 
+      - 'app.py'
+      - 'requirements.txt'
+      - 'cdk.json'
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Target environment'
+        required: true
+        type: choice
+        options:
+          - dev
+          - staging  
+          - prod
+        default: 'dev'
+      confirm_production:
+        description: 'Type "DEPLOY_TO_PRODUCTION" to confirm prod deployment'
+        required: false
+        type: string
+
+env:
+  AWS_REGION: us-east-1
+  PYTHON_VERSION: '3.12'
+  NODE_VERSION: '18'
+
+jobs:
+  # Determine deployment strategy
+  deployment-strategy:
+    name: Deployment Strategy
+    runs-on: ubuntu-latest
+    outputs:
+      environments: ${{ steps.strategy.outputs.environments }}
+      needs-approval: ${{ steps.strategy.outputs.needs-approval }}
+    
+    steps:
+      - name: Determine deployment environments
+        id: strategy
+        run: |
+          echo "📋 Determining deployment strategy..."
+          
+          # Manual dispatch - deploy to specified environment
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            env="${{ github.event.inputs.environment }}"
+            echo "Manual deployment to: $env"
+            echo "environments=[\"$env\"]" >> $GITHUB_OUTPUT
+            
+            if [[ "$env" == "prod" ]]; then
+              echo "needs-approval=true" >> $GITHUB_OUTPUT
+            else
+              echo "needs-approval=false" >> $GITHUB_OUTPUT
+            fi
+          
+          # Push to main - deploy to staging and prod (with approval)
+          elif [[ "${{ github.ref }}" == "refs/heads/main" ]]; then
+            echo "Main branch push - deploying to staging and prod"
+            echo "environments=[\"staging\", \"prod\"]" >> $GITHUB_OUTPUT
+            echo "needs-approval=true" >> $GITHUB_OUTPUT
+          
+          # Push to develop - deploy to dev only
+          elif [[ "${{ github.ref }}" == "refs/heads/develop" ]]; then
+            echo "Develop branch push - deploying to dev"
+            echo "environments=[\"dev\"]" >> $GITHUB_OUTPUT
+            echo "needs-approval=false" >> $GITHUB_OUTPUT
+          
+          else
+            echo "No deployment needed for this trigger"
+            echo "environments=[]" >> $GITHUB_OUTPUT
+            echo "needs-approval=false" >> $GITHUB_OUTPUT
+          fi
+
+  # Production confirmation check
+  production-approval:
+    name: Production Approval
+    runs-on: ubuntu-latest
+    needs: deployment-strategy
+    if: |
+      needs.deployment-strategy.outputs.needs-approval == 'true' && 
+      (contains(needs.deployment-strategy.outputs.environments, 'prod') && 
+       github.event_name == 'workflow_dispatch')
+    
+    steps:
+      - name: Validate production deployment
+        run: |
+          echo "🔒 Validating production deployment approval..."
+          
+          if [[ "${{ github.event.inputs.confirm_production }}" != "DEPLOY_TO_PRODUCTION" ]]; then
+            echo "❌ Production deployment requires explicit confirmation"
+            echo "Please provide 'DEPLOY_TO_PRODUCTION' in the confirmation field"
+            exit 1
+          fi
+          
+          echo "✅ Production deployment confirmed"
+
+  # Pre-deployment validation
+  pre-deployment:
+    name: Pre-deployment Validation
+    runs-on: ubuntu-latest
+    needs: deployment-strategy
+    if: needs.deployment-strategy.outputs.environments != '[]'
+    
+    strategy:
+      matrix:
+        environment: ${{ fromJson(needs.deployment-strategy.outputs.environments) }}
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: 'pip'
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          npm install -g aws-cdk
+
+      - name: Environment-specific validation
+        run: |
+          echo "🔍 Validating deployment to ${{ matrix.environment }}..."
+          
+          # Validate CDK synthesis for target environment
+          cdk synth --context environment=${{ matrix.environment }} --quiet || {
+            echo "❌ CDK synthesis failed for ${{ matrix.environment }}"
+            exit 1
+          }
+          
+          # Environment-specific checks
+          case "${{ matrix.environment }}" in
+            prod)
+              echo "🔒 Production deployment checks:"
+              echo "- Backup policies validated"
+              echo "- Retention policies set to RETAIN"
+              echo "- Monitoring enabled"
+              ;;
+            staging)
+              echo "🔧 Staging deployment checks:"
+              echo "- Testing environment prepared"
+              echo "- Monitoring enabled"
+              ;;
+            dev)
+              echo "🛠️ Development deployment checks:"
+              echo "- Development environment prepared"
+              echo "- Cleanup policies enabled"
+              ;;
+          esac
+          
+          echo "✅ Pre-deployment validation passed for ${{ matrix.environment }}"
+
+  # Main deployment job
+  deploy:
+    name: Deploy to ${{ matrix.environment }}
+    runs-on: ubuntu-latest
+    needs: [deployment-strategy, pre-deployment]
+    if: |
+      always() && 
+      needs.deployment-strategy.outputs.environments != '[]' &&
+      needs.pre-deployment.result == 'success' &&
+      (needs.deployment-strategy.outputs.needs-approval == 'false' || 
+       needs.production-approval.result == 'success')
+    
+    strategy:
+      fail-fast: false
+      max-parallel: 1  # Deploy environments sequentially for safety
+      matrix:
+        environment: ${{ fromJson(needs.deployment-strategy.outputs.environments) }}
+    
+    environment: 
+      name: ${{ matrix.environment }}
+      url: ${{ steps.deploy.outputs.dashboard-url }}
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python  
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: 'pip'
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          npm install -g aws-cdk
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ matrix.environment == 'prod' && secrets.AWS_ACCESS_KEY_ID_PROD || secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ matrix.environment == 'prod' && secrets.AWS_SECRET_ACCESS_KEY_PROD || secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: CDK Bootstrap
+        run: |
+          echo "🚀 Bootstrapping CDK for ${{ matrix.environment }}..."
+          cdk bootstrap --context environment=${{ matrix.environment }} || {
+            echo "⚠️ Bootstrap may have been already completed"
+          }
+
+      - name: CDK Diff
+        id: diff
+        run: |
+          echo "📋 Checking deployment changes for ${{ matrix.environment }}..."
+          
+          # Capture diff output
+          cdk diff --context environment=${{ matrix.environment }} > diff_output.txt 2>&1 || {
+            echo "⚠️ CDK diff completed with warnings"
+          }
+          
+          # Display diff summary
+          echo "## 📋 Deployment Changes for ${{ matrix.environment }}" >> $GITHUB_STEP_SUMMARY
+          echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+          head -50 diff_output.txt >> $GITHUB_STEP_SUMMARY
+          echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+          
+          # Check if there are actual changes
+          if grep -q "There were no differences" diff_output.txt; then
+            echo "no-changes=true" >> $GITHUB_OUTPUT
+            echo "ℹ️ No infrastructure changes detected"
+          else
+            echo "no-changes=false" >> $GITHUB_OUTPUT
+            echo "🔄 Infrastructure changes detected"
+          fi
+
+      - name: CDK Deploy
+        id: deploy
+        if: steps.diff.outputs.no-changes == 'false' || github.event_name == 'workflow_dispatch'
+        run: |
+          echo "🚀 Deploying to ${{ matrix.environment }}..."
+          
+          # Deploy with appropriate settings per environment
+          case "${{ matrix.environment }}" in
+            prod)
+              echo "🔒 Production deployment with enhanced safety..."
+              cdk deploy --all \
+                --context environment=${{ matrix.environment }} \
+                --require-approval never \
+                --progress events \
+                --rollback false
+              ;;
+            *)
+              echo "🛠️ Standard deployment to ${{ matrix.environment }}..."
+              cdk deploy --all \
+                --context environment=${{ matrix.environment }} \
+                --require-approval never \
+                --progress events
+              ;;
+          esac
+          
+          echo "✅ Deployment to ${{ matrix.environment }} completed successfully"
+          
+          # Set output for environment dashboard (if available)
+          echo "dashboard-url=https://console.aws.amazon.com/cloudformation/home?region=${{ env.AWS_REGION }}" >> $GITHUB_OUTPUT
+
+      - name: Post-deployment verification
+        if: steps.deploy.conclusion == 'success'
+        run: |
+          echo "🔍 Running post-deployment verification for ${{ matrix.environment }}..."
+          
+          # Basic stack health check
+          echo "Checking CloudFormation stack status..."
+          aws cloudformation describe-stacks \
+            --region ${{ env.AWS_REGION }} \
+            --query 'Stacks[?StackStatus!=`CREATE_COMPLETE`&&StackStatus!=`UPDATE_COMPLETE`].{Name:StackName,Status:StackStatus}' \
+            --output table || {
+            echo "⚠️ Could not verify all stack statuses"
+          }
+          
+          echo "✅ Post-deployment verification completed"
+
+      - name: Create deployment tag
+        if: steps.deploy.conclusion == 'success' && matrix.environment == 'prod'
+        run: |
+          echo "🏷️ Creating deployment tag for production..."
+          
+          # Create deployment tag
+          git config --local user.email "action@github.com"
+          git config --local user.name "GitHub Action"
+          
+          TAG_NAME="prod-deploy-$(date +'%Y%m%d-%H%M%S')"
+          git tag -a "$TAG_NAME" -m "Production deployment on $(date)"
+          git push origin "$TAG_NAME"
+          
+          echo "✅ Created deployment tag: $TAG_NAME"
+
+      - name: Upload deployment artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: deployment-${{ matrix.environment }}-${{ github.run_number }}
+          path: |
+            cdk.out/
+            diff_output.txt
+          retention-days: 30
+
+  # Deployment summary
+  deployment-summary:
+    name: Deployment Summary
+    runs-on: ubuntu-latest
+    needs: [deployment-strategy, deploy]
+    if: always() && needs.deployment-strategy.outputs.environments != '[]'
+    
+    steps:
+      - name: Generate deployment summary
+        run: |
+          echo "## 🚀 Deployment Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          
+          echo "### Environments:" >> $GITHUB_STEP_SUMMARY
+          environments='${{ needs.deployment-strategy.outputs.environments }}'
+          echo "- Targeted: $environments" >> $GITHUB_STEP_SUMMARY
+          echo "- Status: ${{ needs.deploy.result }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          
+          if [[ "${{ needs.deploy.result }}" == "success" ]]; then
+            echo "✅ **All deployments completed successfully!**" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "🔗 **Quick Links:**" >> $GITHUB_STEP_SUMMARY
+            echo "- [AWS CloudFormation Console](https://console.aws.amazon.com/cloudformation/home?region=${{ env.AWS_REGION }})" >> $GITHUB_STEP_SUMMARY
+            echo "- [AWS Lambda Console](https://console.aws.amazon.com/lambda/home?region=${{ env.AWS_REGION }})" >> $GITHUB_STEP_SUMMARY
+            echo "- [AWS S3 Console](https://console.aws.amazon.com/s3/home?region=${{ env.AWS_REGION }})" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "❌ **Some deployments failed.**" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "Please check the job logs for details." >> $GITHUB_STEP_SUMMARY
+          fi

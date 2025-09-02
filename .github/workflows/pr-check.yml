@@ -1,0 +1,318 @@
+name: Pull Request Check
+
+on:
+  pull_request:
+    branches: [main, develop]
+    types: [opened, synchronize, reopened]
+
+env:
+  PYTHON_VERSION: '3.12'
+  NODE_VERSION: '18'
+
+jobs:
+  # Fast PR validation - essential checks only
+  pr-validation:
+    name: PR Validation
+    runs-on: ubuntu-latest
+    
+    outputs:
+      has-infrastructure-changes: ${{ steps.changes.outputs.infrastructure }}
+      has-source-changes: ${{ steps.changes.outputs.source }}
+      has-test-changes: ${{ steps.changes.outputs.tests }}
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+
+      - name: Detect changes
+        id: changes
+        run: |
+          echo "🔍 Analyzing changed files..."
+          
+          # Get changed files
+          CHANGED_FILES=$(git diff --name-only HEAD~1 HEAD)
+          
+          echo "Changed files:"
+          echo "$CHANGED_FILES"
+          
+          # Check for infrastructure changes
+          if echo "$CHANGED_FILES" | grep -E "(infrastructure/|app\.py|cdk\.json|requirements\.txt)" > /dev/null; then
+            echo "infrastructure=true" >> $GITHUB_OUTPUT
+            echo "✅ Infrastructure changes detected"
+          else
+            echo "infrastructure=false" >> $GITHUB_OUTPUT
+            echo "ℹ️ No infrastructure changes"
+          fi
+          
+          # Check for source code changes
+          if echo "$CHANGED_FILES" | grep -E "src/" > /dev/null; then
+            echo "source=true" >> $GITHUB_OUTPUT
+            echo "✅ Source code changes detected"
+          else
+            echo "source=false" >> $GITHUB_OUTPUT
+            echo "ℹ️ No source code changes"
+          fi
+          
+          # Check for test changes
+          if echo "$CHANGED_FILES" | grep -E "tests/" > /dev/null; then
+            echo "tests=true" >> $GITHUB_OUTPUT
+            echo "✅ Test changes detected"
+          else
+            echo "tests=false" >> $GITHUB_OUTPUT
+            echo "ℹ️ No test changes"
+          fi
+
+      - name: PR summary
+        run: |
+          echo "## 📋 Pull Request Analysis" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Changes Detected:" >> $GITHUB_STEP_SUMMARY
+          echo "- Infrastructure: ${{ steps.changes.outputs.infrastructure }}" >> $GITHUB_STEP_SUMMARY
+          echo "- Source Code: ${{ steps.changes.outputs.source }}" >> $GITHUB_STEP_SUMMARY
+          echo "- Tests: ${{ steps.changes.outputs.tests }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Next Steps:" >> $GITHUB_STEP_SUMMARY
+          
+          if [[ "${{ steps.changes.outputs.infrastructure }}" == "true" ]]; then
+            echo "- ⚡ Infrastructure validation will run" >> $GITHUB_STEP_SUMMARY
+          fi
+          
+          if [[ "${{ steps.changes.outputs.source }}" == "true" || "${{ steps.changes.outputs.tests }}" == "true" ]]; then
+            echo "- 🧪 Code quality checks will run" >> $GITHUB_STEP_SUMMARY
+          fi
+
+  # Infrastructure-specific validation (only if infrastructure changed)
+  infrastructure-validation:
+    name: Infrastructure Validation
+    runs-on: ubuntu-latest
+    needs: pr-validation
+    if: needs.pr-validation.outputs.has-infrastructure-changes == 'true'
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: 'pip'
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          npm install -g aws-cdk
+
+      - name: Quick infrastructure validation
+        run: |
+          echo "🏗️ Validating infrastructure changes..."
+          
+          # Basic Python syntax check
+          echo "Checking Python syntax..."
+          python -m py_compile infrastructure/**/*.py || {
+            echo "❌ Infrastructure Python syntax errors found"
+            exit 1
+          }
+          
+          # CDK synthesis validation (dev environment only for PR)
+          echo "Testing CDK synthesis..."
+          cdk synth --context environment=dev --quiet || {
+            echo "❌ CDK synthesis failed"
+            exit 1
+          }
+          
+          echo "✅ Infrastructure validation passed"
+
+      - name: Generate infrastructure diff
+        run: |
+          echo "## 🏗️ Infrastructure Changes Preview" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### CDK Synthesis Status:" >> $GITHUB_STEP_SUMMARY
+          echo "✅ Successfully synthesized for development environment" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Files Changed:" >> $GITHUB_STEP_SUMMARY
+          echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+          git diff --name-only HEAD~1 HEAD | grep -E "(infrastructure/|app\.py|cdk\.json)" >> $GITHUB_STEP_SUMMARY || echo "No infrastructure files changed" >> $GITHUB_STEP_SUMMARY
+          echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "🔍 Full CDK diff will be available after merge to main/develop branch." >> $GITHUB_STEP_SUMMARY
+
+  # Code quality check (only if source or tests changed)
+  code-quality:
+    name: Code Quality Check
+    runs-on: ubuntu-latest
+    needs: pr-validation
+    if: |
+      needs.pr-validation.outputs.has-source-changes == 'true' || 
+      needs.pr-validation.outputs.has-test-changes == 'true'
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Quick format check
+        run: |
+          echo "🔍 Checking code formatting..."
+          
+          # Only check changed files for efficiency
+          CHANGED_PY_FILES=$(git diff --name-only HEAD~1 HEAD | grep "\.py$" | grep -E "(src/|tests/)" || true)
+          
+          if [[ -n "$CHANGED_PY_FILES" ]]; then
+            echo "Checking formatting for changed files:"
+            echo "$CHANGED_PY_FILES"
+            
+            # Check formatting
+            echo "$CHANGED_PY_FILES" | xargs black --check --diff || {
+              echo "❌ Code formatting issues found"
+              echo ""
+              echo "To fix, run: black $(echo $CHANGED_PY_FILES | tr '\n' ' ')"
+              exit 1
+            }
+            
+            # Quick lint check
+            echo "$CHANGED_PY_FILES" | xargs flake8 --max-line-length=88 --extend-ignore=E203,W503 || {
+              echo "❌ Linting issues found"
+              exit 1
+            }
+            
+            echo "✅ Code quality checks passed"
+          else
+            echo "ℹ️ No Python files changed in src/ or tests/"
+          fi
+
+  # Quick test run (only if tests exist and changed)
+  quick-tests:
+    name: Quick Tests
+    runs-on: ubuntu-latest
+    needs: pr-validation
+    if: needs.pr-validation.outputs.has-test-changes == 'true'
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Run quick tests
+        run: |
+          echo "🧪 Running quick test validation..."
+          
+          # Check if test files exist
+          if find tests/ -name "test_*.py" -o -name "*_test.py" | grep -q .; then
+            echo "Running fast test validation..."
+            
+            # Run only changed test files for speed
+            CHANGED_TEST_FILES=$(git diff --name-only HEAD~1 HEAD | grep -E "tests/.*\.py$" || true)
+            
+            if [[ -n "$CHANGED_TEST_FILES" ]]; then
+              echo "Testing changed test files: $CHANGED_TEST_FILES"
+              echo "$CHANGED_TEST_FILES" | xargs python -m pytest -v --tb=short || {
+                echo "❌ Some tests failed"
+                exit 1
+              }
+            else
+              echo "Running quick smoke test..."
+              python -m pytest tests/ -v --maxfail=3 --tb=short || {
+                echo "❌ Quick test run failed"
+                exit 1
+              }
+            fi
+            
+            echo "✅ Quick tests passed"
+          else
+            echo "ℹ️ No test files found"
+          fi
+
+  # PR status summary
+  pr-summary:
+    name: PR Check Summary
+    runs-on: ubuntu-latest
+    needs: [pr-validation, infrastructure-validation, code-quality, quick-tests]
+    if: always()
+    
+    steps:
+      - name: Generate PR summary
+        run: |
+          echo "## 🎯 Pull Request Check Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          
+          # Overall status
+          OVERALL_STATUS="✅ PASSED"
+          
+          echo "### Check Results:" >> $GITHUB_STEP_SUMMARY
+          echo "- **PR Validation**: ${{ needs.pr-validation.result }}" >> $GITHUB_STEP_SUMMARY
+          
+          if [[ "${{ needs.pr-validation.outputs.has-infrastructure-changes }}" == "true" ]]; then
+            echo "- **Infrastructure**: ${{ needs.infrastructure-validation.result }}" >> $GITHUB_STEP_SUMMARY
+            if [[ "${{ needs.infrastructure-validation.result }}" != "success" && "${{ needs.infrastructure-validation.result }}" != "skipped" ]]; then
+              OVERALL_STATUS="❌ FAILED"
+            fi
+          fi
+          
+          if [[ "${{ needs.pr-validation.outputs.has-source-changes }}" == "true" || "${{ needs.pr-validation.outputs.has-test-changes }}" == "true" ]]; then
+            echo "- **Code Quality**: ${{ needs.code-quality.result }}" >> $GITHUB_STEP_SUMMARY
+            if [[ "${{ needs.code-quality.result }}" != "success" && "${{ needs.code-quality.result }}" != "skipped" ]]; then
+              OVERALL_STATUS="❌ FAILED"
+            fi
+          fi
+          
+          if [[ "${{ needs.pr-validation.outputs.has-test-changes }}" == "true" ]]; then
+            echo "- **Quick Tests**: ${{ needs.quick-tests.result }}" >> $GITHUB_STEP_SUMMARY
+            if [[ "${{ needs.quick-tests.result }}" != "success" && "${{ needs.quick-tests.result }}" != "skipped" ]]; then
+              OVERALL_STATUS="❌ FAILED"
+            fi
+          fi
+          
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Overall Status: $OVERALL_STATUS" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          
+          if [[ "$OVERALL_STATUS" == "✅ PASSED" ]]; then
+            echo "🚀 **This PR is ready for review and merge!**" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "After merge, the full CI pipeline will run with:" >> $GITHUB_STEP_SUMMARY
+            echo "- Complete test suite" >> $GITHUB_STEP_SUMMARY
+            echo "- Full security scanning" >> $GITHUB_STEP_SUMMARY
+            echo "- Automatic deployment (if applicable)" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "❌ **This PR needs attention before merging.**" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "Please check the failed jobs and fix any issues." >> $GITHUB_STEP_SUMMARY
+          fi
+          
+          # Exit with error if any critical checks failed
+          if [[ "$OVERALL_STATUS" == "❌ FAILED" ]]; then
+            echo "❌ PR check failed"
+            exit 1
+          fi
+          
+          echo "✅ All PR checks passed"

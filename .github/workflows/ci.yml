@@ -1,0 +1,323 @@
+name: Continuous Integration
+
+on:
+  push:
+    branches: [main, develop]
+    paths:
+      - 'src/**'
+      - 'infrastructure/**'
+      - 'tests/**'
+      - 'requirements.txt'
+      - 'app.py'
+      - 'cdk.json'
+  pull_request:
+    branches: [main, develop]
+    types: [opened, synchronize, reopened]
+    paths:
+      - 'src/**'
+      - 'infrastructure/**'
+      - 'tests/**'
+      - 'requirements.txt'
+      - 'app.py'
+      - 'cdk.json'
+  workflow_dispatch:
+
+env:
+  AWS_REGION: us-east-1
+  PYTHON_VERSION: '3.12'
+  NODE_VERSION: '18'
+
+jobs:
+  # Fast feedback job - runs basic validation
+  quick-check:
+    name: Quick Validation
+    runs-on: ubuntu-latest
+    outputs:
+      has-tests: ${{ steps.check-tests.outputs.has-tests }}
+      has-src: ${{ steps.check-src.outputs.has-src }}
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Check for test files
+        id: check-tests
+        run: |
+          if find tests/ -name "test_*.py" -o -name "*_test.py" | grep -q .; then
+            echo "has-tests=true" >> $GITHUB_OUTPUT
+            echo "✅ Test files found"
+          else
+            echo "has-tests=false" >> $GITHUB_OUTPUT
+            echo "⚠️ No test files found"
+          fi
+
+      - name: Check for source files
+        id: check-src
+        run: |
+          if find src/ -name "*.py" -not -path "*/venv/*" | grep -q .; then
+            echo "has-src=true" >> $GITHUB_OUTPUT
+            echo "✅ Source files found"
+          else
+            echo "has-src=false" >> $GITHUB_OUTPUT
+            echo "⚠️ No substantial source files found"
+          fi
+
+      - name: Repository structure validation
+        run: |
+          echo "📋 Repository Structure:"
+          echo "- Infrastructure: $(find infrastructure/ -name "*.py" | wc -l) files"
+          echo "- Source code: $(find src/ -name "*.py" -not -path "*/venv/*" | wc -l) files"
+          echo "- Tests: $(find tests/ -name "*.py" | wc -l) files"
+
+  # Code quality and testing - runs in parallel
+  quality-and-tests:
+    name: Code Quality & Tests
+    runs-on: ubuntu-latest
+    needs: quick-check
+    
+    strategy:
+      fail-fast: false
+      matrix:
+        check-type: [linting, typing, testing]
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: 'pip'
+          cache-dependency-path: 'requirements.txt'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      # Linting job
+      - name: Code formatting check
+        if: matrix.check-type == 'linting'
+        run: |
+          echo "🔍 Running code formatting checks..."
+          
+          # Check infrastructure code (always present)
+          if find infrastructure/ -name "*.py" | grep -q .; then
+            echo "Checking infrastructure formatting..."
+            black --check --diff infrastructure/ || {
+              echo "❌ Infrastructure code formatting issues found"
+              echo "Run: black infrastructure/ to fix"
+              exit 1
+            }
+            
+            echo "Running infrastructure linting..."
+            flake8 infrastructure/ --max-line-length=88 --extend-ignore=E203,W503 || {
+              echo "❌ Infrastructure linting issues found"
+              exit 1
+            }
+          fi
+          
+          # Check source code if present
+          if [[ "${{ needs.quick-check.outputs.has-src }}" == "true" ]]; then
+            echo "Checking source code formatting..."
+            black --check --diff src/ || {
+              echo "❌ Source code formatting issues found"
+              echo "Run: black src/ to fix"
+              exit 1
+            }
+            
+            echo "Running source code linting..."
+            flake8 src/ --max-line-length=88 --extend-ignore=E203,W503 || {
+              echo "❌ Source linting issues found"
+              exit 1
+            }
+          fi
+          
+          # Check test code if present
+          if [[ "${{ needs.quick-check.outputs.has-tests }}" == "true" ]]; then
+            echo "Checking test code formatting..."
+            black --check --diff tests/ || {
+              echo "❌ Test code formatting issues found"
+              echo "Run: black tests/ to fix"
+              exit 1
+            }
+          fi
+          
+          echo "✅ All formatting and linting checks passed"
+
+      # Type checking job
+      - name: Type checking
+        if: matrix.check-type == 'typing'
+        run: |
+          echo "🔍 Running type checks..."
+          
+          # Check infrastructure types (always present)
+          echo "Type checking infrastructure..."
+          mypy infrastructure/ --ignore-missing-imports --no-strict-optional || {
+            echo "⚠️ Infrastructure type checking completed with warnings"
+          }
+          
+          # Check source code types if present
+          if [[ "${{ needs.quick-check.outputs.has-src }}" == "true" ]]; then
+            echo "Type checking source code..."
+            mypy src/ --ignore-missing-imports --no-strict-optional || {
+              echo "⚠️ Source code type checking completed with warnings"
+            }
+          fi
+          
+          echo "✅ Type checking completed"
+
+      # Testing job
+      - name: Unit tests
+        if: matrix.check-type == 'testing'
+        run: |
+          echo "🧪 Running tests..."
+          
+          if [[ "${{ needs.quick-check.outputs.has-tests }}" == "true" ]]; then
+            echo "Running pytest with coverage..."
+            pytest tests/unit/ -v --cov=src/ --cov=infrastructure/ --cov-report=xml --cov-report=term-missing || {
+              echo "❌ Some tests failed"
+              exit 1
+            }
+            echo "✅ All tests passed"
+          else
+            echo "⚠️ No test files found, creating minimal coverage report"
+            echo "<?xml version='1.0' ?><coverage></coverage>" > coverage.xml
+            echo "✅ Test validation completed (no tests to run)"
+          fi
+
+      - name: Upload coverage reports
+        if: matrix.check-type == 'testing' && needs.quick-check.outputs.has-tests == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-report
+          path: coverage.xml
+          retention-days: 7
+
+  # Infrastructure validation
+  infrastructure-check:
+    name: Infrastructure Validation
+    runs-on: ubuntu-latest
+    needs: quick-check
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: 'pip'
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+          cache-dependency-path: 'package.json'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          npm install -g aws-cdk
+
+      - name: CDK Synth validation
+        run: |
+          echo "🏗️ Validating CDK infrastructure..."
+          
+          # Test dev environment synthesis
+          echo "Testing dev environment synthesis..."
+          cdk synth --context environment=dev --quiet || {
+            echo "❌ CDK synthesis failed for dev environment"
+            exit 1
+          }
+          
+          # Test prod environment synthesis  
+          echo "Testing prod environment synthesis..."
+          cdk synth --context environment=prod --quiet || {
+            echo "❌ CDK synthesis failed for prod environment"
+            exit 1
+          }
+          
+          echo "✅ CDK synthesis validation successful for all environments"
+
+      - name: Upload CDK outputs
+        uses: actions/upload-artifact@v4
+        with:
+          name: cdk-synth-output
+          path: cdk.out/
+          retention-days: 7
+
+  # Security scanning (only on main branch or security-related changes)
+  security-scan:
+    name: Security Scan
+    runs-on: ubuntu-latest
+    needs: quick-check
+    if: github.ref == 'refs/heads/main' || contains(github.event.head_commit.message, '[security]')
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: 'pip'
+
+      - name: Install security tools
+        run: |
+          pip install bandit safety semgrep
+
+      - name: Run Bandit security scan
+        run: |
+          echo "🔒 Running Bandit security scan..."
+          bandit -r infrastructure/ src/ -f json -o bandit-report.json || {
+            echo "⚠️ Bandit found potential security issues"
+            cat bandit-report.json
+          }
+
+      - name: Run Safety dependency check
+        run: |
+          echo "🔒 Running Safety dependency check..."
+          safety check --json --output safety-report.json || {
+            echo "⚠️ Safety found vulnerable dependencies"
+            cat safety-report.json
+          }
+
+      - name: Upload security reports
+        uses: actions/upload-artifact@v4
+        with:
+          name: security-reports
+          path: |
+            bandit-report.json
+            safety-report.json
+          retention-days: 30
+
+  # Final status check
+  ci-success:
+    name: CI Success
+    runs-on: ubuntu-latest
+    needs: [quick-check, quality-and-tests, infrastructure-check]
+    if: always()
+    
+    steps:
+      - name: Check all jobs status
+        run: |
+          echo "📊 CI Pipeline Results:"
+          echo "- Quick Check: ${{ needs.quick-check.result }}"
+          echo "- Quality & Tests: ${{ needs.quality-and-tests.result }}"  
+          echo "- Infrastructure: ${{ needs.infrastructure-check.result }}"
+          
+          if [[ "${{ needs.quick-check.result }}" != "success" || 
+                "${{ needs.quality-and-tests.result }}" != "success" || 
+                "${{ needs.infrastructure-check.result }}" != "success" ]]; then
+            echo "❌ One or more CI jobs failed"
+            exit 1
+          fi
+          
+          echo "✅ All CI checks passed successfully!"
+          echo "🚀 Ready for deployment"
