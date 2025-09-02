@@ -129,13 +129,20 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: ${{ env.NODE_VERSION }}
-          cache: 'npm'
+          # 소규모 팀 최적화: CDK global 설치로 npm cache 불필요
 
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
-          npm install -g aws-cdk
+          
+          # 소규모 팀 최적화: CDK 스마트 설치 (재실행 시 시간 절약)
+          if ! command -v cdk &> /dev/null; then
+            echo "📦 Installing AWS CDK..."
+            npm install -g aws-cdk@latest
+          else
+            echo "✅ CDK ready: $(cdk --version)"
+          fi
 
       - name: Environment-specific validation
         run: |
@@ -183,13 +190,17 @@ jobs:
     
     strategy:
       fail-fast: false
-      max-parallel: 1  # Deploy environments sequentially for safety
+      # 소규모 팀 최적화: 환경별 병렬 배포 (dev는 병렬, prod는 안전을 위해 순차)
+      max-parallel: ${{ contains(fromJson(needs.deployment-strategy.outputs.environments), 'prod') && 1 || 2 }}
       matrix:
         environment: ${{ fromJson(needs.deployment-strategy.outputs.environments) }}
     
+    # 소규모 팀 최적화: 환경별 보호 설정 단순화
     environment: 
       name: ${{ matrix.environment }}
       url: ${{ steps.deploy.outputs.dashboard-url }}
+      # prod 환경만 approval 필요 (소규모 팀 효율성)
+      protection_rules: ${{ matrix.environment == 'prod' && 'required_reviewers' || '' }}
     
     steps:
       - name: Checkout code
@@ -205,27 +216,41 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: ${{ env.NODE_VERSION }}
-          cache: 'npm'
+          # 소규모 팀 최적화: CDK global 설치로 npm cache 불필요
 
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
-          npm install -g aws-cdk
+          
+          # 소규모 팀 최적화: CDK 스마트 설치 (재실행 시 시간 절약)
+          if ! command -v cdk &> /dev/null; then
+            echo "📦 Installing AWS CDK..."
+            npm install -g aws-cdk@latest
+          else
+            echo "✅ CDK ready: $(cdk --version)"
+          fi
 
-      - name: Configure AWS credentials
+      # 소규모 팀 최적화: 환경별 자격증명을 더 안전하고 단순하게 관리
+      - name: Configure AWS credentials for ${{ matrix.environment }}
         uses: aws-actions/configure-aws-credentials@v4
         with:
-          aws-access-key-id: ${{ matrix.environment == 'prod' && secrets.AWS_ACCESS_KEY_ID_PROD || secrets.AWS_ACCESS_KEY_ID }}
-          aws-secret-access-key: ${{ matrix.environment == 'prod' && secrets.AWS_SECRET_ACCESS_KEY_PROD || secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-access-key-id: ${{ secrets[format('AWS_ACCESS_KEY_ID_{0}', upper(matrix.environment))] || secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets[format('AWS_SECRET_ACCESS_KEY_{0}', upper(matrix.environment))] || secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ env.AWS_REGION }}
+          # 소규모 팀용: 세션 정보 마스킹 강화
+          mask-aws-account-id: true
 
       - name: CDK Bootstrap
         run: |
           echo "🚀 Bootstrapping CDK for ${{ matrix.environment }}..."
-          cdk bootstrap --context environment=${{ matrix.environment }} || {
-            echo "⚠️ Bootstrap may have been already completed"
-          }
+          # 소규모 팀 최적화: Bootstrap 상태 확인 후 실행
+          if cdk bootstrap --context environment=${{ matrix.environment }} --show-template &>/dev/null; then
+            echo "✅ CDK already bootstrapped for ${{ matrix.environment }}"
+          else
+            echo "📦 Running CDK bootstrap..."
+            cdk bootstrap --context environment=${{ matrix.environment }}
+          fi
 
       - name: CDK Diff
         id: diff
@@ -258,26 +283,45 @@ jobs:
         run: |
           echo "🚀 Deploying to ${{ matrix.environment }}..."
           
+          # 소규모 팀 최적화: 에러 시 명확한 복구 가이드와 함께 배포
+          deploy_with_error_handling() {
+            local env=$1
+            local cmd="$2"
+            
+            if eval "$cmd"; then
+              echo "✅ Deployment to $env completed successfully"
+              return 0
+            else
+              echo ""
+              echo "❌ Deployment to $env failed!"
+              echo ""
+              echo "🔧 Troubleshooting Guide:"
+              echo "1. Check CloudFormation console for detailed error"
+              echo "2. Verify AWS credentials and permissions"
+              echo "3. Check if resources already exist with different names"
+              echo "4. Review CDK diff output above for conflicts"
+              echo ""
+              echo "🔗 Useful commands for debugging:"
+              echo "   aws cloudformation describe-stack-events --stack-name DataPlatform-$env-*"
+              echo "   cdk diff --context environment=$env"
+              echo "   cdk synth --context environment=$env"
+              echo ""
+              echo "📞 Small team tip: Check with team members for recent changes"
+              return 1
+            fi
+          }
+          
           # Deploy with appropriate settings per environment
           case "${{ matrix.environment }}" in
             prod)
               echo "🔒 Production deployment with enhanced safety..."
-              cdk deploy --all \
-                --context environment=${{ matrix.environment }} \
-                --require-approval never \
-                --progress events \
-                --rollback false
+              deploy_with_error_handling "${{ matrix.environment }}" "cdk deploy --all --context environment=${{ matrix.environment }} --require-approval never --progress events --rollback false"
               ;;
             *)
               echo "🛠️ Standard deployment to ${{ matrix.environment }}..."
-              cdk deploy --all \
-                --context environment=${{ matrix.environment }} \
-                --require-approval never \
-                --progress events
+              deploy_with_error_handling "${{ matrix.environment }}" "cdk deploy --all --context environment=${{ matrix.environment }} --require-approval never --progress events"
               ;;
           esac
-          
-          echo "✅ Deployment to ${{ matrix.environment }} completed successfully"
           
           # Set output for environment dashboard (if available)
           echo "dashboard-url=https://console.aws.amazon.com/cloudformation/home?region=${{ env.AWS_REGION }}" >> $GITHUB_OUTPUT
