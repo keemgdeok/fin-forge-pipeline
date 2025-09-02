@@ -16,7 +16,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        check: [format, test, infra]
+        check: [format, test, infra, security]
     
     steps:
       - uses: actions/checkout@v4
@@ -61,17 +61,10 @@ jobs:
         run: |
           cdk synth --context environment=dev
           cdk synth --context environment=prod
-  
-  security:
-    runs-on: ubuntu-latest
-    if: github.ref == 'refs/heads/main' || contains(github.event.head_commit.message, '[security]')
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with:
-          python-version: ${{ env.PYTHON_VERSION }}
-          cache: 'pip'
-      - run: |
+      
+      - name: Security scan
+        if: matrix.check == 'security' && (github.ref == 'refs/heads/main' || contains(github.event.head_commit.message, '[security]'))
+        run: |
           pip install bandit safety
           bandit -r infrastructure/ src/ || true
           safety check || true
@@ -82,9 +75,4 @@ jobs:
     if: always()
     steps:
       - run: |
-          if [[ "${{ needs.test.result }}" == "success" ]]; then
-            echo "✅ CI passed"
-          else
-            echo "❌ CI failed"
-            exit 1
-          fi
+          [[ "${{ needs.test.result }}" == "success" ]] && echo "✅ CI passed" || { echo "❌ CI failed"; exit 1; }

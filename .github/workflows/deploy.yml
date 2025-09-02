@@ -45,12 +45,11 @@ jobs:
           aws-region: ${{ env.AWS_REGION }}
       
       - name: Deploy
+        env:
+          TARGET_ENV: ${{ github.event.inputs.environment || (github.ref == 'refs/heads/main' && 'prod' || 'dev') }}
         run: |
-          ENV=${{ github.event.inputs.environment || (github.ref == 'refs/heads/main' && 'prod' || 'dev') }}
-          echo "Deploying to $ENV"
-          
-          cdk bootstrap --context environment=$ENV || echo "Already bootstrapped"
-          cdk diff --context environment=$ENV || echo "No changes or diff unavailable"
-          cdk deploy --all --context environment=$ENV --require-approval never
-          
-          echo "✅ Deployed to $ENV"
+          echo "Deploying to $TARGET_ENV"
+          cdk bootstrap --context environment=$TARGET_ENV || echo "Already bootstrapped"
+          cdk diff --context environment=$TARGET_ENV || echo "No changes"
+          cdk deploy --all --context environment=$TARGET_ENV --require-approval never
+          echo "✅ Deployed to $TARGET_ENV"
