@@ -7,6 +7,7 @@ from aws_cdk import (
     aws_stepfunctions_tasks as tasks,
     aws_lambda as lambda_,
     aws_iam as iam,
+    aws_logs as logs,
     Duration,
     CfnOutput,
 )
@@ -76,7 +77,7 @@ class CustomerDataProcessingStack(Stack):
             max_retries=2,
             timeout=60,
             worker_type="G.1X",
-            number_of_workers=2,
+            number_of_workers=int(self.config.get("glue_max_capacity", 2)),
         )
 
     def _create_processing_workflow(self) -> sfn.StateMachine:
@@ -138,6 +139,13 @@ class CustomerDataProcessingStack(Stack):
             .otherwise(error_task)
         )
 
+        # Create log group for the state machine with retention from config
+        sm_log_group = logs.LogGroup(
+            self,
+            "ProcessingStateMachineLogs",
+            retention=self._log_retention(),
+        )
+
         return sfn.StateMachine(
             self,
             "CustomerDataProcessingWorkflow",
@@ -148,6 +156,8 @@ class CustomerDataProcessingStack(Stack):
                 "StepFunctionsExecutionRoleRef",
                 self.step_functions_execution_role_arn,
             ),
+            logs=sfn.LogOptions(destination=sm_log_group, level=sfn.LogLevel.ALL, include_execution_data=True),
+            tracing_enabled=bool(self.config.get("enable_xray_tracing", False)),
             timeout=Duration.hours(2),
         )
 
@@ -162,7 +172,9 @@ class CustomerDataProcessingStack(Stack):
             code=lambda_.Code.from_inline(
                 "def lambda_handler(event, context): return {'validation_passed': True}"
             ),  # Placeholder
-            timeout=Duration.minutes(3),
+            memory_size=self._lambda_memory(),
+            timeout=self._lambda_timeout(),
+            log_retention=self._log_retention(),
             role=iam.Role.from_role_arn(self, "ValidationLambdaRole", self.lambda_execution_role_arn),
             environment={
                 "ENVIRONMENT": self.env_name,
@@ -185,7 +197,9 @@ class CustomerDataProcessingStack(Stack):
             code=lambda_.Code.from_inline(
                 "def lambda_handler(event, context): return {'quality_passed': True}"
             ),  # Placeholder
-            timeout=Duration.minutes(3),
+            memory_size=self._lambda_memory(),
+            timeout=self._lambda_timeout(),
+            log_retention=self._log_retention(),
             role=iam.Role.from_role_arn(self, "QualityCheckLambdaRole", self.lambda_execution_role_arn),
             environment={
                 "ENVIRONMENT": self.env_name,
@@ -212,3 +226,25 @@ class CustomerDataProcessingStack(Stack):
             value=self.processing_workflow.state_machine_arn,
             description="Customer data processing workflow ARN",
         )
+
+    # ===== Helpers =====
+    def _log_retention(self) -> logs.RetentionDays:
+        """Map integer days from config to CloudWatch Logs retention enum."""
+        retention_map = {
+            1: logs.RetentionDays.ONE_DAY,
+            3: logs.RetentionDays.THREE_DAYS,
+            5: logs.RetentionDays.FIVE_DAYS,
+            7: logs.RetentionDays.ONE_WEEK,
+            14: logs.RetentionDays.TWO_WEEKS,
+            30: logs.RetentionDays.ONE_MONTH,
+            90: logs.RetentionDays.THREE_MONTHS,
+        }
+        return retention_map.get(self.config.get("log_retention_days", 14), logs.RetentionDays.TWO_WEEKS)
+
+    def _lambda_memory(self) -> int:
+        """Resolve Lambda memory size from config (MB)."""
+        return int(self.config.get("lambda_memory", 512))
+
+    def _lambda_timeout(self) -> Duration:
+        """Resolve Lambda timeout from config (seconds)."""
+        return Duration.seconds(int(self.config.get("lambda_timeout", 300)))

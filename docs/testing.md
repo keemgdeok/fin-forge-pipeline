@@ -38,6 +38,7 @@
   - `black --line-length 120 --check --diff .`
   - `flake8 --max-line-length 120 --extend-ignore E203,W503 .`
   - `mypy --ignore-missing-imports .`
+  - `pre-commit run --all-files`
 - 인프라 합성
   - `export CDK_DEFAULT_ACCOUNT=<12자리계정ID>`
   - `export CDK_DEFAULT_REGION=ap-northeast-2` (또는 환경에 맞게)
