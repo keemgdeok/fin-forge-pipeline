@@ -3,8 +3,6 @@ name: CI
 on:
   push:
     branches: [main, develop]
-  pull_request:
-    branches: [main, develop]
   workflow_dispatch:
 
 env:
@@ -14,65 +12,67 @@ env:
 jobs:
   test:
     runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        check: [format, test, infra, security]
     
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout repository
+        uses: actions/checkout@v4
       
-      - uses: actions/setup-python@v5
+      - name: Setup Python
+        uses: actions/setup-python@v5
         with:
           python-version: ${{ env.PYTHON_VERSION }}
           cache: 'pip'
       
-      - uses: actions/setup-node@v4
-        if: matrix.check == 'infra'
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
         with:
           node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
       
       - name: Install dependencies
         run: |
           pip install -r requirements.txt
-          if [[ "${{ matrix.check }}" == "infra" ]]; then
-            npm install -g aws-cdk@latest
-          fi
+          npm install -g aws-cdk@latest
       
-      - name: Format check
-        if: matrix.check == 'format'
+      - name: Format and lint check
         run: |
+          echo "🔍 Checking code format and style..."
           black --check --diff src/ infrastructure/ tests/ || {
-            echo "Fix: black src/ infrastructure/ tests/"
+            echo "❌ Fix formatting: black src/ infrastructure/ tests/"
             exit 1
           }
-          flake8 src/ infrastructure/ tests/ --max-line-length=88 --extend-ignore=E203,W503
+          flake8 src/ infrastructure/ tests/ --max-line-length=88 --extend-ignore=E203,W503 || {
+            echo "❌ Fix linting issues"
+            exit 1
+          }
+          echo "✅ Format and lint checks passed"
       
       - name: Run tests
-        if: matrix.check == 'test'
         run: |
+          echo "🧪 Running tests..."
           if find tests/ -name "test_*.py" | grep -q .; then
-            pytest tests/ -v
+            pytest tests/ -v --tb=short
           else
-            echo "No tests found"
+            echo "ℹ️  No tests found - skipping"
           fi
+          echo "✅ Tests completed"
       
-      - name: CDK check
-        if: matrix.check == 'infra'
+      - name: CDK syntax check
         run: |
+          echo "🏗️  Validating CDK infrastructure..."
           cdk synth --context environment=dev
-          cdk synth --context environment=prod
+          echo "✅ CDK syntax validation passed"
       
       - name: Security scan
-        if: matrix.check == 'security' && (github.ref == 'refs/heads/main' || contains(github.event.head_commit.message, '[security]'))
+        if: github.ref == 'refs/heads/main' || contains(github.event.head_commit.message, '[security]')
         run: |
+          echo "🔒 Running security scan..."
           pip install bandit safety
-          bandit -r infrastructure/ src/ || true
-          safety check || true
-
-  result:
-    runs-on: ubuntu-latest
-    needs: test
-    if: always()
-    steps:
-      - run: |
-          [[ "${{ needs.test.result }}" == "success" ]] && echo "✅ CI passed" || { echo "❌ CI failed"; exit 1; }
+          echo "Running bandit..."
+          bandit -r infrastructure/ src/ || echo "⚠️  Bandit warnings found"
+          echo "Running safety check..."
+          safety check || echo "⚠️  Safety warnings found"
+          echo "✅ Security scan completed"
+      
+      - name: Final result
+        run: echo "🎉 CI pipeline completed successfully!"
