@@ -37,6 +37,9 @@ class CustomerDataProcessingStack(Stack):
         self.glue_execution_role_arn = glue_execution_role_arn
         self.step_functions_execution_role_arn = step_functions_execution_role_arn
 
+        # Deterministic Glue job name used across resources (avoids Optional[str] typing)
+        self.etl_job_name: str = f"{self.env_name}-customer-data-etl"
+
         # Glue ETL job for customer data transformation
         self.etl_job = self._create_etl_job()
 
@@ -50,7 +53,7 @@ class CustomerDataProcessingStack(Stack):
         return glue.CfnJob(
             self,
             "CustomerETLJob",
-            name=f"{self.env_name}-customer-data-etl",
+            name=self.etl_job_name,
             role=self.glue_execution_role_arn,
             command=glue.CfnJob.JobCommandProperty(
                 name="glueetl",
@@ -90,7 +93,7 @@ class CustomerDataProcessingStack(Stack):
         etl_task = tasks.GlueStartJobRun(
             self,
             "ProcessCustomerData",
-            glue_job_name=self.etl_job.name,
+            glue_job_name=self.etl_job_name,
             integration_pattern=sfn.IntegrationPattern.RUN_JOB,
         )
 
@@ -197,7 +200,7 @@ class CustomerDataProcessingStack(Stack):
         CfnOutput(
             self,
             "ETLJobName",
-            value=self.etl_job.name,
+            value=self.etl_job_name,
             description="Customer data ETL job name",
         )
 

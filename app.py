@@ -30,12 +30,10 @@ app = cdk.App()
 environment = app.node.try_get_context("environment") or "dev"
 config = get_environment_config(environment)
 
-# Common stack properties
-stack_props = {
-    "env": cdk.Environment(account=config.get("account_id"), region=config.get("region", "us-east-1")),
-    "environment": environment,
-    "config": config,
-}
+# CDK environment (account/region)
+cdk_env = cdk.Environment(
+    account=config.get("account_id"), region=config.get("region", "us-east-1")
+)
 
 stack_prefix = f"DataPlatform-{environment}"
 
@@ -44,10 +42,22 @@ stack_prefix = f"DataPlatform-{environment}"
 # ========================================
 
 # Security Foundation - IAM roles, policies, least privilege
-security_stack = SecurityStack(app, f"{stack_prefix}-Core-Security", **stack_props)
+security_stack = SecurityStack(
+    app,
+    f"{stack_prefix}-Core-Security",
+    environment=environment,
+    config=config,
+    env=cdk_env,
+)
 
 # Shared Storage - S3 buckets, DynamoDB tables for platform-wide use
-shared_storage_stack = SharedStorageStack(app, f"{stack_prefix}-Core-SharedStorage", **stack_props)
+shared_storage_stack = SharedStorageStack(
+    app,
+    f"{stack_prefix}-Core-SharedStorage",
+    environment=environment,
+    config=config,
+    env=cdk_env,
+)
 
 # ========================================
 # GOVERNANCE LAYER
@@ -57,8 +67,10 @@ shared_storage_stack = SharedStorageStack(app, f"{stack_prefix}-Core-SharedStora
 catalog_stack = DataCatalogStack(
     app,
     f"{stack_prefix}-Governance-Catalog",
+    environment=environment,
+    config=config,
     shared_storage_stack=shared_storage_stack,
-    **stack_props,
+    env=cdk_env,
 )
 
 # ========================================
@@ -66,7 +78,13 @@ catalog_stack = DataCatalogStack(
 # ========================================
 
 # Unified Observability - CloudWatch dashboards, alarms, SNS notifications
-observability_stack = ObservabilityStack(app, f"{stack_prefix}-Monitoring-Observability", **stack_props)
+observability_stack = ObservabilityStack(
+    app,
+    f"{stack_prefix}-Monitoring-Observability",
+    environment=environment,
+    config=config,
+    env=cdk_env,
+)
 
 # ========================================
 # DOMAIN-SPECIFIC PIPELINE LAYER
@@ -76,19 +94,25 @@ observability_stack = ObservabilityStack(app, f"{stack_prefix}-Monitoring-Observ
 customer_ingestion_stack = CustomerDataIngestionStack(
     app,
     f"{stack_prefix}-Pipeline-CustomerData-Ingestion",
+    environment=environment,
+    config=config,
     shared_storage_stack=shared_storage_stack,
     security_stack=security_stack,
-    **stack_props,
+    env=cdk_env,
 )
 
 customer_processing_stack = CustomerDataProcessingStack(
     app,
     f"{stack_prefix}-Pipeline-CustomerData-Processing",
+    environment=environment,
+    config=config,
     shared_storage_stack=shared_storage_stack,
     lambda_execution_role_arn=security_stack.lambda_execution_role.role_arn,
     glue_execution_role_arn=security_stack.glue_execution_role.role_arn,
-    step_functions_execution_role_arn=(security_stack.step_functions_execution_role.role_arn),
-    **stack_props,
+    step_functions_execution_role_arn=(
+        security_stack.step_functions_execution_role.role_arn
+    ),
+    env=cdk_env,
 )
 
 # TODO: Add more domain pipelines
