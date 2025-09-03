@@ -11,6 +11,7 @@ flake8>=6.0.0
 mypy>=1.0.0
 boto3>=1.26.0
 moto>=4.2.0
+pre-commit
 
 # Utility libraries
 python-dotenv>=1.0.0

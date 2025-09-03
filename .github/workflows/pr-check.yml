@@ -33,7 +33,8 @@ jobs:
         id: changed-files
         uses: tj-actions/changed-files@v44
       
-      - name: Setup Python
+      - name: Setup Python (py or deps changed)
+        if: steps.changed-files.outputs.any_changed == 'true' && (contains(steps.changed-files.outputs.all_changed_files, '.py') || contains(steps.changed-files.outputs.all_changed_files, 'requirements.txt') || contains(steps.changed-files.outputs.all_changed_files, 'pyproject.toml') || contains(steps.changed-files.outputs.all_changed_files, 'setup.cfg') || contains(steps.changed-files.outputs.all_changed_files, 'setup.py'))
         uses: actions/setup-python@v5
         with:
           python-version: ${{ env.PYTHON_VERSION }}
@@ -52,8 +53,8 @@ jobs:
         with:
           node-version: ${{ env.NODE_VERSION }}
       
-      - name: Install Python deps (py changed)
-        if: steps.changed-files.outputs.any_changed == 'true' && contains(steps.changed-files.outputs.all_changed_files, '.py')
+      - name: Install Python deps (py or deps changed)
+        if: steps.changed-files.outputs.any_changed == 'true' && (contains(steps.changed-files.outputs.all_changed_files, '.py') || contains(steps.changed-files.outputs.all_changed_files, 'requirements.txt') || contains(steps.changed-files.outputs.all_changed_files, 'pyproject.toml') || contains(steps.changed-files.outputs.all_changed_files, 'setup.cfg') || contains(steps.changed-files.outputs.all_changed_files, 'setup.py'))
         run: |
           pip install -r requirements.txt
 
