@@ -3,6 +3,16 @@ name: PR Validation
 on:
   pull_request:
     branches: [main, develop]
+    paths-ignore:
+      - '**/*.md'
+      - 'docs/**'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pr-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
 
 env:
   PYTHON_VERSION: '3.12'
@@ -11,11 +21,17 @@ env:
 jobs:
   validate:
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 10
     
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Get changed files
+        id: changed-files
+        uses: tj-actions/changed-files@v44
       
       - name: Setup Python
         uses: actions/setup-python@v5
@@ -23,28 +39,43 @@ jobs:
           python-version: ${{ env.PYTHON_VERSION }}
           cache: 'pip'
       
-      - name: Setup Node.js & CDK
+      - name: Setup Node.js (infra changed)
+        if: steps.changed-files.outputs.any_changed == 'true' && contains(steps.changed-files.outputs.all_changed_files, 'infrastructure/')
         uses: actions/setup-node@v4
         with:
           node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
       
-      - name: Install dependencies
+      - name: Install Python deps (py changed)
+        if: steps.changed-files.outputs.any_changed == 'true' && contains(steps.changed-files.outputs.all_changed_files, '.py')
         run: |
-          pip install -r requirements.txt black flake8
-          npm install -g aws-cdk@latest
+          pip install -r requirements.txt
+
+      - name: Install CDK CLI (infra changed)
+        if: steps.changed-files.outputs.any_changed == 'true' && contains(steps.changed-files.outputs.all_changed_files, 'infrastructure/')
+        run: npm install -g aws-cdk@2.100.0
       
-      - name: Code quality check
+      - name: Lint Python (py changed)
+        if: steps.changed-files.outputs.any_changed == 'true' && contains(steps.changed-files.outputs.all_changed_files, '.py')
         run: |
-          echo "🐍 Checking Python code quality..."
-          black --check --diff src/ infrastructure/
-          flake8 src/ infrastructure/ --max-line-length=88 --extend-ignore=E203,W503,E501,W293,W291,W292,E128
+          echo "🐍 Linting changed Python files..."
+          echo "${{ steps.changed-files.outputs.all_changed_files }}" | tr ' ' '\n' | grep -E "\.py$" | xargs -r black --check --diff
+          echo "${{ steps.changed-files.outputs.all_changed_files }}" | tr ' ' '\n' | grep -E "\.py$" | xargs -r flake8 --max-line-length=88 --extend-ignore=E203,W503
+
+      - name: Type check (mypy, py changed)
+        if: steps.changed-files.outputs.any_changed == 'true' && contains(steps.changed-files.outputs.all_changed_files, '.py')
+        run: |
+          echo "🔎 Type checking changed Python files..."
+          echo "${{ steps.changed-files.outputs.all_changed_files }}" | tr ' ' '\n' | grep -E "\.py$" | xargs -r mypy --ignore-missing-imports
           
-      - name: CDK syntax validation
+      - name: CDK synth (infra changed)
+        if: steps.changed-files.outputs.any_changed == 'true' && contains(steps.changed-files.outputs.all_changed_files, 'infrastructure/')
         run: |
           echo "🏗️ Validating CDK infrastructure..."
-          cdk synth --context environment=dev --quiet
+          cdk synth --context environment=dev
           
-      - name: Quick tests
+      - name: Quick tests (py changed)
+        if: steps.changed-files.outputs.any_changed == 'true' && contains(steps.changed-files.outputs.all_changed_files, '.py')
         run: |
           echo "🧪 Running quick tests..."
           if [ -d "tests/" ] && find tests/ -name "test_*.py" -type f | head -1 | grep -q .; then
@@ -52,5 +83,4 @@ jobs:
           else
             echo "No tests found - skipping"
           fi
-          
           echo "✅ PR validation complete!"

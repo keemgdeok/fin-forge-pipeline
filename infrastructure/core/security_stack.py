@@ -31,6 +31,11 @@ class SecurityStack(Stack):
             self._create_step_functions_execution_role()
         )
 
+        # GitHub Actions OIDC provider and deploy role
+        # This enables CI/CD via GitHub Actions without long-lived keys.
+        self.github_oidc_provider = self._create_github_oidc_provider()
+        self.github_actions_deploy_role = self._create_github_actions_deploy_role()
+
         self._create_outputs()
 
     def _create_lambda_execution_role(self) -> iam.Role:
@@ -162,4 +167,65 @@ class SecurityStack(Stack):
             "StepFunctionsExecutionRoleArn",
             value=self.step_functions_execution_role.role_arn,
             description="Step Functions execution role ARN",
+        )
+
+        CfnOutput(
+            self,
+            "GitHubActionsDeployRoleArn",
+            value=self.github_actions_deploy_role.role_arn,
+            description="GitHub Actions OIDC deploy role ARN",
+        )
+
+    def _create_github_oidc_provider(self) -> iam.OpenIdConnectProvider:
+        """Create (or define) the GitHub OIDC provider.
+
+        Note: OIDC providers are global in IAM. Creating this via CDK will
+        manage it in this account; if one already exists with the same URL,
+        consider importing instead.
+        """
+        return iam.OpenIdConnectProvider(
+            self,
+            "GitHubOidcProvider",
+            url="https://token.actions.githubusercontent.com",
+            client_ids=["sts.amazonaws.com"],
+        )
+
+    def _create_github_actions_deploy_role(self) -> iam.Role:
+        """Role assumed by GitHub Actions via OIDC for deployments.
+
+        Trust is restricted to the repository and common branches/environments.
+        For stricter control, adjust the conditions below.
+        """
+        # Scope to your repository: owner/repo
+        repo_owner = "keemgdeok"
+        repo_name = "finge"
+
+        principal = iam.OpenIdConnectPrincipal(
+            self.github_oidc_provider,
+            conditions={
+                "StringEquals": {
+                    "token.actions.githubusercontent.com:aud": "sts.amazonaws.com"
+                },
+                "StringLike": {
+                    "token.actions.githubusercontent.com:sub": [
+                        f"repo:{repo_owner}/{repo_name}:ref:refs/heads/main",
+                        f"repo:{repo_owner}/{repo_name}:ref:refs/heads/develop",
+                        f"repo:{repo_owner}/{repo_name}:environment:prod",
+                        f"repo:{repo_owner}/{repo_name}:environment:dev",
+                    ]
+                },
+            },
+        )
+
+        # Start with AdministratorAccess for simplicity in small teams; tighten later.
+        return iam.Role(
+            self,
+            "GitHubActionsDeployRole",
+            role_name=f"{self.env_name}-github-actions-deploy-role",
+            assumed_by=principal,
+            managed_policies=[
+                iam.ManagedPolicy.from_aws_managed_policy_name(
+                    "AdministratorAccess"
+                )
+            ],
         )
