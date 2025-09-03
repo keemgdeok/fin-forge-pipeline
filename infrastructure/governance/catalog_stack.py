@@ -24,7 +24,7 @@ class DataCatalogStack(Stack):
     ) -> None:
         super().__init__(scope, construct_id, **kwargs)
 
-        self.environment = environment
+        self.env_name = environment
         self.config = config
         self.shared_storage = shared_storage_stack
 
@@ -46,10 +46,10 @@ class DataCatalogStack(Stack):
             "DataPlatformDatabase",
             catalog_id=self.account,
             database_input=glue.CfnDatabase.DatabaseInputProperty(
-                name=f"{self.environment}_data_platform",
+                name=f"{self.env_name}_data_platform",
                 description="Central data catalog for data platform",
                 parameters={
-                    "environment": self.environment,
+                    "environment": self.env_name,
                     "created_by": "cdk",
                     "classification": "data-platform",
                 },
@@ -62,7 +62,7 @@ class DataCatalogStack(Stack):
     #     return athena.CfnWorkGroup(
     #         self,
     #         "DataPlatformWorkgroup",
-    #         name=f"{self.environment}-data-platform-workgroup",
+    #         name=f"{self.env_name}-data-platform-workgroup",
     #         description="Athena workgroup for data platform queries",
     #         work_group_configuration=athena.CfnWorkGroup.WorkGroupConfigurationProperty(
     #             result_configuration=athena.CfnWorkGroup.ResultConfigurationProperty(
@@ -86,7 +86,7 @@ class DataCatalogStack(Stack):
         crawlers["curated_data"] = glue.CfnCrawler(
             self,
             "CuratedDataCrawler",
-            name=f"{self.environment}-curated-data-crawler",
+            name=f"{self.env_name}-curated-data-crawler",
             role=(
                 f"arn:aws:iam::{self.account}:role/service-role/"
                 "AWSGlueServiceRole-DataCrawler"

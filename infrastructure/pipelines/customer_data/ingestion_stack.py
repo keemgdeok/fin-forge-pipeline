@@ -26,7 +26,7 @@ class CustomerDataIngestionStack(Stack):
     ) -> None:
         super().__init__(scope, construct_id, **kwargs)
 
-        self.environment = environment
+        self.env_name = environment
         self.config = config
         self.shared_storage = shared_storage_stack
         self.security = security_stack
@@ -44,7 +44,7 @@ class CustomerDataIngestionStack(Stack):
         function = lambda_.Function(
             self,
             "CustomerIngestionFunction",
-            function_name=f"{self.environment}-customer-data-ingestion",
+            function_name=f"{self.env_name}-customer-data-ingestion",
             runtime=lambda_.Runtime.PYTHON_3_12,
             handler="handler.lambda_handler",
             code=lambda_.Code.from_inline(
@@ -53,7 +53,7 @@ class CustomerDataIngestionStack(Stack):
             timeout=Duration.minutes(5),
             role=self.security.lambda_execution_role,
             environment={
-                "ENVIRONMENT": self.environment,
+                "ENVIRONMENT": self.env_name,
                 "RAW_BUCKET": self.shared_storage.raw_bucket.bucket_name,
                 # "PIPELINE_STATE_TABLE": self.shared_storage.pipeline_state_table.table_name,  # Phase 2
             },
@@ -70,7 +70,7 @@ class CustomerDataIngestionStack(Stack):
         rule = events.Rule(
             self,
             "CustomerIngestionSchedule",
-            rule_name=f"{self.environment}-customer-ingestion-schedule",
+            rule_name=f"{self.env_name}-customer-ingestion-schedule",
             schedule=events.Schedule.cron(
                 minute="0",
                 hour="22",  # Daily at 7 AM (KST)

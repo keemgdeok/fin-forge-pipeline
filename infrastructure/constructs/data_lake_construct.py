@@ -21,7 +21,7 @@ class DataLakeConstruct(Construct):
     ) -> None:
         super().__init__(scope, construct_id)
 
-        self.environment = environment
+        self.env_name = environment
         self.config = config
 
         # Create S3 buckets
@@ -32,14 +32,14 @@ class DataLakeConstruct(Construct):
         """Create S3 bucket for raw data."""
         removal_policy = (
             RemovalPolicy.RETAIN
-            if self.environment == "prod"
+            if self.env_name == "prod"
             else RemovalPolicy.DESTROY
         )
 
         self.raw_bucket = s3.Bucket(
             self,
             "RawDataBucket",
-            bucket_name=f"data-pipeline-raw-{self.environment}-{Aws.ACCOUNT_ID}",
+            bucket_name=f"data-pipeline-raw-{self.env_name}-{Aws.ACCOUNT_ID}",
             versioned=True,
             encryption=s3.BucketEncryption.S3_MANAGED,
             block_public_access=s3.BlockPublicAccess.BLOCK_ALL,
@@ -61,14 +61,14 @@ class DataLakeConstruct(Construct):
         """Create S3 bucket for curated/processed data."""
         removal_policy = (
             RemovalPolicy.RETAIN
-            if self.environment == "prod"
+            if self.env_name == "prod"
             else RemovalPolicy.DESTROY
         )
 
         self.curated_bucket = s3.Bucket(
             self,
             "CuratedDataBucket",
-            bucket_name=f"data-pipeline-curated-{self.environment}-{Aws.ACCOUNT_ID}",
+            bucket_name=f"data-pipeline-curated-{self.env_name}-{Aws.ACCOUNT_ID}",
             versioned=True,
             encryption=s3.BucketEncryption.S3_MANAGED,
             block_public_access=s3.BlockPublicAccess.BLOCK_ALL,

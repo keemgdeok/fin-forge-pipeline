@@ -24,7 +24,7 @@ class SharedStorageStack(Stack):
     ) -> None:
         super().__init__(scope, construct_id, **kwargs)
 
-        self.environment = environment
+        self.env_name = environment
         self.config = config
 
         # Core S3 buckets using existing construct
@@ -51,7 +51,7 @@ class SharedStorageStack(Stack):
         return s3.Bucket(
             self,
             "ArtifactsBucket",
-            bucket_name=f"{self.environment}-data-platform-artifacts-{self.account}",
+            bucket_name=f"{self.env_name}-data-platform-artifacts-{self.account}",
             versioned=True,
             encryption=s3.BucketEncryption.S3_MANAGED,
             removal_policy=RemovalPolicy.DESTROY,
@@ -63,7 +63,7 @@ class SharedStorageStack(Stack):
     #     return dynamodb.Table(
     #         self,
     #         "PipelineStateTable",
-    #         table_name=f"{self.environment}-pipeline-state",
+    #         table_name=f"{self.env_name}-pipeline-state",
     #         partition_key=dynamodb.Attribute(
     #             name="pipeline_id",
     #             type=dynamodb.AttributeType.STRING,
@@ -82,7 +82,7 @@ class SharedStorageStack(Stack):
     #     return dynamodb.Table(
     #         self,
     #         "JobMetadataTable",
-    #         table_name=f"{self.environment}-job-metadata",
+    #         table_name=f"{self.env_name}-job-metadata",
     #         partition_key=dynamodb.Attribute(
     #             name="job_id",
     #             type=dynamodb.AttributeType.STRING,

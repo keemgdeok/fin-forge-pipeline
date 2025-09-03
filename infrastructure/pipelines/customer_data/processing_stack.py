@@ -27,7 +27,7 @@ class CustomerDataProcessingStack(Stack):
     ) -> None:
         super().__init__(scope, construct_id, **kwargs)
 
-        self.environment = environment
+        self.env_name = environment
         self.config = config
         self.shared_storage = shared_storage_stack
         self.security = security_stack
@@ -45,7 +45,7 @@ class CustomerDataProcessingStack(Stack):
         return glue.CfnJob(
             self,
             "CustomerETLJob",
-            name=f"{self.environment}-customer-data-etl",
+            name=f"{self.env_name}-customer-data-etl",
             role=self.security.glue_execution_role.role_arn,
             command=glue.CfnJob.JobCommandProperty(
                 name="glueetl",
@@ -60,7 +60,7 @@ class CustomerDataProcessingStack(Stack):
                 "--TempDir": f"s3://{self.shared_storage.artifacts_bucket.bucket_name}/temp/",
                 "--raw_bucket": self.shared_storage.raw_bucket.bucket_name,
                 "--curated_bucket": self.shared_storage.curated_bucket.bucket_name,
-                "--environment": self.environment,
+                "--environment": self.env_name,
             },
             glue_version="4.0",
             max_retries=2,
@@ -131,7 +131,7 @@ class CustomerDataProcessingStack(Stack):
         return sfn.StateMachine(
             self,
             "CustomerDataProcessingWorkflow",
-            state_machine_name=f"{self.environment}-customer-data-processing",
+            state_machine_name=f"{self.env_name}-customer-data-processing",
             definition=definition,
             role=self.security.step_functions_execution_role,
             timeout=Duration.hours(2),
@@ -142,7 +142,7 @@ class CustomerDataProcessingStack(Stack):
         function = lambda_.Function(
             self,
             "CustomerDataValidationFunction",
-            function_name=f"{self.environment}-customer-data-validation",
+            function_name=f"{self.env_name}-customer-data-validation",
             runtime=lambda_.Runtime.PYTHON_3_12,
             handler="handler.lambda_handler",
             code=lambda_.Code.from_inline(
@@ -151,7 +151,7 @@ class CustomerDataProcessingStack(Stack):
             timeout=Duration.minutes(3),
             role=self.security.lambda_execution_role,
             environment={
-                "ENVIRONMENT": self.environment,
+                "ENVIRONMENT": self.env_name,
                 "RAW_BUCKET": self.shared_storage.raw_bucket.bucket_name,
             },
         )
@@ -164,7 +164,7 @@ class CustomerDataProcessingStack(Stack):
         function = lambda_.Function(
             self,
             "CustomerDataQualityCheckFunction",
-            function_name=f"{self.environment}-customer-data-quality-check",
+            function_name=f"{self.env_name}-customer-data-quality-check",
             runtime=lambda_.Runtime.PYTHON_3_12,
             handler="handler.lambda_handler",
             code=lambda_.Code.from_inline(
@@ -173,7 +173,7 @@ class CustomerDataProcessingStack(Stack):
             timeout=Duration.minutes(3),
             role=self.security.lambda_execution_role,
             environment={
-                "ENVIRONMENT": self.environment,
+                "ENVIRONMENT": self.env_name,
                 "CURATED_BUCKET": self.shared_storage.curated_bucket.bucket_name,
             },
         )

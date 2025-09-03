@@ -21,7 +21,7 @@ class SecurityStack(Stack):
     ) -> None:
         super().__init__(scope, construct_id, **kwargs)
 
-        self.environment = environment
+        self.env_name = environment
         self.config = config
 
         # Core execution roles
@@ -38,7 +38,7 @@ class SecurityStack(Stack):
         return iam.Role(
             self,
             "LambdaExecutionRole",
-            role_name=f"{self.environment}-data-platform-lambda-role",
+            role_name=f"{self.env_name}-data-platform-lambda-role",
             assumed_by=iam.ServicePrincipal("lambda.amazonaws.com"),
             managed_policies=[
                 iam.ManagedPolicy.from_aws_managed_policy_name(
@@ -83,7 +83,7 @@ class SecurityStack(Stack):
         return iam.Role(
             self,
             "GlueExecutionRole",
-            role_name=f"{self.environment}-data-platform-glue-role",
+            role_name=f"{self.env_name}-data-platform-glue-role",
             assumed_by=iam.ServicePrincipal("glue.amazonaws.com"),
             managed_policies=[
                 iam.ManagedPolicy.from_aws_managed_policy_name(
@@ -113,7 +113,7 @@ class SecurityStack(Stack):
         return iam.Role(
             self,
             "StepFunctionsExecutionRole",
-            role_name=f"{self.environment}-data-platform-stepfunctions-role",
+            role_name=f"{self.env_name}-data-platform-stepfunctions-role",
             assumed_by=iam.ServicePrincipal("states.amazonaws.com"),
             inline_policies={
                 "LambdaInvoke": iam.PolicyDocument(

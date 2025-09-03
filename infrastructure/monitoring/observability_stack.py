@@ -25,7 +25,7 @@ class ObservabilityStack(Stack):
     ) -> None:
         super().__init__(scope, construct_id, **kwargs)
 
-        self.environment = environment
+        self.env_name = environment
         self.config = config
 
         # SNS topic for alerting - single topic for small teams
@@ -47,7 +47,7 @@ class ObservabilityStack(Stack):
         return sns.Topic(
             self,
             "AlertsTopic",
-            topic_name=f"{self.environment}-data-platform-alerts",
+            topic_name=f"{self.env_name}-data-platform-alerts",
             display_name="Data Platform Alerts",
         )
 
@@ -56,7 +56,7 @@ class ObservabilityStack(Stack):
         dashboard = cloudwatch.Dashboard(
             self,
             "PlatformDashboard",
-            dashboard_name=f"{self.environment}-data-platform-overview",
+            dashboard_name=f"{self.env_name}-data-platform-overview",
         )
 
         # Essential metrics widget - simplified view
@@ -104,7 +104,7 @@ class ObservabilityStack(Stack):
         sf_failure_alarm = cloudwatch.Alarm(
             self,
             "PipelineFailures",
-            alarm_name=f"{self.environment}-data-pipeline-failures",
+            alarm_name=f"{self.env_name}-data-pipeline-failures",
             alarm_description="Data pipeline Step Functions executions failing",
             metric=cloudwatch.Metric(
                 namespace="AWS/States",
@@ -130,8 +130,8 @@ class ObservabilityStack(Stack):
     #         log_groups[component] = logs.LogGroup(
     #             self,
     #             f"{component.title()}LogGroup",
-    #             log_group_name=f"/aws/{component}/{self.environment}-data-platform",
-    #             retention=logs.RetentionDays.ONE_MONTH if self.environment != "prod" else logs.RetentionDays.THREE_MONTHS,
+    #             log_group_name=f"/aws/{component}/{self.env_name}-data-platform",
+    #             retention=logs.RetentionDays.ONE_MONTH if self.env_name != "prod" else logs.RetentionDays.THREE_MONTHS,
     #         )
     #
     #     return log_groups
