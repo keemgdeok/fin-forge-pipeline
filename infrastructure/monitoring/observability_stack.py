@@ -1,4 +1,5 @@
 """Unified observability stack for serverless data platform."""
+
 from aws_cdk import (
     Stack,
     aws_cloudwatch as cloudwatch,
@@ -20,7 +21,7 @@ class ObservabilityStack(Stack):
         construct_id: str,
         environment: str,
         config: dict,
-        **kwargs
+        **kwargs,
     ) -> None:
         super().__init__(scope, construct_id, **kwargs)
 
@@ -68,13 +69,13 @@ class ObservabilityStack(Stack):
                     namespace="AWS/Lambda",
                     metric_name="Errors",
                     statistic="Sum",
-                    label="Lambda Errors"
+                    label="Lambda Errors",
                 ),
                 cloudwatch.Metric(
                     namespace="AWS/States",
-                    metric_name="ExecutionsFailed", 
+                    metric_name="ExecutionsFailed",
                     statistic="Sum",
-                    label="Step Functions Failures"
+                    label="Step Functions Failures",
                 ),
             ],
             right=[
@@ -82,13 +83,13 @@ class ObservabilityStack(Stack):
                     namespace="AWS/Lambda",
                     metric_name="Invocations",
                     statistic="Sum",
-                    label="Lambda Invocations"
+                    label="Lambda Invocations",
                 ),
                 cloudwatch.Metric(
                     namespace="AWS/States",
                     metric_name="ExecutionsSucceeded",
                     statistic="Sum",
-                    label="Step Functions Success"
+                    label="Step Functions Success",
                 ),
             ],
         )
@@ -106,7 +107,7 @@ class ObservabilityStack(Stack):
             alarm_name=f"{self.environment}-data-pipeline-failures",
             alarm_description="Data pipeline Step Functions executions failing",
             metric=cloudwatch.Metric(
-                namespace="AWS/States", 
+                namespace="AWS/States",
                 metric_name="ExecutionsFailed",
                 statistic="Sum",
             ),
@@ -115,18 +116,16 @@ class ObservabilityStack(Stack):
             comparison_operator=cloudwatch.ComparisonOperator.GREATER_THAN_OR_EQUAL_TO_THRESHOLD,
         )
 
-        sf_failure_alarm.add_alarm_action(
-            cw_actions.SnsAction(self.alerts_topic)
-        )
+        sf_failure_alarm.add_alarm_action(cw_actions.SnsAction(self.alerts_topic))
 
     # OPTIONAL: AWS automatically creates log groups with default retention
     # def _create_log_groups(self) -> dict:
     #     """Create standardized log groups for platform components."""
     #     log_groups = {}
-    #     
+    #
     #     # Platform-wide log groups
     #     components = ["lambda", "glue", "stepfunctions", "pipeline-orchestration"]
-    #     
+    #
     #     for component in components:
     #         log_groups[component] = logs.LogGroup(
     #             self,
@@ -141,7 +140,7 @@ class ObservabilityStack(Stack):
         """Create CloudFormation outputs."""
         CfnOutput(
             self,
-            "AlertsTopicArn", 
+            "AlertsTopicArn",
             value=self.alerts_topic.topic_arn,
             description="Data platform alerts SNS topic ARN",
         )

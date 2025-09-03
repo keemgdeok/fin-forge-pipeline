@@ -1,4 +1,5 @@
 """Customer data processing pipeline stack."""
+
 from aws_cdk import (
     Stack,
     aws_glue as glue,
@@ -22,7 +23,7 @@ class CustomerDataProcessingStack(Stack):
         config: dict,
         shared_storage_stack,
         security_stack,
-        **kwargs
+        **kwargs,
     ) -> None:
         super().__init__(scope, construct_id, **kwargs)
 
@@ -33,7 +34,7 @@ class CustomerDataProcessingStack(Stack):
 
         # Glue ETL job for customer data transformation
         self.etl_job = self._create_etl_job()
-        
+
         # Step Functions workflow for orchestration
         self.processing_workflow = self._create_processing_workflow()
 
@@ -109,25 +110,22 @@ class CustomerDataProcessingStack(Stack):
         )
 
         # Define workflow
-        definition = (
-            validate_data_task
-            .next(
-                sfn.Choice(self, "ValidationChoice")
-                .when(
-                    sfn.Condition.boolean_equals("$.validation_passed", True),
-                    etl_task.next(
-                        quality_check_task.next(
-                            sfn.Choice(self, "QualityChoice")
-                            .when(
-                                sfn.Condition.boolean_equals("$.quality_passed", True),
-                                success_task
-                            )
-                            .otherwise(error_task)
+        definition = validate_data_task.next(
+            sfn.Choice(self, "ValidationChoice")
+            .when(
+                sfn.Condition.boolean_equals("$.validation_passed", True),
+                etl_task.next(
+                    quality_check_task.next(
+                        sfn.Choice(self, "QualityChoice")
+                        .when(
+                            sfn.Condition.boolean_equals("$.quality_passed", True),
+                            success_task,
                         )
+                        .otherwise(error_task)
                     )
-                )
-                .otherwise(error_task)
+                ),
             )
+            .otherwise(error_task)
         )
 
         return sfn.StateMachine(
@@ -165,7 +163,7 @@ class CustomerDataProcessingStack(Stack):
         """Create data quality check Lambda function."""
         function = lambda_.Function(
             self,
-            "CustomerDataQualityCheckFunction", 
+            "CustomerDataQualityCheckFunction",
             function_name=f"{self.environment}-customer-data-quality-check",
             runtime=lambda_.Runtime.PYTHON_3_12,
             handler="handler.lambda_handler",

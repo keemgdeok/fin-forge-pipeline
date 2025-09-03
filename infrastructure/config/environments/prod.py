@@ -1,4 +1,5 @@
 """Production environment configuration."""
+
 import os
 
 prod_config = {
@@ -20,6 +21,6 @@ prod_config = {
         "Environment": "prod",
         "Project": "ServerlessDataPipeline",
         "Owner": "DataTeam",
-        "CostCenter": "Production"
-    }
+        "CostCenter": "Production",
+    },
 }

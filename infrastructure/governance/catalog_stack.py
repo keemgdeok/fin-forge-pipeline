@@ -1,4 +1,5 @@
 """Data catalog and governance stack for data platform."""
+
 from aws_cdk import (
     Stack,
     aws_glue as glue,
@@ -19,7 +20,7 @@ class DataCatalogStack(Stack):
         environment: str,
         config: dict,
         shared_storage_stack,
-        **kwargs
+        **kwargs,
     ) -> None:
         super().__init__(scope, construct_id, **kwargs)
 
@@ -29,10 +30,10 @@ class DataCatalogStack(Stack):
 
         # Glue Data Catalog database
         self.glue_database = self._create_glue_database()
-        
+
         # Athena workgroup for queries - OPTIONAL: Only needed for larger teams
         # self.athena_workgroup = self._create_athena_workgroup()
-        
+
         # Data crawlers for automatic schema discovery
         self.crawlers = self._create_data_crawlers()
 
@@ -84,7 +85,7 @@ class DataCatalogStack(Stack):
         # Curated data crawler
         crawlers["curated_data"] = glue.CfnCrawler(
             self,
-            "CuratedDataCrawler", 
+            "CuratedDataCrawler",
             name=f"{self.environment}-curated-data-crawler",
             role=f"arn:aws:iam::{self.account}:role/service-role/AWSGlueServiceRole-DataCrawler",
             database_name=self.glue_database.ref,
@@ -101,7 +102,7 @@ class DataCatalogStack(Stack):
             # ),
             configuration='{"Version":1.0,"CrawlerOutput":{"Partitions":{"AddOrUpdateBehavior":"InheritFromTable"}},"Grouping":{"TableGroupingPolicy":"CombineCompatibleSchemas"}}',
             schema_change_policy=glue.CfnCrawler.SchemaChangePolicyProperty(
-                update_behavior="UPDATE_IN_DATABASE", 
+                update_behavior="UPDATE_IN_DATABASE",
                 delete_behavior="LOG",
             ),
             table_prefix="curated_",
@@ -127,7 +128,7 @@ class DataCatalogStack(Stack):
 
         CfnOutput(
             self,
-            "CuratedDataCrawlerName", 
+            "CuratedDataCrawlerName",
             value=self.crawlers["curated_data"].name,
             description="Curated data crawler name - triggered by Step Functions",
         )

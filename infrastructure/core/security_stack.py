@@ -1,4 +1,5 @@
 """Security foundation stack for serverless data platform."""
+
 from aws_cdk import (
     Stack,
     aws_iam as iam,
@@ -16,7 +17,7 @@ class SecurityStack(Stack):
         construct_id: str,
         environment: str,
         config: dict,
-        **kwargs
+        **kwargs,
     ) -> None:
         super().__init__(scope, construct_id, **kwargs)
 
@@ -26,7 +27,9 @@ class SecurityStack(Stack):
         # Core execution roles
         self.lambda_execution_role = self._create_lambda_execution_role()
         self.glue_execution_role = self._create_glue_execution_role()
-        self.step_functions_execution_role = self._create_step_functions_execution_role()
+        self.step_functions_execution_role = (
+            self._create_step_functions_execution_role()
+        )
 
         self._create_outputs()
 
@@ -49,11 +52,13 @@ class SecurityStack(Stack):
                             effect=iam.Effect.ALLOW,
                             actions=[
                                 "s3:GetObject",
-                                "s3:PutObject", 
+                                "s3:PutObject",
                                 "s3:DeleteObject",
                                 "s3:ListBucket",
                             ],
-                            resources=["*"],  # Will be restricted by pipeline-specific policies
+                            resources=[
+                                "*"
+                            ],  # Will be restricted by pipeline-specific policies
                         ),
                     ]
                 ),

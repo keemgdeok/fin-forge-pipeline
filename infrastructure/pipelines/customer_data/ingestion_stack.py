@@ -1,4 +1,5 @@
 """Customer data ingestion pipeline stack."""
+
 from aws_cdk import (
     Stack,
     aws_lambda as lambda_,
@@ -22,7 +23,7 @@ class CustomerDataIngestionStack(Stack):
         config: dict,
         shared_storage_stack,
         security_stack,
-        **kwargs
+        **kwargs,
     ) -> None:
         super().__init__(scope, construct_id, **kwargs)
 
@@ -33,7 +34,7 @@ class CustomerDataIngestionStack(Stack):
 
         # Customer data ingestion Lambda
         self.ingestion_function = self._create_ingestion_function()
-        
+
         # Event-driven ingestion trigger
         self.ingestion_schedule = self._create_ingestion_schedule()
 

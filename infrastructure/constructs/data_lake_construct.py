@@ -1,4 +1,5 @@
 """Data Lake construct for S3 buckets with proper configuration."""
+
 from aws_cdk import (
     aws_s3 as s3,
     RemovalPolicy,
@@ -29,10 +30,15 @@ class DataLakeConstruct(Construct):
 
     def _create_raw_bucket(self) -> None:
         """Create S3 bucket for raw data."""
-        removal_policy = RemovalPolicy.RETAIN if self.environment == "prod" else RemovalPolicy.DESTROY
-        
+        removal_policy = (
+            RemovalPolicy.RETAIN
+            if self.environment == "prod"
+            else RemovalPolicy.DESTROY
+        )
+
         self.raw_bucket = s3.Bucket(
-            self, "RawDataBucket",
+            self,
+            "RawDataBucket",
             bucket_name=f"data-pipeline-raw-{self.environment}-{Aws.ACCOUNT_ID}",
             versioned=True,
             encryption=s3.BucketEncryption.S3_MANAGED,
@@ -53,10 +59,15 @@ class DataLakeConstruct(Construct):
 
     def _create_curated_bucket(self) -> None:
         """Create S3 bucket for curated/processed data."""
-        removal_policy = RemovalPolicy.RETAIN if self.environment == "prod" else RemovalPolicy.DESTROY
-        
+        removal_policy = (
+            RemovalPolicy.RETAIN
+            if self.environment == "prod"
+            else RemovalPolicy.DESTROY
+        )
+
         self.curated_bucket = s3.Bucket(
-            self, "CuratedDataBucket",
+            self,
+            "CuratedDataBucket",
             bucket_name=f"data-pipeline-curated-{self.environment}-{Aws.ACCOUNT_ID}",
             versioned=True,
             encryption=s3.BucketEncryption.S3_MANAGED,
@@ -80,4 +91,3 @@ class DataLakeConstruct(Construct):
             auto_delete_objects=self.config.get("auto_delete_objects", False),
             enforce_ssl=True,
         )
-
