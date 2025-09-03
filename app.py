@@ -103,8 +103,7 @@ customer_processing_stack = CustomerDataProcessingStack(
 # STACK DEPENDENCIES
 # ========================================
 
-# Core dependencies
-shared_storage_stack.add_dependency(security_stack)
+# Core dependencies - Remove circular dependency by not declaring explicit dependency
 catalog_stack.add_dependency(shared_storage_stack)
 
 # Pipeline dependencies
