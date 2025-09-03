@@ -27,9 +27,7 @@ class SecurityStack(Stack):
         # Core execution roles
         self.lambda_execution_role = self._create_lambda_execution_role()
         self.glue_execution_role = self._create_glue_execution_role()
-        self.step_functions_execution_role = (
-            self._create_step_functions_execution_role()
-        )
+        self.step_functions_execution_role = self._create_step_functions_execution_role()
 
         # GitHub Actions OIDC provider and deploy role
         # This enables CI/CD via GitHub Actions without long-lived keys.
@@ -46,9 +44,7 @@ class SecurityStack(Stack):
             role_name=f"{self.env_name}-data-platform-lambda-role",
             assumed_by=iam.ServicePrincipal("lambda.amazonaws.com"),
             managed_policies=[
-                iam.ManagedPolicy.from_aws_managed_policy_name(
-                    "service-role/AWSLambdaBasicExecutionRole"
-                ),
+                iam.ManagedPolicy.from_aws_managed_policy_name("service-role/AWSLambdaBasicExecutionRole"),
             ],
             inline_policies={
                 "S3Access": iam.PolicyDocument(
@@ -61,9 +57,7 @@ class SecurityStack(Stack):
                                 "s3:DeleteObject",
                                 "s3:ListBucket",
                             ],
-                            resources=[
-                                "*"
-                            ],  # Will be restricted by pipeline-specific policies
+                            resources=["*"],  # Will be restricted by pipeline-specific policies
                         ),
                     ]
                 ),
@@ -91,9 +85,7 @@ class SecurityStack(Stack):
             role_name=f"{self.env_name}-data-platform-glue-role",
             assumed_by=iam.ServicePrincipal("glue.amazonaws.com"),
             managed_policies=[
-                iam.ManagedPolicy.from_aws_managed_policy_name(
-                    "service-role/AWSGlueServiceRole"
-                ),
+                iam.ManagedPolicy.from_aws_managed_policy_name("service-role/AWSGlueServiceRole"),
             ],
             inline_policies={
                 "S3DataAccess": iam.PolicyDocument(
@@ -203,9 +195,7 @@ class SecurityStack(Stack):
         principal = iam.OpenIdConnectPrincipal(
             self.github_oidc_provider,
             conditions={
-                "StringEquals": {
-                    "token.actions.githubusercontent.com:aud": "sts.amazonaws.com"
-                },
+                "StringEquals": {"token.actions.githubusercontent.com:aud": "sts.amazonaws.com"},
                 "StringLike": {
                     "token.actions.githubusercontent.com:sub": [
                         f"repo:{repo_owner}/{repo_name}:ref:refs/heads/main",
@@ -223,7 +213,5 @@ class SecurityStack(Stack):
             "GitHubActionsDeployRole",
             role_name=f"{self.env_name}-github-actions-deploy-role",
             assumed_by=principal,
-            managed_policies=[
-                iam.ManagedPolicy.from_aws_managed_policy_name("AdministratorAccess")
-            ],
+            managed_policies=[iam.ManagedPolicy.from_aws_managed_policy_name("AdministratorAccess")],
         )

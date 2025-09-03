@@ -32,9 +32,7 @@ config = get_environment_config(environment)
 
 # Common stack properties
 stack_props = {
-    "env": cdk.Environment(
-        account=config.get("account_id"), region=config.get("region", "us-east-1")
-    ),
+    "env": cdk.Environment(account=config.get("account_id"), region=config.get("region", "us-east-1")),
     "environment": environment,
     "config": config,
 }
@@ -49,9 +47,7 @@ stack_prefix = f"DataPlatform-{environment}"
 security_stack = SecurityStack(app, f"{stack_prefix}-Core-Security", **stack_props)
 
 # Shared Storage - S3 buckets, DynamoDB tables for platform-wide use
-shared_storage_stack = SharedStorageStack(
-    app, f"{stack_prefix}-Core-SharedStorage", **stack_props
-)
+shared_storage_stack = SharedStorageStack(app, f"{stack_prefix}-Core-SharedStorage", **stack_props)
 
 # ========================================
 # GOVERNANCE LAYER
@@ -70,9 +66,7 @@ catalog_stack = DataCatalogStack(
 # ========================================
 
 # Unified Observability - CloudWatch dashboards, alarms, SNS notifications
-observability_stack = ObservabilityStack(
-    app, f"{stack_prefix}-Monitoring-Observability", **stack_props
-)
+observability_stack = ObservabilityStack(app, f"{stack_prefix}-Monitoring-Observability", **stack_props)
 
 # ========================================
 # DOMAIN-SPECIFIC PIPELINE LAYER
@@ -93,9 +87,7 @@ customer_processing_stack = CustomerDataProcessingStack(
     shared_storage_stack=shared_storage_stack,
     lambda_execution_role_arn=security_stack.lambda_execution_role.role_arn,
     glue_execution_role_arn=security_stack.glue_execution_role.role_arn,
-    step_functions_execution_role_arn=(
-        security_stack.step_functions_execution_role.role_arn
-    ),
+    step_functions_execution_role_arn=(security_stack.step_functions_execution_role.role_arn),
     **stack_props,
 )
 

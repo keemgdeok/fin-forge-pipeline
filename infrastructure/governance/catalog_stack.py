@@ -87,10 +87,7 @@ class DataCatalogStack(Stack):
             self,
             "CuratedDataCrawler",
             name=f"{self.env_name}-curated-data-crawler",
-            role=(
-                f"arn:aws:iam::{self.account}:role/service-role/"
-                "AWSGlueServiceRole-DataCrawler"
-            ),
+            role=(f"arn:aws:iam::{self.account}:role/service-role/" "AWSGlueServiceRole-DataCrawler"),
             database_name=self.glue_database.ref,
             targets=glue.CfnCrawler.TargetsProperty(
                 s3_targets=[

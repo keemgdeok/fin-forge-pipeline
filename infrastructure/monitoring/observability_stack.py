@@ -113,9 +113,7 @@ class ObservabilityStack(Stack):
             ),
             threshold=1,
             evaluation_periods=1,
-            comparison_operator=(
-                cloudwatch.ComparisonOperator.GREATER_THAN_OR_EQUAL_TO_THRESHOLD
-            ),
+            comparison_operator=(cloudwatch.ComparisonOperator.GREATER_THAN_OR_EQUAL_TO_THRESHOLD),
         )
 
         sf_failure_alarm.add_alarm_action(cw_actions.SnsAction(self.alerts_topic))

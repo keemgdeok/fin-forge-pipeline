@@ -55,8 +55,7 @@ class CustomerDataProcessingStack(Stack):
             command=glue.CfnJob.JobCommandProperty(
                 name="glueetl",
                 script_location=(
-                    f"s3://{self.shared_storage.artifacts_bucket.bucket_name}"
-                    "/glue-scripts/customer_data_etl.py"
+                    f"s3://{self.shared_storage.artifacts_bucket.bucket_name}" "/glue-scripts/customer_data_etl.py"
                 ),  # TODO: Upload script in Phase 2
                 python_version="3",
             ),
@@ -65,10 +64,7 @@ class CustomerDataProcessingStack(Stack):
                 "--job-bookmark-option": "job-bookmark-enable",
                 "--enable-metrics": "true",
                 "--enable-continuous-cloudwatch-log": "true",
-                "--TempDir": (
-                    f"s3://{self.shared_storage.artifacts_bucket.bucket_name}"
-                    "/temp/"
-                ),
+                "--TempDir": (f"s3://{self.shared_storage.artifacts_bucket.bucket_name}" "/temp/"),
                 "--raw_bucket": self.shared_storage.raw_bucket.bucket_name,
                 "--curated_bucket": self.shared_storage.curated_bucket.bucket_name,
                 "--environment": self.env_name,
@@ -164,9 +160,7 @@ class CustomerDataProcessingStack(Stack):
                 "def lambda_handler(event, context): return {'validation_passed': True}"
             ),  # Placeholder
             timeout=Duration.minutes(3),
-            role=iam.Role.from_role_arn(
-                self, "ValidationLambdaRole", self.lambda_execution_role_arn
-            ),
+            role=iam.Role.from_role_arn(self, "ValidationLambdaRole", self.lambda_execution_role_arn),
             environment={
                 "ENVIRONMENT": self.env_name,
                 "RAW_BUCKET": self.shared_storage.raw_bucket.bucket_name,
@@ -188,9 +182,7 @@ class CustomerDataProcessingStack(Stack):
                 "def lambda_handler(event, context): return {'quality_passed': True}"
             ),  # Placeholder
             timeout=Duration.minutes(3),
-            role=iam.Role.from_role_arn(
-                self, "QualityCheckLambdaRole", self.lambda_execution_role_arn
-            ),
+            role=iam.Role.from_role_arn(self, "QualityCheckLambdaRole", self.lambda_execution_role_arn),
             environment={
                 "ENVIRONMENT": self.env_name,
                 "CURATED_BUCKET": self.shared_storage.curated_bucket.bucket_name,

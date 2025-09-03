@@ -30,9 +30,7 @@ class DataLakeConstruct(Construct):
 
     def _create_raw_bucket(self) -> None:
         """Create S3 bucket for raw data."""
-        removal_policy = (
-            RemovalPolicy.RETAIN if self.env_name == "prod" else RemovalPolicy.DESTROY
-        )
+        removal_policy = RemovalPolicy.RETAIN if self.env_name == "prod" else RemovalPolicy.DESTROY
 
         self.raw_bucket = s3.Bucket(
             self,
@@ -45,9 +43,7 @@ class DataLakeConstruct(Construct):
                 s3.LifecycleRule(
                     id="DeleteOldVersions",
                     expired_object_delete_marker=True,
-                    noncurrent_version_expiration=Duration.days(
-                        self.config.get("s3_retention_days", 30)
-                    ),
+                    noncurrent_version_expiration=Duration.days(self.config.get("s3_retention_days", 30)),
                 ),
             ],
             removal_policy=removal_policy,
@@ -57,9 +53,7 @@ class DataLakeConstruct(Construct):
 
     def _create_curated_bucket(self) -> None:
         """Create S3 bucket for curated/processed data."""
-        removal_policy = (
-            RemovalPolicy.RETAIN if self.env_name == "prod" else RemovalPolicy.DESTROY
-        )
+        removal_policy = RemovalPolicy.RETAIN if self.env_name == "prod" else RemovalPolicy.DESTROY
 
         self.curated_bucket = s3.Bucket(
             self,
