@@ -142,7 +142,7 @@ class CustomerDataProcessingStack(Stack):
             self,
             "CustomerDataProcessingWorkflow",
             state_machine_name=f"{self.env_name}-customer-data-processing",
-            definition=definition,
+            definition_body=sfn.DefinitionBody.from_chainable(definition),
             role=iam.Role.from_role_arn(
                 self,
                 "StepFunctionsExecutionRoleRef",
