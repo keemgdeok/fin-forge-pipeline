@@ -52,9 +52,7 @@ class SecurityStack(Stack):
             f"arn:aws:s3:::{artifacts_bucket_name}/*",
         ]
 
-        glue_job_arn = (
-            f"arn:aws:glue:{self.region}:{self.account}:job/{self.env_name}-customer-data-etl"
-        )
+        glue_job_arn = f"arn:aws:glue:{self.region}:{self.account}:job/{self.env_name}-customer-data-etl"
 
         return iam.Role(
             self,
@@ -140,9 +138,7 @@ class SecurityStack(Stack):
         """Create Step Functions execution role."""
         validation_fn_name = f"{self.env_name}-customer-data-validation"
         quality_fn_name = f"{self.env_name}-customer-data-quality-check"
-        glue_job_arn = (
-            f"arn:aws:glue:{self.region}:{self.account}:job/{self.env_name}-customer-data-etl"
-        )
+        glue_job_arn = f"arn:aws:glue:{self.region}:{self.account}:job/{self.env_name}-customer-data-etl"
 
         return iam.Role(
             self,

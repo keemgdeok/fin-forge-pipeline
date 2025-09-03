@@ -91,9 +91,7 @@ class DataCatalogStack(Stack):
             "CuratedCrawlerRole",
             role_name=f"{self.env_name}-glue-crawler-role",
             assumed_by=iam.ServicePrincipal("glue.amazonaws.com"),
-            managed_policies=[
-                iam.ManagedPolicy.from_aws_managed_policy_name("service-role/AWSGlueServiceRole")
-            ],
+            managed_policies=[iam.ManagedPolicy.from_aws_managed_policy_name("service-role/AWSGlueServiceRole")],
             inline_policies={
                 "S3ReadCurated": iam.PolicyDocument(
                     statements=[
