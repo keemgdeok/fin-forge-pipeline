@@ -106,12 +106,12 @@ customer_processing_stack = CustomerDataProcessingStack(
 # Core dependencies - Remove circular dependency by not declaring explicit dependency
 catalog_stack.add_dependency(shared_storage_stack)
 
-# Pipeline dependencies
+# Pipeline dependencies - Remove Security dependencies to avoid circular references
 customer_ingestion_stack.add_dependency(shared_storage_stack)
-customer_ingestion_stack.add_dependency(security_stack)
+# customer_ingestion_stack.add_dependency(security_stack)  # Removed - CDK auto-resolves
 
-customer_processing_stack.add_dependency(shared_storage_stack)
-customer_processing_stack.add_dependency(security_stack)
+customer_processing_stack.add_dependency(shared_storage_stack) 
+# customer_processing_stack.add_dependency(security_stack)  # Removed - CDK auto-resolves
 customer_processing_stack.add_dependency(customer_ingestion_stack)
 
 # ========================================
