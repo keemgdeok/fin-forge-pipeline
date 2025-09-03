@@ -31,9 +31,7 @@ environment = app.node.try_get_context("environment") or "dev"
 config = get_environment_config(environment)
 
 # CDK environment (account/region)
-cdk_env = cdk.Environment(
-    account=config.get("account_id"), region=config.get("region", "us-east-1")
-)
+cdk_env = cdk.Environment(account=config.get("account_id"), region=config.get("region", "us-east-1"))
 
 stack_prefix = f"DataPlatform-{environment}"
 
@@ -109,9 +107,7 @@ customer_processing_stack = CustomerDataProcessingStack(
     shared_storage_stack=shared_storage_stack,
     lambda_execution_role_arn=security_stack.lambda_execution_role.role_arn,
     glue_execution_role_arn=security_stack.glue_execution_role.role_arn,
-    step_functions_execution_role_arn=(
-        security_stack.step_functions_execution_role.role_arn
-    ),
+    step_functions_execution_role_arn=(security_stack.step_functions_execution_role.role_arn),
     env=cdk_env,
 )
 
