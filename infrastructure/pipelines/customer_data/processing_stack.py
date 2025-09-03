@@ -54,7 +54,10 @@ class CustomerDataProcessingStack(Stack):
             role=self.glue_execution_role_arn,
             command=glue.CfnJob.JobCommandProperty(
                 name="glueetl",
-                script_location=f"s3://{self.shared_storage.artifacts_bucket.bucket_name}/glue-scripts/customer_data_etl.py",  # TODO: Upload script in Phase 2
+                script_location=(
+                    f"s3://{self.shared_storage.artifacts_bucket.bucket_name}"
+                    "/glue-scripts/customer_data_etl.py"
+                ),  # TODO: Upload script in Phase 2
                 python_version="3",
             ),
             default_arguments={
@@ -62,7 +65,10 @@ class CustomerDataProcessingStack(Stack):
                 "--job-bookmark-option": "job-bookmark-enable",
                 "--enable-metrics": "true",
                 "--enable-continuous-cloudwatch-log": "true",
-                "--TempDir": f"s3://{self.shared_storage.artifacts_bucket.bucket_name}/temp/",
+                "--TempDir": (
+                    f"s3://{self.shared_storage.artifacts_bucket.bucket_name}"
+                    "/temp/"
+                ),
                 "--raw_bucket": self.shared_storage.raw_bucket.bucket_name,
                 "--curated_bucket": self.shared_storage.curated_bucket.bucket_name,
                 "--environment": self.env_name,

@@ -93,7 +93,9 @@ customer_processing_stack = CustomerDataProcessingStack(
     shared_storage_stack=shared_storage_stack,
     lambda_execution_role_arn=security_stack.lambda_execution_role.role_arn,
     glue_execution_role_arn=security_stack.glue_execution_role.role_arn,
-    step_functions_execution_role_arn=security_stack.step_functions_execution_role.role_arn,
+    step_functions_execution_role_arn=(
+        security_stack.step_functions_execution_role.role_arn
+    ),
     **stack_props,
 )
 
@@ -117,8 +119,10 @@ customer_ingestion_stack.add_dependency(shared_storage_stack)
 # customer_ingestion_stack.add_dependency(security_stack)  # Removed - CDK auto-resolves
 
 customer_processing_stack.add_dependency(shared_storage_stack)
-# customer_processing_stack.add_dependency(security_stack)  # Removed - CDK auto-resolves
-# customer_processing_stack.add_dependency(customer_ingestion_stack)  # Removed - No direct reference needed
+# customer_processing_stack.add_dependency(security_stack)
+# Removed - CDK auto-resolves
+# customer_processing_stack.add_dependency(customer_ingestion_stack)
+# Removed - No direct reference needed
 
 # ========================================
 # TAGGING STRATEGY

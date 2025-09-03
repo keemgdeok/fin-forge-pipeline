@@ -55,13 +55,15 @@ class CustomerDataIngestionStack(Stack):
             environment={
                 "ENVIRONMENT": self.env_name,
                 "RAW_BUCKET": self.shared_storage.raw_bucket.bucket_name,
-                # "PIPELINE_STATE_TABLE": self.shared_storage.pipeline_state_table.table_name,  # Phase 2
+                # "PIPELINE_STATE_TABLE":
+                # self.shared_storage.pipeline_state_table.table_name,  # Phase 2
             },
         )
 
         # Grant S3 permissions
         self.shared_storage.raw_bucket.grant_write(function)
-        # self.shared_storage.pipeline_state_table.grant_read_write_data(function)  # Phase 2
+        # self.shared_storage.pipeline_state_table.grant_read_write_data(function)
+        # Phase 2
 
         return function
 

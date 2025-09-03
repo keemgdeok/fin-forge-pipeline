@@ -113,7 +113,9 @@ class ObservabilityStack(Stack):
             ),
             threshold=1,
             evaluation_periods=1,
-            comparison_operator=cloudwatch.ComparisonOperator.GREATER_THAN_OR_EQUAL_TO_THRESHOLD,
+            comparison_operator=(
+                cloudwatch.ComparisonOperator.GREATER_THAN_OR_EQUAL_TO_THRESHOLD
+            ),
         )
 
         sf_failure_alarm.add_alarm_action(cw_actions.SnsAction(self.alerts_topic))
@@ -130,8 +132,13 @@ class ObservabilityStack(Stack):
     #         log_groups[component] = logs.LogGroup(
     #             self,
     #             f"{component.title()}LogGroup",
-    #             log_group_name=f"/aws/{component}/{self.env_name}-data-platform",
-    #             retention=logs.RetentionDays.ONE_MONTH if self.env_name != "prod" else logs.RetentionDays.THREE_MONTHS,
+    #             log_group_name=
+    #                 f"/aws/{component}/{self.env_name}-data-platform",
+    #             retention=(
+    #                 logs.RetentionDays.ONE_MONTH
+    #                 if self.env_name != "prod"
+    #                 else logs.RetentionDays.THREE_MONTHS
+    #             ),
     #         )
     #
     #     return log_groups
@@ -148,6 +155,9 @@ class ObservabilityStack(Stack):
         CfnOutput(
             self,
             "PlatformDashboardUrl",
-            value=f"https://console.aws.amazon.com/cloudwatch/home?region={self.region}#dashboards:name={self.platform_dashboard.dashboard_name}",
+            value=(
+                f"https://console.aws.amazon.com/cloudwatch/home?region={self.region}"
+                f"#dashboards:name={self.platform_dashboard.dashboard_name}"
+            ),
             description="Platform dashboard URL",
         )
