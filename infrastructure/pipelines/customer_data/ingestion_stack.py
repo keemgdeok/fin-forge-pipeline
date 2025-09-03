@@ -47,7 +47,9 @@ class CustomerDataIngestionStack(Stack):
             function_name=f"{self.environment}-customer-data-ingestion",
             runtime=lambda_.Runtime.PYTHON_3_12,
             handler="handler.lambda_handler",
-            code=lambda_.Code.from_inline("def lambda_handler(event, context): return {'statusCode': 200}"),  # Placeholder until Phase 2
+            code=lambda_.Code.from_inline(
+                "def lambda_handler(event, context): return {'statusCode': 200}"
+            ),  # Placeholder until Phase 2
             timeout=Duration.minutes(5),
             role=self.security.lambda_execution_role,
             environment={
