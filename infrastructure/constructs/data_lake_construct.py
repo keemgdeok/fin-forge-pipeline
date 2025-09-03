@@ -31,9 +31,7 @@ class DataLakeConstruct(Construct):
     def _create_raw_bucket(self) -> None:
         """Create S3 bucket for raw data."""
         removal_policy = (
-            RemovalPolicy.RETAIN
-            if self.env_name == "prod"
-            else RemovalPolicy.DESTROY
+            RemovalPolicy.RETAIN if self.env_name == "prod" else RemovalPolicy.DESTROY
         )
 
         self.raw_bucket = s3.Bucket(
@@ -60,9 +58,7 @@ class DataLakeConstruct(Construct):
     def _create_curated_bucket(self) -> None:
         """Create S3 bucket for curated/processed data."""
         removal_policy = (
-            RemovalPolicy.RETAIN
-            if self.env_name == "prod"
-            else RemovalPolicy.DESTROY
+            RemovalPolicy.RETAIN if self.env_name == "prod" else RemovalPolicy.DESTROY
         )
 
         self.curated_bucket = s3.Bucket(
