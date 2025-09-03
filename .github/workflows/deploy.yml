@@ -56,11 +56,18 @@ jobs:
         with:
           node-version: ${{ env.NODE_VERSION }}
       
-      - name: Install dependencies
+      - name: Install Python dependencies
         run: |
           pip install -r requirements.txt
           pip install bandit safety
-          npm install --no-save aws-cdk@latest
+
+      - name: Install Node deps (has lockfile)
+        if: hashFiles('**/package-lock.json') != ''
+        run: npm ci
+
+      - name: Install CDK CLI (no lockfile)
+        if: hashFiles('**/package-lock.json') == ''
+        run: npm install --no-save aws-cdk@latest
       
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
