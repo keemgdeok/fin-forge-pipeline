@@ -170,7 +170,8 @@ class CustomerDataProcessingStack(Stack):
             },
         )
 
-        self.shared_storage.raw_bucket.grant_read(function)
+        # S3 권한은 SecurityStack의 LambdaExecutionRole에 최소권한으로 부여됨
+        # (교차 스택 grant로 인한 순환 참조를 피하기 위해 여기서는 grant를 사용하지 않음)
         return function
 
     def _create_quality_check_function(self) -> lambda_.Function:
@@ -192,7 +193,8 @@ class CustomerDataProcessingStack(Stack):
             },
         )
 
-        self.shared_storage.curated_bucket.grant_read(function)
+        # S3 권한은 SecurityStack의 LambdaExecutionRole에 최소권한으로 부여됨
+        # (교차 스택 grant로 인한 순환 참조를 피하기 위해 여기서는 grant를 사용하지 않음)
         return function
 
     def _create_outputs(self) -> None:
