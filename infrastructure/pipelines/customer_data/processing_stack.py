@@ -6,6 +6,7 @@ from aws_cdk import (
     aws_stepfunctions as sfn,
     aws_stepfunctions_tasks as tasks,
     aws_lambda as lambda_,
+    aws_iam as iam,
     Duration,
     CfnOutput,
 )
@@ -22,7 +23,9 @@ class CustomerDataProcessingStack(Stack):
         environment: str,
         config: dict,
         shared_storage_stack,
-        security_stack,
+        lambda_execution_role_arn: str,
+        glue_execution_role_arn: str,
+        step_functions_execution_role_arn: str,
         **kwargs,
     ) -> None:
         super().__init__(scope, construct_id, **kwargs)
@@ -30,7 +33,9 @@ class CustomerDataProcessingStack(Stack):
         self.env_name = environment
         self.config = config
         self.shared_storage = shared_storage_stack
-        self.security = security_stack
+        self.lambda_execution_role_arn = lambda_execution_role_arn
+        self.glue_execution_role_arn = glue_execution_role_arn
+        self.step_functions_execution_role_arn = step_functions_execution_role_arn
 
         # Glue ETL job for customer data transformation
         self.etl_job = self._create_etl_job()
@@ -46,7 +51,7 @@ class CustomerDataProcessingStack(Stack):
             self,
             "CustomerETLJob",
             name=f"{self.env_name}-customer-data-etl",
-            role=self.security.glue_execution_role.role_arn,
+            role=self.glue_execution_role_arn,
             command=glue.CfnJob.JobCommandProperty(
                 name="glueetl",
                 script_location=f"s3://{self.shared_storage.artifacts_bucket.bucket_name}/glue-scripts/customer_data_etl.py",  # TODO: Upload script in Phase 2
@@ -133,7 +138,7 @@ class CustomerDataProcessingStack(Stack):
             "CustomerDataProcessingWorkflow",
             state_machine_name=f"{self.env_name}-customer-data-processing",
             definition=definition,
-            role=self.security.step_functions_execution_role,
+            role=iam.Role.from_role_arn(self, "StepFunctionsExecutionRoleRef", self.step_functions_execution_role_arn),
             timeout=Duration.hours(2),
         )
 
@@ -149,7 +154,7 @@ class CustomerDataProcessingStack(Stack):
                 "def lambda_handler(event, context): return {'validation_passed': True}"
             ),  # Placeholder
             timeout=Duration.minutes(3),
-            role=self.security.lambda_execution_role,
+            role=iam.Role.from_role_arn(self, "ValidationLambdaRole", self.lambda_execution_role_arn),
             environment={
                 "ENVIRONMENT": self.env_name,
                 "RAW_BUCKET": self.shared_storage.raw_bucket.bucket_name,
@@ -171,7 +176,7 @@ class CustomerDataProcessingStack(Stack):
                 "def lambda_handler(event, context): return {'quality_passed': True}"
             ),  # Placeholder
             timeout=Duration.minutes(3),
-            role=self.security.lambda_execution_role,
+            role=iam.Role.from_role_arn(self, "QualityCheckLambdaRole", self.lambda_execution_role_arn),
             environment={
                 "ENVIRONMENT": self.env_name,
                 "CURATED_BUCKET": self.shared_storage.curated_bucket.bucket_name,
