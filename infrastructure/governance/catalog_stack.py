@@ -81,13 +81,16 @@ class DataCatalogStack(Stack):
         """Create Glue crawlers for automatic schema discovery."""
         crawlers = {}
 
-        # Only curated data crawler - Raw data is processed directly by Step Functions workflow
+        # Only curated data crawler - Raw data is processed directly by Step Functions
         # Curated data crawler
         crawlers["curated_data"] = glue.CfnCrawler(
             self,
             "CuratedDataCrawler",
             name=f"{self.environment}-curated-data-crawler",
-            role=f"arn:aws:iam::{self.account}:role/service-role/AWSGlueServiceRole-DataCrawler",
+            role=(
+                f"arn:aws:iam::{self.account}:role/service-role/"
+                "AWSGlueServiceRole-DataCrawler"
+            ),
             database_name=self.glue_database.ref,
             targets=glue.CfnCrawler.TargetsProperty(
                 s3_targets=[
@@ -100,7 +103,11 @@ class DataCatalogStack(Stack):
             # schedule=glue.CfnCrawler.ScheduleProperty(
             #     schedule_expression="cron(30 6 * * ? *)",  # Daily at 6:30 AM
             # ),
-            configuration='{"Version":1.0,"CrawlerOutput":{"Partitions":{"AddOrUpdateBehavior":"InheritFromTable"}},"Grouping":{"TableGroupingPolicy":"CombineCompatibleSchemas"}}',
+            configuration=(
+                '{"Version":1.0,"CrawlerOutput":{"Partitions":'
+                '{"AddOrUpdateBehavior":"InheritFromTable"}},'
+                '"Grouping":{"TableGroupingPolicy":"CombineCompatibleSchemas"}}'
+            ),
             schema_change_policy=glue.CfnCrawler.SchemaChangePolicyProperty(
                 update_behavior="UPDATE_IN_DATABASE",
                 delete_behavior="LOG",

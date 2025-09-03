@@ -5,7 +5,6 @@ from aws_cdk import (
     aws_lambda as lambda_,
     aws_events as events,
     aws_events_targets as targets,
-    aws_s3 as s3,
     Duration,
     CfnOutput,
 )
