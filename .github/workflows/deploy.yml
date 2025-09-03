@@ -43,11 +43,18 @@ jobs:
           python-version: ${{ env.PYTHON_VERSION }}
           cache: 'pip'
       
-      - name: Setup Node.js
+      - name: Setup Node.js (with cache)
+        if: hashFiles('**/package-lock.json', '**/npm-shrinkwrap.json', '**/yarn.lock') != ''
         uses: actions/setup-node@v4
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: 'npm'
+
+      - name: Setup Node.js (no cache)
+        if: hashFiles('**/package-lock.json', '**/npm-shrinkwrap.json', '**/yarn.lock') == ''
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
       
       - name: Install dependencies
         run: |

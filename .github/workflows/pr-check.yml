@@ -39,12 +39,18 @@ jobs:
           python-version: ${{ env.PYTHON_VERSION }}
           cache: 'pip'
       
-      - name: Setup Node.js (infra changed)
-        if: steps.changed-files.outputs.any_changed == 'true' && contains(steps.changed-files.outputs.all_changed_files, 'infrastructure/')
+      - name: Setup Node.js (infra changed, cache)
+        if: steps.changed-files.outputs.any_changed == 'true' && contains(steps.changed-files.outputs.all_changed_files, 'infrastructure/') && hashFiles('**/package-lock.json', '**/npm-shrinkwrap.json', '**/yarn.lock') != ''
         uses: actions/setup-node@v4
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: 'npm'
+
+      - name: Setup Node.js (infra changed, no cache)
+        if: steps.changed-files.outputs.any_changed == 'true' && contains(steps.changed-files.outputs.all_changed_files, 'infrastructure/') && hashFiles('**/package-lock.json', '**/npm-shrinkwrap.json', '**/yarn.lock') == ''
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
       
       - name: Install Python deps (py changed)
         if: steps.changed-files.outputs.any_changed == 'true' && contains(steps.changed-files.outputs.all_changed_files, '.py')
