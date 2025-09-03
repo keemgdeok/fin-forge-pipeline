@@ -6,6 +6,7 @@ on:
 
 env:
   PYTHON_VERSION: '3.12'
+  NODE_VERSION: '18'
 
 jobs:
   quick-check:
@@ -23,7 +24,7 @@ jobs:
       
       - name: Check changes
         run: |
-          CHANGED=$(git diff --name-only HEAD~1 HEAD)
+          CHANGED=$(git diff --name-only origin/${{ github.base_ref }}...HEAD)
           echo "Changed files: $(echo "$CHANGED" | wc -l)"
           
           # Quick format check on changed Python files
@@ -54,8 +55,8 @@ jobs:
             curl -fsSL https://deb.nodesource.com/setup_18.x | sudo -E bash - && sudo apt-get install -y nodejs
             npm install -g aws-cdk@latest
             
-            cdk synth --context environment=dev > /dev/null || {
-              echo "❌ CDK syntax error. Run 'cdk synth' locally"
+            cdk synth --context environment=dev || {
+              echo "❌ CDK syntax error detected"
               exit 1
             }
           fi
