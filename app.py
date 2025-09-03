@@ -9,9 +9,13 @@ import aws_cdk as cdk
 from infrastructure.core.security_stack import SecurityStack
 from infrastructure.core.shared_storage_stack import SharedStorageStack
 
-# Domain Pipelines  
-from infrastructure.pipelines.customer_data.ingestion_stack import CustomerDataIngestionStack
-from infrastructure.pipelines.customer_data.processing_stack import CustomerDataProcessingStack
+# Domain Pipelines
+from infrastructure.pipelines.customer_data.ingestion_stack import (
+    CustomerDataIngestionStack,
+)
+from infrastructure.pipelines.customer_data.processing_stack import (
+    CustomerDataProcessingStack,
+)
 
 # Platform Services
 from infrastructure.monitoring.observability_stack import ObservabilityStack
@@ -29,8 +33,7 @@ config = get_environment_config(environment)
 # Common stack properties
 stack_props = {
     "env": cdk.Environment(
-        account=config.get("account_id"),
-        region=config.get("region", "us-east-1")
+        account=config.get("account_id"), region=config.get("region", "us-east-1")
     ),
     "environment": environment,
     "config": config,
@@ -112,8 +115,8 @@ catalog_stack.add_dependency(shared_storage_stack)
 customer_ingestion_stack.add_dependency(shared_storage_stack)
 # customer_ingestion_stack.add_dependency(security_stack)  # Removed - CDK auto-resolves
 
-customer_processing_stack.add_dependency(shared_storage_stack) 
-# customer_processing_stack.add_dependency(security_stack)  # Removed - CDK auto-resolves  
+customer_processing_stack.add_dependency(shared_storage_stack)
+# customer_processing_stack.add_dependency(security_stack)  # Removed - CDK auto-resolves
 # customer_processing_stack.add_dependency(customer_ingestion_stack)  # Removed - No direct reference needed
 
 # ========================================

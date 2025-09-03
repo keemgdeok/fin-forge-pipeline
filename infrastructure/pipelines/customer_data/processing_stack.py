@@ -138,7 +138,11 @@ class CustomerDataProcessingStack(Stack):
             "CustomerDataProcessingWorkflow",
             state_machine_name=f"{self.env_name}-customer-data-processing",
             definition=definition,
-            role=iam.Role.from_role_arn(self, "StepFunctionsExecutionRoleRef", self.step_functions_execution_role_arn),
+            role=iam.Role.from_role_arn(
+                self,
+                "StepFunctionsExecutionRoleRef",
+                self.step_functions_execution_role_arn,
+            ),
             timeout=Duration.hours(2),
         )
 
@@ -154,7 +158,9 @@ class CustomerDataProcessingStack(Stack):
                 "def lambda_handler(event, context): return {'validation_passed': True}"
             ),  # Placeholder
             timeout=Duration.minutes(3),
-            role=iam.Role.from_role_arn(self, "ValidationLambdaRole", self.lambda_execution_role_arn),
+            role=iam.Role.from_role_arn(
+                self, "ValidationLambdaRole", self.lambda_execution_role_arn
+            ),
             environment={
                 "ENVIRONMENT": self.env_name,
                 "RAW_BUCKET": self.shared_storage.raw_bucket.bucket_name,
@@ -176,7 +182,9 @@ class CustomerDataProcessingStack(Stack):
                 "def lambda_handler(event, context): return {'quality_passed': True}"
             ),  # Placeholder
             timeout=Duration.minutes(3),
-            role=iam.Role.from_role_arn(self, "QualityCheckLambdaRole", self.lambda_execution_role_arn),
+            role=iam.Role.from_role_arn(
+                self, "QualityCheckLambdaRole", self.lambda_execution_role_arn
+            ),
             environment={
                 "ENVIRONMENT": self.env_name,
                 "CURATED_BUCKET": self.shared_storage.curated_bucket.bucket_name,
