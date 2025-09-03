@@ -46,9 +46,7 @@ stack_prefix = f"DataPlatform-{environment}"
 # ========================================
 
 # Security Foundation - IAM roles, policies, least privilege
-security_stack = SecurityStack(
-    app, f"{stack_prefix}-Core-Security", **stack_props
-)
+security_stack = SecurityStack(app, f"{stack_prefix}-Core-Security", **stack_props)
 
 # Shared Storage - S3 buckets, DynamoDB tables for platform-wide use
 shared_storage_stack = SharedStorageStack(
@@ -61,9 +59,10 @@ shared_storage_stack = SharedStorageStack(
 
 # Data Catalog & Governance - Glue Data Catalog, Athena, Lake Formation
 catalog_stack = DataCatalogStack(
-    app, f"{stack_prefix}-Governance-Catalog",
+    app,
+    f"{stack_prefix}-Governance-Catalog",
     shared_storage_stack=shared_storage_stack,
-    **stack_props
+    **stack_props,
 )
 
 # ========================================
@@ -81,19 +80,21 @@ observability_stack = ObservabilityStack(
 
 # Customer Data Pipeline
 customer_ingestion_stack = CustomerDataIngestionStack(
-    app, f"{stack_prefix}-Pipeline-CustomerData-Ingestion",
+    app,
+    f"{stack_prefix}-Pipeline-CustomerData-Ingestion",
     shared_storage_stack=shared_storage_stack,
     security_stack=security_stack,
-    **stack_props
+    **stack_props,
 )
 
 customer_processing_stack = CustomerDataProcessingStack(
-    app, f"{stack_prefix}-Pipeline-CustomerData-Processing",
+    app,
+    f"{stack_prefix}-Pipeline-CustomerData-Processing",
     shared_storage_stack=shared_storage_stack,
     lambda_execution_role_arn=security_stack.lambda_execution_role.role_arn,
     glue_execution_role_arn=security_stack.glue_execution_role.role_arn,
     step_functions_execution_role_arn=security_stack.step_functions_execution_role.role_arn,
-    **stack_props
+    **stack_props,
 )
 
 # TODO: Add more domain pipelines

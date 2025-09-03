@@ -224,8 +224,6 @@ class SecurityStack(Stack):
             role_name=f"{self.env_name}-github-actions-deploy-role",
             assumed_by=principal,
             managed_policies=[
-                iam.ManagedPolicy.from_aws_managed_policy_name(
-                    "AdministratorAccess"
-                )
+                iam.ManagedPolicy.from_aws_managed_policy_name("AdministratorAccess")
             ],
         )
