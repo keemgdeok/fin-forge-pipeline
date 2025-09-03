@@ -1,0 +1,124 @@
+name: Deploy
+
+on:
+  push:
+    branches: [main, develop]
+    paths-ignore:
+      - '**/*.md'
+      - 'docs/**'
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Environment to deploy to'
+        type: choice
+        options: [dev, prod]
+        default: dev
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: deploy-${{ github.workflow }}-${{ github.event.inputs.environment || (github.ref == 'refs/heads/main' && 'prod' || 'dev') }}
+  cancel-in-progress: true
+
+env:
+  PYTHON_VERSION: '3.12'
+  NODE_VERSION: '20'
+  AWS_REGION: us-east-1
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment: ${{ github.event.inputs.environment || (github.ref == 'refs/heads/main' && 'prod' || 'dev') }}
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: 'pip'
+      
+      - name: Setup Node.js (with cache)
+        if: hashFiles('**/package-lock.json', '**/npm-shrinkwrap.json', '**/yarn.lock') != ''
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+
+      - name: Setup Node.js (no cache)
+        if: hashFiles('**/package-lock.json', '**/npm-shrinkwrap.json', '**/yarn.lock') == ''
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+      
+      - name: Install dependencies
+        run: |
+          pip install -r requirements.txt
+          pip install bandit safety
+          npm install --no-save aws-cdk@latest
+      
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_TO_ASSUME }}
+          role-session-name: GithubActionsDeployment
+          aws-region: ${{ env.AWS_REGION }}
+      
+      - name: Full validation
+        env:
+          TARGET_ENV: ${{ github.event.inputs.environment || (github.ref == 'refs/heads/main' && 'prod' || 'dev') }}
+        run: |
+          echo "🔍 Running full validation for $TARGET_ENV..."
+          
+          # Code quality
+          echo "🐍 Code quality checks..."
+          black --check --diff --line-length 120 src/ infrastructure/
+          flake8 src/ infrastructure/ tests/ --max-line-length=120 --extend-ignore=E203,W503,W293,W291,W292,E128
+          
+          # Security scan
+          echo "🔒 Security scanning..."
+          bandit -r infrastructure/ src/ -f json || echo "⚠️ Bandit warnings (non-blocking)"
+          safety check || echo "⚠️ Safety warnings (non-blocking)"
+          
+          # Tests
+          echo "🧪 Running tests..."
+          if [ -d "tests/" ] && find tests/ -name "test_*.py" -type f | head -1 | grep -q .; then
+            pytest tests/ -v --tb=short
+          else
+            echo "No tests found - skipping"
+          fi
+          
+          # CDK validation
+          echo "🏗️ CDK syntax and diff check..."
+          npx cdk synth --context environment=$TARGET_ENV
+          
+          echo "📋 Infrastructure changes:"
+          npx cdk diff --context environment=$TARGET_ENV || echo "No changes detected"
+          
+          echo "✅ Validation complete!"
+      
+      - name: Deploy infrastructure
+        env:
+          TARGET_ENV: ${{ github.event.inputs.environment || (github.ref == 'refs/heads/main' && 'prod' || 'dev') }}
+        run: |
+          echo "🚀 Deploying to $TARGET_ENV environment..."
+          
+          # Bootstrap if needed
+          npx cdk bootstrap --context environment=$TARGET_ENV || echo "Already bootstrapped"
+          
+          # Deploy with progress
+          echo "⏳ Starting deployment..."
+          npx cdk deploy --all --context environment=$TARGET_ENV --require-approval never --progress events
+          
+          echo "✅ Deployment completed!"
+          echo "🎯 Environment: $TARGET_ENV"
+          echo "📅 Deployed at: $(date)"
+          
+          # Quick drift check
+          echo "🔍 Post-deployment validation..."
+          npx cdk diff --context environment=$TARGET_ENV >/dev/null && echo "✅ No drift detected" || echo "⚠️ Configuration drift detected"

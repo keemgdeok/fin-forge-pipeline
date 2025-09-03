@@ -1,4 +1,5 @@
 """Shared storage infrastructure for serverless data platform."""
+
 from aws_cdk import (
     Stack,
     aws_s3 as s3,
@@ -19,22 +20,23 @@ class SharedStorageStack(Stack):
         construct_id: str,
         environment: str,
         config: dict,
-        **kwargs
+        **kwargs,
     ) -> None:
         super().__init__(scope, construct_id, **kwargs)
 
-        self.environment = environment
+        self.env_name = environment
         self.config = config
 
         # Core S3 buckets using existing construct
         self.data_lake = DataLakeConstruct(
-            self, "DataLake",
+            self,
+            "DataLake",
             environment=environment,
             config=config,
         )
         self.raw_bucket = self.data_lake.raw_bucket
         self.curated_bucket = self.data_lake.curated_bucket
-        
+
         # Additional artifacts bucket
         self.artifacts_bucket = self._create_artifacts_bucket()
 
@@ -44,13 +46,12 @@ class SharedStorageStack(Stack):
 
         self._create_outputs()
 
-
     def _create_artifacts_bucket(self) -> s3.Bucket:
         """Create artifacts bucket for scripts, configs, etc."""
         return s3.Bucket(
             self,
             "ArtifactsBucket",
-            bucket_name=f"{self.environment}-data-platform-artifacts-{self.account}",
+            bucket_name=f"{self.env_name}-data-platform-artifacts-{self.account}",
             versioned=True,
             encryption=s3.BucketEncryption.S3_MANAGED,
             removal_policy=RemovalPolicy.DESTROY,
@@ -62,7 +63,7 @@ class SharedStorageStack(Stack):
     #     return dynamodb.Table(
     #         self,
     #         "PipelineStateTable",
-    #         table_name=f"{self.environment}-pipeline-state",
+    #         table_name=f"{self.env_name}-pipeline-state",
     #         partition_key=dynamodb.Attribute(
     #             name="pipeline_id",
     #             type=dynamodb.AttributeType.STRING,
@@ -81,7 +82,7 @@ class SharedStorageStack(Stack):
     #     return dynamodb.Table(
     #         self,
     #         "JobMetadataTable",
-    #         table_name=f"{self.environment}-job-metadata",
+    #         table_name=f"{self.env_name}-job-metadata",
     #         partition_key=dynamodb.Attribute(
     #             name="job_id",
     #             type=dynamodb.AttributeType.STRING,
@@ -127,7 +128,7 @@ class SharedStorageStack(Stack):
 
         # CfnOutput(
         #     self,
-        #     "JobMetadataTableName", 
+        #     "JobMetadataTableName",
         #     value=self.job_metadata_table.table_name,
         #     description="Job metadata DynamoDB table name",
         # )

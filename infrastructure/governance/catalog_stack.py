@@ -1,4 +1,5 @@
 """Data catalog and governance stack for data platform."""
+
 from aws_cdk import (
     Stack,
     aws_glue as glue,
@@ -19,20 +20,20 @@ class DataCatalogStack(Stack):
         environment: str,
         config: dict,
         shared_storage_stack,
-        **kwargs
+        **kwargs,
     ) -> None:
         super().__init__(scope, construct_id, **kwargs)
 
-        self.environment = environment
+        self.env_name = environment
         self.config = config
         self.shared_storage = shared_storage_stack
 
         # Glue Data Catalog database
         self.glue_database = self._create_glue_database()
-        
+
         # Athena workgroup for queries - OPTIONAL: Only needed for larger teams
         # self.athena_workgroup = self._create_athena_workgroup()
-        
+
         # Data crawlers for automatic schema discovery
         self.crawlers = self._create_data_crawlers()
 
@@ -45,10 +46,10 @@ class DataCatalogStack(Stack):
             "DataPlatformDatabase",
             catalog_id=self.account,
             database_input=glue.CfnDatabase.DatabaseInputProperty(
-                name=f"{self.environment}_data_platform",
+                name=f"{self.env_name}_data_platform",
                 description="Central data catalog for data platform",
                 parameters={
-                    "environment": self.environment,
+                    "environment": self.env_name,
                     "created_by": "cdk",
                     "classification": "data-platform",
                 },
@@ -61,7 +62,7 @@ class DataCatalogStack(Stack):
     #     return athena.CfnWorkGroup(
     #         self,
     #         "DataPlatformWorkgroup",
-    #         name=f"{self.environment}-data-platform-workgroup",
+    #         name=f"{self.env_name}-data-platform-workgroup",
     #         description="Athena workgroup for data platform queries",
     #         work_group_configuration=athena.CfnWorkGroup.WorkGroupConfigurationProperty(
     #             result_configuration=athena.CfnWorkGroup.ResultConfigurationProperty(
@@ -80,13 +81,13 @@ class DataCatalogStack(Stack):
         """Create Glue crawlers for automatic schema discovery."""
         crawlers = {}
 
-        # Only curated data crawler - Raw data is processed directly by Step Functions workflow
+        # Only curated data crawler - Raw data is processed directly by Step Functions
         # Curated data crawler
         crawlers["curated_data"] = glue.CfnCrawler(
             self,
-            "CuratedDataCrawler", 
-            name=f"{self.environment}-curated-data-crawler",
-            role=f"arn:aws:iam::{self.account}:role/service-role/AWSGlueServiceRole-DataCrawler",
+            "CuratedDataCrawler",
+            name=f"{self.env_name}-curated-data-crawler",
+            role=(f"arn:aws:iam::{self.account}:role/service-role/" "AWSGlueServiceRole-DataCrawler"),
             database_name=self.glue_database.ref,
             targets=glue.CfnCrawler.TargetsProperty(
                 s3_targets=[
@@ -99,9 +100,13 @@ class DataCatalogStack(Stack):
             # schedule=glue.CfnCrawler.ScheduleProperty(
             #     schedule_expression="cron(30 6 * * ? *)",  # Daily at 6:30 AM
             # ),
-            configuration='{"Version":1.0,"CrawlerOutput":{"Partitions":{"AddOrUpdateBehavior":"InheritFromTable"}},"Grouping":{"TableGroupingPolicy":"CombineCompatibleSchemas"}}',
+            configuration=(
+                '{"Version":1.0,"CrawlerOutput":{"Partitions":'
+                '{"AddOrUpdateBehavior":"InheritFromTable"}},'
+                '"Grouping":{"TableGroupingPolicy":"CombineCompatibleSchemas"}}'
+            ),
             schema_change_policy=glue.CfnCrawler.SchemaChangePolicyProperty(
-                update_behavior="UPDATE_IN_DATABASE", 
+                update_behavior="UPDATE_IN_DATABASE",
                 delete_behavior="LOG",
             ),
             table_prefix="curated_",
@@ -127,7 +132,7 @@ class DataCatalogStack(Stack):
 
         CfnOutput(
             self,
-            "CuratedDataCrawlerName", 
+            "CuratedDataCrawlerName",
             value=self.crawlers["curated_data"].name,
             description="Curated data crawler name - triggered by Step Functions",
         )

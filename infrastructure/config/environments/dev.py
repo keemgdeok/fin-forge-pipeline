@@ -1,4 +1,5 @@
 """Development environment configuration."""
+
 import os
 
 dev_config = {
@@ -18,6 +19,6 @@ dev_config = {
         "Environment": "dev",
         "Project": "ServerlessDataPipeline",
         "Owner": "DataTeam",
-        "CostCenter": "Engineering"
-    }
+        "CostCenter": "Engineering",
+    },
 }

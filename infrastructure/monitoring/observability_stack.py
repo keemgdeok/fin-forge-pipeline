@@ -1,4 +1,5 @@
 """Unified observability stack for serverless data platform."""
+
 from aws_cdk import (
     Stack,
     aws_cloudwatch as cloudwatch,
@@ -20,11 +21,11 @@ class ObservabilityStack(Stack):
         construct_id: str,
         environment: str,
         config: dict,
-        **kwargs
+        **kwargs,
     ) -> None:
         super().__init__(scope, construct_id, **kwargs)
 
-        self.environment = environment
+        self.env_name = environment
         self.config = config
 
         # SNS topic for alerting - single topic for small teams
@@ -46,7 +47,7 @@ class ObservabilityStack(Stack):
         return sns.Topic(
             self,
             "AlertsTopic",
-            topic_name=f"{self.environment}-data-platform-alerts",
+            topic_name=f"{self.env_name}-data-platform-alerts",
             display_name="Data Platform Alerts",
         )
 
@@ -55,7 +56,7 @@ class ObservabilityStack(Stack):
         dashboard = cloudwatch.Dashboard(
             self,
             "PlatformDashboard",
-            dashboard_name=f"{self.environment}-data-platform-overview",
+            dashboard_name=f"{self.env_name}-data-platform-overview",
         )
 
         # Essential metrics widget - simplified view
@@ -68,13 +69,13 @@ class ObservabilityStack(Stack):
                     namespace="AWS/Lambda",
                     metric_name="Errors",
                     statistic="Sum",
-                    label="Lambda Errors"
+                    label="Lambda Errors",
                 ),
                 cloudwatch.Metric(
                     namespace="AWS/States",
-                    metric_name="ExecutionsFailed", 
+                    metric_name="ExecutionsFailed",
                     statistic="Sum",
-                    label="Step Functions Failures"
+                    label="Step Functions Failures",
                 ),
             ],
             right=[
@@ -82,13 +83,13 @@ class ObservabilityStack(Stack):
                     namespace="AWS/Lambda",
                     metric_name="Invocations",
                     statistic="Sum",
-                    label="Lambda Invocations"
+                    label="Lambda Invocations",
                 ),
                 cloudwatch.Metric(
                     namespace="AWS/States",
                     metric_name="ExecutionsSucceeded",
                     statistic="Sum",
-                    label="Step Functions Success"
+                    label="Step Functions Success",
                 ),
             ],
         )
@@ -103,36 +104,39 @@ class ObservabilityStack(Stack):
         sf_failure_alarm = cloudwatch.Alarm(
             self,
             "PipelineFailures",
-            alarm_name=f"{self.environment}-data-pipeline-failures",
+            alarm_name=f"{self.env_name}-data-pipeline-failures",
             alarm_description="Data pipeline Step Functions executions failing",
             metric=cloudwatch.Metric(
-                namespace="AWS/States", 
+                namespace="AWS/States",
                 metric_name="ExecutionsFailed",
                 statistic="Sum",
             ),
             threshold=1,
             evaluation_periods=1,
-            comparison_operator=cloudwatch.ComparisonOperator.GREATER_THAN_OR_EQUAL_TO_THRESHOLD,
+            comparison_operator=(cloudwatch.ComparisonOperator.GREATER_THAN_OR_EQUAL_TO_THRESHOLD),
         )
 
-        sf_failure_alarm.add_alarm_action(
-            cw_actions.SnsAction(self.alerts_topic)
-        )
+        sf_failure_alarm.add_alarm_action(cw_actions.SnsAction(self.alerts_topic))
 
     # OPTIONAL: AWS automatically creates log groups with default retention
     # def _create_log_groups(self) -> dict:
     #     """Create standardized log groups for platform components."""
     #     log_groups = {}
-    #     
+    #
     #     # Platform-wide log groups
     #     components = ["lambda", "glue", "stepfunctions", "pipeline-orchestration"]
-    #     
+    #
     #     for component in components:
     #         log_groups[component] = logs.LogGroup(
     #             self,
     #             f"{component.title()}LogGroup",
-    #             log_group_name=f"/aws/{component}/{self.environment}-data-platform",
-    #             retention=logs.RetentionDays.ONE_MONTH if self.environment != "prod" else logs.RetentionDays.THREE_MONTHS,
+    #             log_group_name=
+    #                 f"/aws/{component}/{self.env_name}-data-platform",
+    #             retention=(
+    #                 logs.RetentionDays.ONE_MONTH
+    #                 if self.env_name != "prod"
+    #                 else logs.RetentionDays.THREE_MONTHS
+    #             ),
     #         )
     #
     #     return log_groups
@@ -141,7 +145,7 @@ class ObservabilityStack(Stack):
         """Create CloudFormation outputs."""
         CfnOutput(
             self,
-            "AlertsTopicArn", 
+            "AlertsTopicArn",
             value=self.alerts_topic.topic_arn,
             description="Data platform alerts SNS topic ARN",
         )
@@ -149,6 +153,9 @@ class ObservabilityStack(Stack):
         CfnOutput(
             self,
             "PlatformDashboardUrl",
-            value=f"https://console.aws.amazon.com/cloudwatch/home?region={self.region}#dashboards:name={self.platform_dashboard.dashboard_name}",
+            value=(
+                f"https://console.aws.amazon.com/cloudwatch/home?region={self.region}"
+                f"#dashboards:name={self.platform_dashboard.dashboard_name}"
+            ),
             description="Platform dashboard URL",
         )

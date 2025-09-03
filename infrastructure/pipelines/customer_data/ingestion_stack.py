@@ -1,10 +1,10 @@
 """Customer data ingestion pipeline stack."""
+
 from aws_cdk import (
     Stack,
     aws_lambda as lambda_,
     aws_events as events,
     aws_events_targets as targets,
-    aws_s3 as s3,
     Duration,
     CfnOutput,
 )
@@ -22,18 +22,18 @@ class CustomerDataIngestionStack(Stack):
         config: dict,
         shared_storage_stack,
         security_stack,
-        **kwargs
+        **kwargs,
     ) -> None:
         super().__init__(scope, construct_id, **kwargs)
 
-        self.environment = environment
+        self.env_name = environment
         self.config = config
         self.shared_storage = shared_storage_stack
         self.security = security_stack
 
         # Customer data ingestion Lambda
         self.ingestion_function = self._create_ingestion_function()
-        
+
         # Event-driven ingestion trigger
         self.ingestion_schedule = self._create_ingestion_schedule()
 
@@ -44,22 +44,26 @@ class CustomerDataIngestionStack(Stack):
         function = lambda_.Function(
             self,
             "CustomerIngestionFunction",
-            function_name=f"{self.environment}-customer-data-ingestion",
+            function_name=f"{self.env_name}-customer-data-ingestion",
             runtime=lambda_.Runtime.PYTHON_3_12,
             handler="handler.lambda_handler",
-            code=lambda_.Code.from_inline("def lambda_handler(event, context): return {'statusCode': 200}"),  # Placeholder until Phase 2
+            code=lambda_.Code.from_inline(
+                "def lambda_handler(event, context): return {'statusCode': 200}"
+            ),  # Placeholder until Phase 2
             timeout=Duration.minutes(5),
             role=self.security.lambda_execution_role,
             environment={
-                "ENVIRONMENT": self.environment,
+                "ENVIRONMENT": self.env_name,
                 "RAW_BUCKET": self.shared_storage.raw_bucket.bucket_name,
-                # "PIPELINE_STATE_TABLE": self.shared_storage.pipeline_state_table.table_name,  # Phase 2
+                # "PIPELINE_STATE_TABLE":
+                # self.shared_storage.pipeline_state_table.table_name,  # Phase 2
             },
         )
 
         # Grant S3 permissions
         self.shared_storage.raw_bucket.grant_write(function)
-        # self.shared_storage.pipeline_state_table.grant_read_write_data(function)  # Phase 2
+        # self.shared_storage.pipeline_state_table.grant_read_write_data(function)
+        # Phase 2
 
         return function
 
@@ -68,7 +72,7 @@ class CustomerDataIngestionStack(Stack):
         rule = events.Rule(
             self,
             "CustomerIngestionSchedule",
-            rule_name=f"{self.environment}-customer-ingestion-schedule",
+            rule_name=f"{self.env_name}-customer-ingestion-schedule",
             schedule=events.Schedule.cron(
                 minute="0",
                 hour="22",  # Daily at 7 AM (KST)

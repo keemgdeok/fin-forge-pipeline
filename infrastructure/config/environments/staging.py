@@ -1,4 +1,5 @@
 """Staging environment configuration."""
+
 import os
 
 staging_config = {
@@ -18,6 +19,6 @@ staging_config = {
         "Environment": "staging",
         "Project": "ServerlessDataPipeline",
         "Owner": "DataTeam",
-        "CostCenter": "Engineering"
-    }
+        "CostCenter": "Engineering",
+    },
 }

@@ -1,4 +1,5 @@
 """Data Lake construct for S3 buckets with proper configuration."""
+
 from aws_cdk import (
     aws_s3 as s3,
     RemovalPolicy,
@@ -20,7 +21,7 @@ class DataLakeConstruct(Construct):
     ) -> None:
         super().__init__(scope, construct_id)
 
-        self.environment = environment
+        self.env_name = environment
         self.config = config
 
         # Create S3 buckets
@@ -29,11 +30,12 @@ class DataLakeConstruct(Construct):
 
     def _create_raw_bucket(self) -> None:
         """Create S3 bucket for raw data."""
-        removal_policy = RemovalPolicy.RETAIN if self.environment == "prod" else RemovalPolicy.DESTROY
-        
+        removal_policy = RemovalPolicy.RETAIN if self.env_name == "prod" else RemovalPolicy.DESTROY
+
         self.raw_bucket = s3.Bucket(
-            self, "RawDataBucket",
-            bucket_name=f"data-pipeline-raw-{self.environment}-{Aws.ACCOUNT_ID}",
+            self,
+            "RawDataBucket",
+            bucket_name=f"data-pipeline-raw-{self.env_name}-{Aws.ACCOUNT_ID}",
             versioned=True,
             encryption=s3.BucketEncryption.S3_MANAGED,
             block_public_access=s3.BlockPublicAccess.BLOCK_ALL,
@@ -41,9 +43,7 @@ class DataLakeConstruct(Construct):
                 s3.LifecycleRule(
                     id="DeleteOldVersions",
                     expired_object_delete_marker=True,
-                    noncurrent_version_expiration=Duration.days(
-                        self.config.get("s3_retention_days", 30)
-                    ),
+                    noncurrent_version_expiration=Duration.days(self.config.get("s3_retention_days", 30)),
                 ),
             ],
             removal_policy=removal_policy,
@@ -53,11 +53,12 @@ class DataLakeConstruct(Construct):
 
     def _create_curated_bucket(self) -> None:
         """Create S3 bucket for curated/processed data."""
-        removal_policy = RemovalPolicy.RETAIN if self.environment == "prod" else RemovalPolicy.DESTROY
-        
+        removal_policy = RemovalPolicy.RETAIN if self.env_name == "prod" else RemovalPolicy.DESTROY
+
         self.curated_bucket = s3.Bucket(
-            self, "CuratedDataBucket",
-            bucket_name=f"data-pipeline-curated-{self.environment}-{Aws.ACCOUNT_ID}",
+            self,
+            "CuratedDataBucket",
+            bucket_name=f"data-pipeline-curated-{self.env_name}-{Aws.ACCOUNT_ID}",
             versioned=True,
             encryption=s3.BucketEncryption.S3_MANAGED,
             block_public_access=s3.BlockPublicAccess.BLOCK_ALL,
@@ -80,4 +81,3 @@ class DataLakeConstruct(Construct):
             auto_delete_objects=self.config.get("auto_delete_objects", False),
             enforce_ssl=True,
         )
-

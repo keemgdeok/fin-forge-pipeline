@@ -9,9 +9,13 @@ import aws_cdk as cdk
 from infrastructure.core.security_stack import SecurityStack
 from infrastructure.core.shared_storage_stack import SharedStorageStack
 
-# Domain Pipelines  
-from infrastructure.pipelines.customer_data.ingestion_stack import CustomerDataIngestionStack
-from infrastructure.pipelines.customer_data.processing_stack import CustomerDataProcessingStack
+# Domain Pipelines
+from infrastructure.pipelines.customer_data.ingestion_stack import (
+    CustomerDataIngestionStack,
+)
+from infrastructure.pipelines.customer_data.processing_stack import (
+    CustomerDataProcessingStack,
+)
 
 # Platform Services
 from infrastructure.monitoring.observability_stack import ObservabilityStack
@@ -26,15 +30,8 @@ app = cdk.App()
 environment = app.node.try_get_context("environment") or "dev"
 config = get_environment_config(environment)
 
-# Common stack properties
-stack_props = {
-    "env": cdk.Environment(
-        account=config.get("account_id"),
-        region=config.get("region", "us-east-1")
-    ),
-    "environment": environment,
-    "config": config,
-}
+# CDK environment (account/region)
+cdk_env = cdk.Environment(account=config.get("account_id"), region=config.get("region", "us-east-1"))
 
 stack_prefix = f"DataPlatform-{environment}"
 
@@ -44,12 +41,20 @@ stack_prefix = f"DataPlatform-{environment}"
 
 # Security Foundation - IAM roles, policies, least privilege
 security_stack = SecurityStack(
-    app, f"{stack_prefix}-Core-Security", **stack_props
+    app,
+    f"{stack_prefix}-Core-Security",
+    environment=environment,
+    config=config,
+    env=cdk_env,
 )
 
 # Shared Storage - S3 buckets, DynamoDB tables for platform-wide use
 shared_storage_stack = SharedStorageStack(
-    app, f"{stack_prefix}-Core-SharedStorage", **stack_props
+    app,
+    f"{stack_prefix}-Core-SharedStorage",
+    environment=environment,
+    config=config,
+    env=cdk_env,
 )
 
 # ========================================
@@ -58,9 +63,12 @@ shared_storage_stack = SharedStorageStack(
 
 # Data Catalog & Governance - Glue Data Catalog, Athena, Lake Formation
 catalog_stack = DataCatalogStack(
-    app, f"{stack_prefix}-Governance-Catalog",
+    app,
+    f"{stack_prefix}-Governance-Catalog",
+    environment=environment,
+    config=config,
     shared_storage_stack=shared_storage_stack,
-    **stack_props
+    env=cdk_env,
 )
 
 # ========================================
@@ -69,7 +77,11 @@ catalog_stack = DataCatalogStack(
 
 # Unified Observability - CloudWatch dashboards, alarms, SNS notifications
 observability_stack = ObservabilityStack(
-    app, f"{stack_prefix}-Monitoring-Observability", **stack_props
+    app,
+    f"{stack_prefix}-Monitoring-Observability",
+    environment=environment,
+    config=config,
+    env=cdk_env,
 )
 
 # ========================================
@@ -78,17 +90,25 @@ observability_stack = ObservabilityStack(
 
 # Customer Data Pipeline
 customer_ingestion_stack = CustomerDataIngestionStack(
-    app, f"{stack_prefix}-Pipeline-CustomerData-Ingestion",
+    app,
+    f"{stack_prefix}-Pipeline-CustomerData-Ingestion",
+    environment=environment,
+    config=config,
     shared_storage_stack=shared_storage_stack,
     security_stack=security_stack,
-    **stack_props
+    env=cdk_env,
 )
 
 customer_processing_stack = CustomerDataProcessingStack(
-    app, f"{stack_prefix}-Pipeline-CustomerData-Processing",
+    app,
+    f"{stack_prefix}-Pipeline-CustomerData-Processing",
+    environment=environment,
+    config=config,
     shared_storage_stack=shared_storage_stack,
-    security_stack=security_stack,
-    **stack_props
+    lambda_execution_role_arn=security_stack.lambda_execution_role.role_arn,
+    glue_execution_role_arn=security_stack.glue_execution_role.role_arn,
+    step_functions_execution_role_arn=(security_stack.step_functions_execution_role.role_arn),
+    env=cdk_env,
 )
 
 # TODO: Add more domain pipelines
@@ -103,17 +123,18 @@ customer_processing_stack = CustomerDataProcessingStack(
 # STACK DEPENDENCIES
 # ========================================
 
-# Core dependencies
-shared_storage_stack.add_dependency(security_stack)
+# Core dependencies - Remove circular dependency by not declaring explicit dependency
 catalog_stack.add_dependency(shared_storage_stack)
 
-# Pipeline dependencies
+# Pipeline dependencies - Remove Security dependencies to avoid circular references
 customer_ingestion_stack.add_dependency(shared_storage_stack)
-customer_ingestion_stack.add_dependency(security_stack)
+# customer_ingestion_stack.add_dependency(security_stack)  # Removed - CDK auto-resolves
 
 customer_processing_stack.add_dependency(shared_storage_stack)
-customer_processing_stack.add_dependency(security_stack)
-customer_processing_stack.add_dependency(customer_ingestion_stack)
+# customer_processing_stack.add_dependency(security_stack)
+# Removed - CDK auto-resolves
+# customer_processing_stack.add_dependency(customer_ingestion_stack)
+# Removed - No direct reference needed
 
 # ========================================
 # TAGGING STRATEGY
