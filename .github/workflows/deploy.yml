@@ -3,10 +3,10 @@ name: Deploy
 on:
   push:
     branches: [main, develop]
-    paths: ['infrastructure/**', 'app.py', 'requirements.txt']
   workflow_dispatch:
     inputs:
       environment:
+        description: 'Environment to deploy to'
         type: choice
         options: [dev, prod]
         default: dev
@@ -19,37 +19,87 @@ env:
 jobs:
   deploy:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     environment: ${{ github.event.inputs.environment || (github.ref == 'refs/heads/main' && 'prod' || 'dev') }}
     
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout code
+        uses: actions/checkout@v4
       
-      - uses: actions/setup-python@v5
+      - name: Setup Python
+        uses: actions/setup-python@v5
         with:
           python-version: ${{ env.PYTHON_VERSION }}
           cache: 'pip'
       
-      - uses: actions/setup-node@v4
+      - name: Setup Node.js & CDK  
+        uses: actions/setup-node@v4
         with:
           node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
       
-      - name: Install
+      - name: Install dependencies
         run: |
-          pip install -r requirements.txt
+          pip install -r requirements.txt black flake8 bandit safety
           npm install -g aws-cdk@latest
       
-      - uses: aws-actions/configure-aws-credentials@v4
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ env.AWS_REGION }}
       
-      - name: Deploy
+      - name: Full validation
         env:
           TARGET_ENV: ${{ github.event.inputs.environment || (github.ref == 'refs/heads/main' && 'prod' || 'dev') }}
         run: |
-          echo "Deploying to $TARGET_ENV"
-          cdk bootstrap --context environment=$TARGET_ENV || echo "Already bootstrapped"
-          cdk diff --context environment=$TARGET_ENV || echo "No changes"
-          cdk deploy --all --context environment=$TARGET_ENV --require-approval never
-          echo "✅ Deployed to $TARGET_ENV"
+          echo "🔍 Running full validation for $TARGET_ENV..."
+          
+          # Code quality
+          echo "🐍 Code quality checks..."
+          black --check --diff src/ infrastructure/
+          flake8 src/ infrastructure/ tests/ --max-line-length=88 --extend-ignore=E203,W503
+          
+          # Security scan
+          echo "🔒 Security scanning..."
+          bandit -r infrastructure/ src/ -f json || echo "⚠️ Bandit warnings (non-blocking)"
+          safety check || echo "⚠️ Safety warnings (non-blocking)"
+          
+          # Tests
+          echo "🧪 Running tests..."
+          if [ -d "tests/" ] && find tests/ -name "test_*.py" -type f | head -1 | grep -q .; then
+            pytest tests/ -v --tb=short
+          else
+            echo "No tests found - skipping"
+          fi
+          
+          # CDK validation
+          echo "🏗️ CDK syntax and diff check..."
+          cdk synth --context environment=$TARGET_ENV --quiet
+          
+          echo "📋 Infrastructure changes:"
+          cdk diff --context environment=$TARGET_ENV || echo "No changes detected"
+          
+          echo "✅ Validation complete!"
+      
+      - name: Deploy infrastructure
+        env:
+          TARGET_ENV: ${{ github.event.inputs.environment || (github.ref == 'refs/heads/main' && 'prod' || 'dev') }}
+        run: |
+          echo "🚀 Deploying to $TARGET_ENV environment..."
+          
+          # Bootstrap if needed
+          cdk bootstrap --context environment=$TARGET_ENV --quiet || echo "Already bootstrapped"
+          
+          # Deploy with progress
+          echo "⏳ Starting deployment..."
+          cdk deploy --all --context environment=$TARGET_ENV --require-approval never --progress events
+          
+          echo "✅ Deployment completed!"
+          echo "🎯 Environment: $TARGET_ENV"
+          echo "📅 Deployed at: $(date)"
+          
+          # Quick drift check
+          echo "🔍 Post-deployment validation..."
+          cdk diff --context environment=$TARGET_ENV >/dev/null && echo "✅ No drift detected" || echo "⚠️ Configuration drift detected"

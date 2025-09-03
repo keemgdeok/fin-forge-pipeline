@@ -1,4 +1,4 @@
-name: PR Check
+name: PR Validation
 
 on:
   pull_request:
@@ -9,56 +9,49 @@ env:
   NODE_VERSION: '18'
 
 jobs:
-  quick-check:
+  validate:
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     
     steps:
-      - uses: actions/checkout@v4
-        with:
-          fetch-depth: 2
+      - name: Checkout code
+        uses: actions/checkout@v4
       
-      - uses: actions/setup-python@v5
+      - name: Setup Python
+        uses: actions/setup-python@v5
         with:
           python-version: ${{ env.PYTHON_VERSION }}
           cache: 'pip'
       
-      - name: Check changes
+      - name: Setup Node.js & CDK
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+      
+      - name: Install dependencies
         run: |
-          CHANGED=$(git diff --name-only origin/${{ github.base_ref }}...HEAD)
-          echo "Changed files: $(echo "$CHANGED" | wc -l)"
+          pip install -r requirements.txt black flake8
+          npm install -g aws-cdk@latest
+      
+      - name: Code quality check
+        run: |
+          echo "🐍 Checking Python code quality..."
+          black --check --diff src/ infrastructure/
+          flake8 src/ infrastructure/ --max-line-length=88 --extend-ignore=E203,W503
           
-          # Quick format check on changed Python files
-          CHANGED_PY=$(echo "$CHANGED" | grep "\.py$" || true)
-          INFRA_CHANGED=$(echo "$CHANGED" | grep -E "(infrastructure/|app\.py)" > /dev/null && echo "true" || echo "false")
+      - name: CDK syntax validation
+        run: |
+          echo "🏗️ Validating CDK infrastructure..."
+          cdk synth --context environment=dev --quiet
           
-          # Install requirements once if needed
-          if [[ -n "$CHANGED_PY" || "$INFRA_CHANGED" == "true" ]]; then
-            pip install -r requirements.txt
+      - name: Quick tests
+        run: |
+          echo "🧪 Running quick tests..."
+          if [ -d "tests/" ] && find tests/ -name "test_*.py" -type f | head -1 | grep -q .; then
+            pytest tests/ -v --tb=short -x --maxfail=3
+          else
+            echo "No tests found - skipping"
           fi
           
-          if [[ -n "$CHANGED_PY" ]]; then
-            pip install black flake8
-            echo "$CHANGED_PY" | xargs black --check --diff || {
-              echo "❌ Fix formatting: black $(echo $CHANGED_PY | tr '\n' ' ')"
-              exit 1
-            }
-            echo "$CHANGED_PY" | xargs flake8 --max-line-length=88 --extend-ignore=E203,W503 || {
-              echo "❌ Fix linting issues"
-              exit 1
-            }
-          fi
-          
-          # CDK syntax check if infrastructure changed
-          if [[ "$INFRA_CHANGED" == "true" ]]; then
-            
-            # Install Node.js and CDK
-            curl -fsSL https://deb.nodesource.com/setup_18.x | sudo -E bash - && sudo apt-get install -y nodejs
-            npm install -g aws-cdk@latest
-            
-            cdk synth --context environment=dev || {
-              echo "❌ CDK syntax error detected"
-              exit 1
-            }
-          fi
-          
-          echo "✅ PR checks passed"
+          echo "✅ PR validation complete!"
