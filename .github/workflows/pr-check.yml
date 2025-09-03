@@ -16,7 +16,7 @@ concurrency:
 
 env:
   PYTHON_VERSION: '3.12'
-  NODE_VERSION: '18'
+  NODE_VERSION: '20'
 
 jobs:
   validate:
@@ -59,7 +59,7 @@ jobs:
 
       - name: Install CDK CLI (infra changed)
         if: steps.changed-files.outputs.any_changed == 'true' && contains(steps.changed-files.outputs.all_changed_files, 'infrastructure/')
-        run: npm install -g aws-cdk@2.100.0
+        run: npm install -g aws-cdk@latest
       
       - name: Lint Python (py changed)
         if: steps.changed-files.outputs.any_changed == 'true' && contains(steps.changed-files.outputs.all_changed_files, '.py')

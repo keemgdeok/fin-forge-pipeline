@@ -24,7 +24,7 @@ concurrency:
 
 env:
   PYTHON_VERSION: '3.12'
-  NODE_VERSION: '18'
+  NODE_VERSION: '20'
   AWS_REGION: us-east-1
 
 jobs:
@@ -60,7 +60,7 @@ jobs:
         run: |
           pip install -r requirements.txt
           pip install bandit safety
-          npm install --no-save aws-cdk@2.100.0
+          npm install --no-save aws-cdk@latest
       
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
