@@ -3,6 +3,7 @@
 from aws_cdk import (
     Stack,
     aws_glue as glue,
+    aws_iam as iam,
     # aws_athena as athena,  # OPTIONAL: Uncomment if workgroup needed
     # aws_lakeformation as lf,  # For advanced governance features
     CfnOutput,
@@ -81,13 +82,41 @@ class DataCatalogStack(Stack):
         """Create Glue crawlers for automatic schema discovery."""
         crawlers = {}
 
+        # Create a minimal IAM role for the crawler, restricted to curated bucket
+        curated_bucket_arn = f"arn:aws:s3:::{self.shared_storage.curated_bucket.bucket_name}"
+        curated_objects_arn = f"{curated_bucket_arn}/*"
+
+        crawler_role = iam.Role(
+            self,
+            "CuratedCrawlerRole",
+            role_name=f"{self.env_name}-glue-crawler-role",
+            assumed_by=iam.ServicePrincipal("glue.amazonaws.com"),
+            managed_policies=[iam.ManagedPolicy.from_aws_managed_policy_name("service-role/AWSGlueServiceRole")],
+            inline_policies={
+                "S3ReadCurated": iam.PolicyDocument(
+                    statements=[
+                        iam.PolicyStatement(
+                            effect=iam.Effect.ALLOW,
+                            actions=["s3:ListBucket"],
+                            resources=[curated_bucket_arn],
+                        ),
+                        iam.PolicyStatement(
+                            effect=iam.Effect.ALLOW,
+                            actions=["s3:GetObject"],
+                            resources=[curated_objects_arn],
+                        ),
+                    ]
+                )
+            },
+        )
+
         # Only curated data crawler - Raw data is processed directly by Step Functions
         # Curated data crawler
         crawlers["curated_data"] = glue.CfnCrawler(
             self,
             "CuratedDataCrawler",
             name=f"{self.env_name}-curated-data-crawler",
-            role=(f"arn:aws:iam::{self.account}:role/service-role/" "AWSGlueServiceRole-DataCrawler"),
+            role=crawler_role.role_arn,
             database_name=self.glue_database.ref,
             targets=glue.CfnCrawler.TargetsProperty(
                 s3_targets=[

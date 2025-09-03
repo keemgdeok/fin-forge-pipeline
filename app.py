@@ -95,7 +95,7 @@ customer_ingestion_stack = CustomerDataIngestionStack(
     environment=environment,
     config=config,
     shared_storage_stack=shared_storage_stack,
-    security_stack=security_stack,
+    lambda_execution_role_arn=security_stack.lambda_execution_role.role_arn,
     env=cdk_env,
 )
 

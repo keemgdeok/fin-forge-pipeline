@@ -48,13 +48,21 @@ class SharedStorageStack(Stack):
 
     def _create_artifacts_bucket(self) -> s3.Bucket:
         """Create artifacts bucket for scripts, configs, etc."""
+        # Align removal policy and auto delete with environment config
+        cfg_policy = (self.config.get("removal_policy", "destroy") or "destroy").lower()
+        removal_policy = (
+            RemovalPolicy.RETAIN if cfg_policy == "retain" or self.env_name == "prod" else RemovalPolicy.DESTROY
+        )
+        auto_delete = bool(self.config.get("auto_delete_objects", False))
+
         return s3.Bucket(
             self,
             "ArtifactsBucket",
             bucket_name=f"{self.env_name}-data-platform-artifacts-{self.account}",
             versioned=True,
             encryption=s3.BucketEncryption.S3_MANAGED,
-            removal_policy=RemovalPolicy.DESTROY,
+            removal_policy=removal_policy,
+            auto_delete_objects=auto_delete,
         )
 
     # PHASE 2: Uncomment when advanced state management is needed
