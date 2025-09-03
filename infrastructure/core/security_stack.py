@@ -38,6 +38,24 @@ class SecurityStack(Stack):
 
     def _create_lambda_execution_role(self) -> iam.Role:
         """Create base Lambda execution role."""
+        # Restrict S3 and Glue access to known resources
+        raw_bucket_name = f"data-pipeline-raw-{self.env_name}-{self.account}"
+        curated_bucket_name = f"data-pipeline-curated-{self.env_name}-{self.account}"
+        artifacts_bucket_name = f"{self.env_name}-data-platform-artifacts-{self.account}"
+
+        s3_bucket_arns = [
+            f"arn:aws:s3:::{raw_bucket_name}",
+            f"arn:aws:s3:::{raw_bucket_name}/*",
+            f"arn:aws:s3:::{curated_bucket_name}",
+            f"arn:aws:s3:::{curated_bucket_name}/*",
+            f"arn:aws:s3:::{artifacts_bucket_name}",
+            f"arn:aws:s3:::{artifacts_bucket_name}/*",
+        ]
+
+        glue_job_arn = (
+            f"arn:aws:glue:{self.region}:{self.account}:job/{self.env_name}-customer-data-etl"
+        )
+
         return iam.Role(
             self,
             "LambdaExecutionRole",
@@ -57,7 +75,7 @@ class SecurityStack(Stack):
                                 "s3:DeleteObject",
                                 "s3:ListBucket",
                             ],
-                            resources=["*"],  # Will be restricted by pipeline-specific policies
+                            resources=s3_bucket_arns,
                         ),
                     ]
                 ),
@@ -70,7 +88,7 @@ class SecurityStack(Stack):
                                 "glue:GetJobRun",
                                 "glue:GetJobRuns",
                             ],
-                            resources=["*"],
+                            resources=[glue_job_arn],
                         ),
                     ]
                 ),
@@ -79,6 +97,19 @@ class SecurityStack(Stack):
 
     def _create_glue_execution_role(self) -> iam.Role:
         """Create Glue job execution role."""
+        raw_bucket_name = f"data-pipeline-raw-{self.env_name}-{self.account}"
+        curated_bucket_name = f"data-pipeline-curated-{self.env_name}-{self.account}"
+        artifacts_bucket_name = f"{self.env_name}-data-platform-artifacts-{self.account}"
+
+        s3_bucket_arns = [
+            f"arn:aws:s3:::{raw_bucket_name}",
+            f"arn:aws:s3:::{raw_bucket_name}/*",
+            f"arn:aws:s3:::{curated_bucket_name}",
+            f"arn:aws:s3:::{curated_bucket_name}/*",
+            f"arn:aws:s3:::{artifacts_bucket_name}",
+            f"arn:aws:s3:::{artifacts_bucket_name}/*",
+        ]
+
         return iam.Role(
             self,
             "GlueExecutionRole",
@@ -98,7 +129,7 @@ class SecurityStack(Stack):
                                 "s3:DeleteObject",
                                 "s3:ListBucket",
                             ],
-                            resources=["*"],
+                            resources=s3_bucket_arns,
                         ),
                     ]
                 ),
@@ -107,6 +138,12 @@ class SecurityStack(Stack):
 
     def _create_step_functions_execution_role(self) -> iam.Role:
         """Create Step Functions execution role."""
+        validation_fn_name = f"{self.env_name}-customer-data-validation"
+        quality_fn_name = f"{self.env_name}-customer-data-quality-check"
+        glue_job_arn = (
+            f"arn:aws:glue:{self.region}:{self.account}:job/{self.env_name}-customer-data-etl"
+        )
+
         return iam.Role(
             self,
             "StepFunctionsExecutionRole",
@@ -118,7 +155,10 @@ class SecurityStack(Stack):
                         iam.PolicyStatement(
                             effect=iam.Effect.ALLOW,
                             actions=["lambda:InvokeFunction"],
-                            resources=["*"],
+                            resources=[
+                                f"arn:aws:lambda:{self.region}:{self.account}:function/{validation_fn_name}",
+                                f"arn:aws:lambda:{self.region}:{self.account}:function/{quality_fn_name}",
+                            ],
                         ),
                     ]
                 ),
@@ -131,7 +171,7 @@ class SecurityStack(Stack):
                                 "glue:GetJobRun",
                                 "glue:BatchStopJobRun",
                             ],
-                            resources=["*"],
+                            resources=[glue_job_arn],
                         ),
                     ]
                 ),
