@@ -111,8 +111,8 @@ customer_ingestion_stack.add_dependency(shared_storage_stack)
 # customer_ingestion_stack.add_dependency(security_stack)  # Removed - CDK auto-resolves
 
 customer_processing_stack.add_dependency(shared_storage_stack) 
-# customer_processing_stack.add_dependency(security_stack)  # Removed - CDK auto-resolves
-customer_processing_stack.add_dependency(customer_ingestion_stack)
+# customer_processing_stack.add_dependency(security_stack)  # Removed - CDK auto-resolves  
+# customer_processing_stack.add_dependency(customer_ingestion_stack)  # Removed - No direct reference needed
 
 # ========================================
 # TAGGING STRATEGY
