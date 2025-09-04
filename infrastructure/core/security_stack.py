@@ -90,6 +90,46 @@ class SecurityStack(Stack):
                         ),
                     ]
                 ),
+                "SnsPublishAlerts": iam.PolicyDocument(
+                    statements=[
+                        iam.PolicyStatement(
+                            effect=iam.Effect.ALLOW,
+                            actions=["sns:Publish"],
+                            resources=[
+                                f"arn:aws:sns:{self.region}:{self.account}:{self.env_name}-data-platform-alerts"
+                            ],
+                        )
+                    ]
+                ),
+                "StatesStartExecution": iam.PolicyDocument(
+                    statements=[
+                        iam.PolicyStatement(
+                            effect=iam.Effect.ALLOW,
+                            actions=["states:StartExecution"],
+                            resources=[
+                                f"arn:aws:states:{self.region}:{self.account}:stateMachine:{self.env_name}-customer-data-processing"
+                            ],
+                        )
+                    ]
+                ),
+                "CloudWatchPutMetric": iam.PolicyDocument(
+                    statements=[
+                        iam.PolicyStatement(
+                            effect=iam.Effect.ALLOW,
+                            actions=["cloudwatch:PutMetricData"],
+                            resources=["*"],
+                        )
+                    ]
+                ),
+                "SesSendEmail": iam.PolicyDocument(
+                    statements=[
+                        iam.PolicyStatement(
+                            effect=iam.Effect.ALLOW,
+                            actions=["ses:SendEmail", "ses:SendRawEmail"],
+                            resources=["*"],
+                        )
+                    ]
+                ),
             },
         )
 

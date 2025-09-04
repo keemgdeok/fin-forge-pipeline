@@ -6,11 +6,11 @@ import os
 from typing import Dict, Any
 from datetime import datetime
 
-from data_validator import DataValidator
-from validation_rules import StandardValidationRules
+from shared.validation.data_validator import DataValidator
+from shared.validation.validation_rules import StandardValidationRules
+from shared.utils.logger import get_logger, extract_correlation_id
 
-logger = logging.getLogger()
-logger.setLevel(logging.INFO)
+logger = get_logger(__name__)
 
 
 def main(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
@@ -37,6 +37,9 @@ def main(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
         Response dictionary with validation results and ETL trigger status
     """
     try:
+        corr_id = extract_correlation_id(event)
+        if corr_id:
+            globals()["logger"] = get_logger(__name__, correlation_id=corr_id)
         logger.info(f"Received event: {json.dumps(event, default=str)}")
 
         # Extract event parameters

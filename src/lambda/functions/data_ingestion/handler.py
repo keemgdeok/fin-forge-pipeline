@@ -3,10 +3,12 @@
 import json
 import logging
 import os
-from typing import Dict, Any
+from typing import Dict, Any, List
 
-logger = logging.getLogger()
-logger.setLevel(logging.INFO)
+from shared.models.events import DataIngestionEvent
+from shared.utils.logger import get_logger, extract_correlation_id
+
+logger = get_logger(__name__)
 
 
 def main(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
@@ -21,6 +23,10 @@ def main(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
         Response dictionary with ingestion results
     """
     try:
+        # Upgrade logger with correlation id if present
+        corr_id = extract_correlation_id(event)
+        if corr_id:
+            globals()["logger"] = get_logger(__name__, correlation_id=corr_id)
         logger.info(f"Received event: {json.dumps(event, default=str)}")
 
         # Environment variables
@@ -29,19 +35,18 @@ def main(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
 
         logger.info(f"Processing data ingestion for environment: {environment}")
 
-        # Parse expected inputs with safe defaults
-        data_source = str(event.get("data_source", "yahoo_finance"))
-        data_type = str(event.get("data_type", "prices"))
-        symbols = event.get("symbols", [])
-        if not isinstance(symbols, list):
-            symbols = []
-        valid_symbols = [s for s in symbols if isinstance(s, str) and s.strip()]
-        invalid_symbols = [s for s in symbols if not isinstance(s, str) or not str(s).strip()]
-        period = str(event.get("period", "1y"))
-        interval = str(event.get("interval", "1d"))
-        domain = str(event.get("domain", "market"))
-        table_name = str(event.get("table_name", "prices"))
-        file_format = str(event.get("file_format", "parquet"))
+        # Parse expected inputs with safe defaults using typed model
+        model = DataIngestionEvent.model_validate(event)
+        data_source = model.data_source
+        data_type = model.data_type
+        symbols_raw: List[Any] = event.get("symbols", []) if isinstance(event, dict) else []
+        valid_symbols = model.symbols
+        invalid_symbols = [s for s in symbols_raw if not isinstance(s, str) or not str(s).strip()]
+        period = model.period
+        interval = model.interval
+        domain = model.domain
+        table_name = model.table_name
+        file_format = model.file_format
 
         # Placeholder: here you would route based on data_source/data_type
         # and fetch data using the appropriate client, then write to S3 raw bucket.
@@ -54,7 +59,7 @@ def main(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                 "message": "Data ingestion completed successfully",
                 "data_source": data_source,
                 "data_type": data_type,
-                "symbols_requested": symbols,
+                "symbols_requested": symbols_raw,
                 "symbols_processed": valid_symbols,
                 "invalid_symbols": invalid_symbols,
                 "period": period,
@@ -77,3 +82,4 @@ def main(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
             "statusCode": 500,
             "body": {"error": str(e), "message": "Data ingestion failed"},
         }
+

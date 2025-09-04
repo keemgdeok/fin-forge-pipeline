@@ -8,8 +8,9 @@ import boto3
 from datetime import datetime
 from botocore.exceptions import ClientError
 
-logger = logging.getLogger()
-logger.setLevel(logging.INFO)
+from shared.utils.logger import get_logger, extract_correlation_id
+
+logger = get_logger(__name__)
 
 
 class NotificationManager:
@@ -27,7 +28,6 @@ class NotificationManager:
         table_name = notification_data.get("table_name", "Unknown")
         environment = notification_data.get("environment", "Unknown")
 
-        # Create detailed message
         message_parts = [
             f"Pipeline: {pipeline_name}",
             f"Domain: {domain}",
@@ -37,14 +37,11 @@ class NotificationManager:
             f"Timestamp: {notification_data.get('timestamp', datetime.utcnow().isoformat())}",
         ]
 
-        # Add execution details if available
         if notification_data.get("execution_arn"):
             message_parts.append(f"Execution ARN: {notification_data['execution_arn']}")
-
         if notification_data.get("duration"):
             message_parts.append(f"Duration: {notification_data['duration']}")
 
-        # Add error details if status is failed
         if status in ["FAILED", "ERROR", "TIMEOUT"] and notification_data.get("error_details"):
             message_parts.extend(
                 [
@@ -56,7 +53,6 @@ class NotificationManager:
                 ]
             )
 
-        # Add success details if status is succeeded
         if status == "SUCCEEDED" and notification_data.get("success_details"):
             success_details = notification_data["success_details"]
             message_parts.extend(
@@ -68,9 +64,8 @@ class NotificationManager:
                 ]
             )
 
-        formatted_message = "\\n".join(message_parts)
+        formatted_message = "\n".join(message_parts)
 
-        # Create subject
         status_emoji = {
             "SUCCEEDED": "✅",
             "FAILED": "❌",
@@ -81,7 +76,6 @@ class NotificationManager:
         }.get(status, "❓")
 
         subject = f"{status_emoji} Pipeline {status} - " f"{domain}/{table_name} ({environment})"
-
         return {"message": formatted_message, "subject": subject}
 
     def publish_sns_notification(
@@ -90,19 +84,15 @@ class NotificationManager:
         """Publish notification to SNS topic."""
         try:
             publish_params: Dict[str, Any] = {"TopicArn": topic_arn, "Message": message, "Subject": subject}
-
             if message_attributes:
                 formatted_attributes = {}
                 for key, value in message_attributes.items():
                     formatted_attributes[key] = {"DataType": "String", "StringValue": str(value)}
                 publish_params["MessageAttributes"] = formatted_attributes
-
             response = self.sns_client.publish(**publish_params)
             message_id = response["MessageId"]
-
             logger.info(f"Published SNS notification: {message_id}")
             return message_id
-
         except ClientError as e:
             logger.error(f"Failed to publish SNS notification: {str(e)}")
             return None
@@ -117,10 +107,8 @@ class NotificationManager:
                 Destination={"ToAddresses": destination_emails},
                 Message={"Subject": {"Data": subject}, "Body": {"Text": {"Data": body}}},
             )
-
             logger.info(f"Sent email notification: {response['MessageId']}")
             return True
-
         except ClientError as e:
             logger.error(f"Failed to send email notification: {str(e)}")
             return False
@@ -130,34 +118,12 @@ def main(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
     """
     Main handler for notification Lambda function.
 
-    Expected event structure:
-    {
-        "notification_type": "pipeline_status",  # pipeline_status, error_alert
-        "pipeline_name": "string",
-        "domain": "string",
-        "table_name": "string",
-        "status": "string",                      # SUCCEEDED, FAILED, STARTED, RUNNING
-        "execution_arn": "string",
-        "duration": "string",
-        "environment": "string",
-        "error_details": {                       # Only if status is FAILED/ERROR
-            "error_type": "string",
-            "error_message": "string"
-        },
-        "success_details": {                     # Only if status is SUCCEEDED
-            "records_processed": "number",
-            "output_location": "string"
-        }
-    }
-
-    Args:
-        event: Lambda event data containing notification details
-        context: Lambda context
-
-    Returns:
-        Response dictionary with notification results
+    Expected event structure: see module docstring
     """
     try:
+        corr_id = extract_correlation_id(event)
+        if corr_id:
+            globals()["logger"] = get_logger(__name__, correlation_id=corr_id)
         logger.info(f"Received notification event: {json.dumps(event, default=str)}")
 
         # Environment variables
@@ -176,20 +142,15 @@ def main(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
         # Validate required fields
         required_fields = ["pipeline_name", "domain", "status"]
         missing_fields = [field for field in required_fields if not event.get(field)]
-
         if missing_fields:
             raise ValueError(f"Missing required notification fields: {missing_fields}")
 
         # Add environment and timestamp to event data
         event["environment"] = environment
         event["timestamp"] = datetime.utcnow().isoformat()
-
         logger.info(f"Processing {notification_type} notification for {domain}/{table_name}: {status}")
 
-        # Initialize notification manager
         notification_manager = NotificationManager()
-
-        # Format notification message
         formatted_notification = notification_manager.format_pipeline_message(event)
 
         # Prepare message attributes for filtering
@@ -199,7 +160,6 @@ def main(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
             "status": status,
             "environment": environment,
         }
-
         if table_name:
             message_attributes["table_name"] = table_name
 
@@ -224,13 +184,11 @@ def main(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
             and admin_emails
             and any(email.strip() for email in admin_emails)
         ):
-
             valid_emails = [email.strip() for email in admin_emails if email.strip()]
             email_sent = notification_manager.send_email_notification(
                 source_email, valid_emails, formatted_notification["subject"], formatted_notification["message"]
             )
 
-        # Prepare success response
         result = {
             "statusCode": 200,
             "body": {
@@ -253,7 +211,7 @@ def main(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
     except ValueError as e:
         logger.error(f"Validation error: {str(e)}")
         return {"statusCode": 400, "body": {"error": str(e), "message": "Invalid notification event structure"}}
-
     except Exception as e:
         logger.error(f"Error processing notification: {str(e)}")
         return {"statusCode": 500, "body": {"error": str(e), "message": "Failed to process notification"}}
+

@@ -10,6 +10,7 @@ from aws_cdk import (
     Duration,
     CfnOutput,
 )
+from aws_cdk.aws_lambda_python_alpha import PythonFunction
 from constructs import Construct
 
 
@@ -33,7 +34,10 @@ class CustomerDataIngestionStack(Stack):
         self.shared_storage = shared_storage_stack
         self.lambda_execution_role_arn = lambda_execution_role_arn
 
-        # Customer data ingestion Lambda
+        # Common layer for shared code
+        self.common_layer = self._create_common_layer()
+
+        # Customer data ingestion Lambda (real handler)
         self.ingestion_function = self._create_ingestion_function()
 
         # Event-driven ingestion trigger
@@ -41,21 +45,21 @@ class CustomerDataIngestionStack(Stack):
 
         self._create_outputs()
 
-    def _create_ingestion_function(self) -> lambda_.Function:
+    def _create_ingestion_function(self) -> lambda_.IFunction:
         """Create customer data ingestion Lambda function."""
-        function = lambda_.Function(
+        function = PythonFunction(
             self,
             "CustomerIngestionFunction",
             function_name=f"{self.env_name}-customer-data-ingestion",
             runtime=lambda_.Runtime.PYTHON_3_12,
-            handler="handler.lambda_handler",
-            code=lambda_.Code.from_inline(
-                "def lambda_handler(event, context): return {'statusCode': 200}"
-            ),  # Placeholder until Phase 2
+            entry="src/lambda/functions/data_ingestion",
+            index="handler.py",
+            handler="main",
             memory_size=self._lambda_memory(),
             timeout=self._lambda_timeout(),
             log_retention=self._log_retention(),
             role=iam.Role.from_role_arn(self, "IngestionLambdaRole", self.lambda_execution_role_arn),
+            layers=[self.common_layer],
             environment={
                 "ENVIRONMENT": self.env_name,
                 "RAW_BUCKET": self.shared_storage.raw_bucket.bucket_name,
@@ -112,4 +116,18 @@ class CustomerDataIngestionStack(Stack):
             "IngestionFunctionArn",
             value=self.ingestion_function.function_arn,
             description="Customer data ingestion function ARN",
+        )
+
+    def _create_common_layer(self) -> lambda_.LayerVersion:
+        """Create Common Layer for shared models and utilities.
+
+        Uses standard Python layer layout: python/shared/... at the root of asset.
+        """
+        return lambda_.LayerVersion(
+            self,
+            "CommonLayer",
+            layer_version_name=f"{self.env_name}-common-layer",
+            description="Shared common models and utilities",
+            compatible_runtimes=[lambda_.Runtime.PYTHON_3_12],
+            code=lambda_.Code.from_asset("src/lambda/layers/common"),
         )

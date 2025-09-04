@@ -8,8 +8,9 @@ import boto3
 from datetime import datetime
 from botocore.exceptions import ClientError
 
-logger = logging.getLogger()
-logger.setLevel(logging.INFO)
+from shared.utils.logger import get_logger, extract_correlation_id
+
+logger = get_logger(__name__)
 
 
 class ErrorProcessor:
@@ -102,6 +103,9 @@ def main(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
         Response dictionary with processing results
     """
     try:
+        corr_id = extract_correlation_id(event)
+        if corr_id:
+            globals()["logger"] = get_logger(__name__, correlation_id=corr_id)
         logger.info(f"Received error event: {json.dumps(event, default=str)}")
 
         # Extract error details from event
@@ -185,3 +189,4 @@ def main(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
     except Exception as e:
         logger.error(f"Error processing error event: {str(e)}")
         return {"statusCode": 500, "body": {"error": str(e), "message": "Failed to process error event"}}
+
