@@ -15,6 +15,13 @@ dev_config = {
     "enable_detailed_monitoring": True,
     "auto_delete_objects": True,
     "removal_policy": "destroy",
+    # Ingestion defaults (EventBridge -> Lambda input)
+    "ingestion_symbols": ["AAPL", "MSFT"],
+    "ingestion_period": "1mo",
+    "ingestion_interval": "1d",
+    "ingestion_file_format": "json",
+    "ingestion_domain": "market",
+    "ingestion_table_name": "prices",
     "tags": {
         "Environment": "dev",
         "Project": "ServerlessDataPipeline",

@@ -106,7 +106,15 @@ class CustomerDataIngestionStack(Stack):
             ),
         )
 
-        rule.add_target(targets.LambdaFunction(self.ingestion_function))
+        # Provide a default event payload so the ingestion can actually fetch data
+        # Values are sourced from environment config with safe fallbacks
+        default_event = self._default_ingestion_event()
+        rule.add_target(
+            targets.LambdaFunction(
+                self.ingestion_function,
+                event=events.RuleTargetInput.from_object(default_event),
+            )
+        )
         return rule
 
     def _create_outputs(self) -> None:
@@ -131,3 +139,24 @@ class CustomerDataIngestionStack(Stack):
             compatible_runtimes=[lambda_.Runtime.PYTHON_3_12],
             code=lambda_.Code.from_asset("src/lambda/layers/common"),
         )
+
+    def _default_ingestion_event(self) -> dict:
+        """Build a default ingestion event from config with safe fallbacks."""
+        symbols = self.config.get("ingestion_symbols", ["AAPL", "MSFT"])
+        period = self.config.get("ingestion_period", "1mo")
+        interval = self.config.get("ingestion_interval", "1d")
+        file_format = self.config.get("ingestion_file_format", "json")
+        # Domain/table reflect current demo scope; adjust per domain pipeline
+        domain = self.config.get("ingestion_domain", "market")
+        table_name = self.config.get("ingestion_table_name", "prices")
+
+        return {
+            "data_source": "yahoo_finance",
+            "data_type": "prices",
+            "domain": domain,
+            "table_name": table_name,
+            "symbols": symbols,
+            "period": period,
+            "interval": interval,
+            "file_format": file_format,
+        }
