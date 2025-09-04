@@ -69,7 +69,9 @@ class YahooFinanceClient:
                     out.append(
                         PriceRecord(
                             symbol=sym,
-                            timestamp=ts.to_pydatetime() if hasattr(ts, "to_pydatetime") else datetime.fromisoformat(str(ts)),
+                            timestamp=(
+                                ts.to_pydatetime() if hasattr(ts, "to_pydatetime") else datetime.fromisoformat(str(ts))
+                            ),
                             open=_safe_float(row, "Open"),
                             high=_safe_float(row, "High"),
                             low=_safe_float(row, "Low"),
@@ -91,4 +93,3 @@ def _safe_float(row: Any, key: str) -> Optional[float]:
         return float(val)
     except Exception:
         return None
-
