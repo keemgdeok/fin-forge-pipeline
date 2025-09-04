@@ -32,4 +32,3 @@ class StandardValidationRules:
             "allow_duplicates": True,
         }
         return presets.get(key, default_rules)
-

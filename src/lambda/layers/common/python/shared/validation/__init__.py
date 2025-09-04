@@ -6,4 +6,3 @@ Canonical import path:
 
 from .data_validator import DataValidator  # noqa: F401
 from .validation_rules import StandardValidationRules  # noqa: F401
-

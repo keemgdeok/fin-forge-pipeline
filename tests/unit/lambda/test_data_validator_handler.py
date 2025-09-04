@@ -42,13 +42,13 @@ def test_validator_success_path(monkeypatch):
     }
 
     resp = mod["main"](event, None)
-    assert resp["statusCode"] == 200
-    body = resp["body"]
-    assert body["etl_job_run_id"] == "jr-1234"
-    assert body["domain"] == "market"
+    assert resp["validation_passed"] is True
+    assert resp["etl_job_run_id"] == "jr-1234"
+    assert resp["domain"] == "market"
 
 
 def test_validator_missing_params(monkeypatch):
     mod = load_validator_module()
     resp = mod["main"]({"domain": "market"}, None)
-    assert resp["statusCode"] == 400
+    assert resp["validation_passed"] is False
+    assert "error" in resp

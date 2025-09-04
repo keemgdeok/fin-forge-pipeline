@@ -33,4 +33,3 @@ class EnvSettings:
             source_email=os.environ.get("SOURCE_EMAIL"),
             admin_emails=admin_emails,
         )
-

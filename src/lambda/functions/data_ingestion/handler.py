@@ -1,7 +1,6 @@
 """Data ingestion Lambda function handler - lightweight orchestrator."""
 
 import json
-import logging
 import os
 from typing import Dict, Any, List
 
@@ -23,17 +22,16 @@ def main(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
         Response dictionary with ingestion results
     """
     try:
-        # Upgrade logger with correlation id if present
+        # Use invocation-scoped logger to avoid correlation id leakage
         corr_id = extract_correlation_id(event)
-        if corr_id:
-            globals()["logger"] = get_logger(__name__, correlation_id=corr_id)
-        logger.info(f"Received event: {json.dumps(event, default=str)}")
+        log = get_logger(__name__, correlation_id=corr_id) if corr_id else logger
+        log.info(f"Received event: {json.dumps(event, default=str)}")
 
         # Environment variables
         raw_bucket = os.environ.get("RAW_BUCKET")
         environment = os.environ.get("ENVIRONMENT")
 
-        logger.info(f"Processing data ingestion for environment: {environment}")
+        log.info(f"Processing data ingestion for environment: {environment}")
 
         # Parse expected inputs with safe defaults using typed model
         model = DataIngestionEvent.model_validate(event)
@@ -73,13 +71,14 @@ def main(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
             },
         }
 
-        logger.info("Data ingestion completed successfully")
+        log.info("Data ingestion completed successfully")
         return result
 
     except Exception as e:
-        logger.error(f"Error in data ingestion: {str(e)}")
+        # Include stack trace for better observability
+        log = logger
+        log.exception("Error in data ingestion")
         return {
             "statusCode": 500,
             "body": {"error": str(e), "message": "Data ingestion failed"},
         }
-

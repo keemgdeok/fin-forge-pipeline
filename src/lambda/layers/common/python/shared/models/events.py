@@ -65,4 +65,3 @@ class ErrorEvent(BaseModel):
     error_message: str
     severity: str = "ERROR"
     context: Optional[ErrorContext] = None
-

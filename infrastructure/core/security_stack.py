@@ -107,7 +107,11 @@ class SecurityStack(Stack):
                             effect=iam.Effect.ALLOW,
                             actions=["states:StartExecution"],
                             resources=[
-                                f"arn:aws:states:{self.region}:{self.account}:stateMachine:{self.env_name}-customer-data-processing"
+                                (
+                                    "arn:aws:states:"
+                                    f"{self.region}:{self.account}:stateMachine:"
+                                    f"{self.env_name}-customer-data-processing"
+                                )
                             ],
                         )
                     ]

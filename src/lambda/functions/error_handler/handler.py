@@ -1,7 +1,6 @@
 """Error handler Lambda function for centralized error processing."""
 
 import json
-import logging
 import os
 from typing import Dict, Any, Optional
 import boto3
@@ -104,9 +103,8 @@ def main(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
     """
     try:
         corr_id = extract_correlation_id(event)
-        if corr_id:
-            globals()["logger"] = get_logger(__name__, correlation_id=corr_id)
-        logger.info(f"Received error event: {json.dumps(event, default=str)}")
+        log = get_logger(__name__, correlation_id=corr_id) if corr_id else logger
+        log.info(f"Received error event: {json.dumps(event, default=str)}")
 
         # Extract error details from event
         error_details = event.get("error", {})
@@ -130,7 +128,7 @@ def main(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
         error_details.setdefault("error_type", "UnknownError")
         error_details.setdefault("context", {})
 
-        logger.error(f"Processing error from {error_details['source']}: {error_details['error_message']}")
+        log.error(f"Processing error from {error_details['source']}: {error_details['error_message']}")
 
         # Initialize error processor
         error_processor = ErrorProcessor()
@@ -140,7 +138,7 @@ def main(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
         if error_topic_arn:
             notification_sent = error_processor.publish_error_notification(error_topic_arn, error_details)
         else:
-            logger.warning("ERROR_TOPIC_ARN not configured, skipping notification")
+            log.warning("ERROR_TOPIC_ARN not configured, skipping notification")
 
         # Put custom metrics
         metric_dimensions = {
@@ -179,14 +177,15 @@ def main(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
             },
         }
 
-        logger.info(f"Successfully processed error from {error_details['source']}")
+        log.info(f"Successfully processed error from {error_details['source']}")
         return result
 
     except ValueError as e:
-        logger.error(f"Validation error: {str(e)}")
+        log = logger
+        log.exception("Validation error in error handler")
         return {"statusCode": 400, "body": {"error": str(e), "message": "Invalid error event structure"}}
 
     except Exception as e:
-        logger.error(f"Error processing error event: {str(e)}")
+        log = logger
+        log.exception("Error processing error event")
         return {"statusCode": 500, "body": {"error": str(e), "message": "Failed to process error event"}}
-

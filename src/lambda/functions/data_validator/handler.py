@@ -1,7 +1,6 @@
 """Data validator Lambda function handler - lightweight orchestrator."""
 
 import json
-import logging
 import os
 from typing import Dict, Any
 from datetime import datetime
@@ -38,9 +37,8 @@ def main(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
     """
     try:
         corr_id = extract_correlation_id(event)
-        if corr_id:
-            globals()["logger"] = get_logger(__name__, correlation_id=corr_id)
-        logger.info(f"Received event: {json.dumps(event, default=str)}")
+        log = get_logger(__name__, correlation_id=corr_id) if corr_id else logger
+        log.info(f"Received event: {json.dumps(event, default=str)}")
 
         # Extract event parameters
         source_bucket = event.get("source_bucket")
@@ -66,15 +64,15 @@ def main(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
         if not table_name or not domain:
             raise ValueError("table_name and domain are required")
 
-        logger.info(f"Validating {file_type} file: s3://{source_bucket}/{source_key}")
-        logger.info(f"Table: {domain}/{table_name}")
+        log.info(f"Validating {file_type} file: s3://{source_bucket}/{source_key}")
+        log.info(f"Table: {domain}/{table_name}")
 
         # Get validation rules (use provided rules or get standard rules by domain)
         if not validation_rules:
             validation_rules = StandardValidationRules.get_validation_rules_by_domain(domain, table_name)
-            logger.info(f"Using standard validation rules for domain: {domain}")
+            log.info(f"Using standard validation rules for domain: {domain}")
         else:
-            logger.info("Using custom validation rules from event")
+            log.info("Using custom validation rules from event")
 
         # Initialize data validator
         validator = DataValidator()
@@ -91,22 +89,20 @@ def main(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
 
         # Check if validation passed
         if not validation_results["overall_valid"]:
-            logger.error("Data validation failed")
+            log.error("Data validation failed")
             return {
-                "statusCode": 400,
-                "body": {
-                    "message": "Data validation failed",
-                    "source_location": f"s3://{source_bucket}/{source_key}",
-                    "table_name": table_name,
-                    "domain": domain,
-                    "file_type": file_type,
-                    "environment": environment,
-                    "validation_results": validation_results,
-                    "processed_at": datetime.now().isoformat(),
-                },
+                "validation_passed": False,
+                "message": "Data validation failed",
+                "source_location": f"s3://{source_bucket}/{source_key}",
+                "table_name": table_name,
+                "domain": domain,
+                "file_type": file_type,
+                "environment": environment,
+                "validation_results": validation_results,
+                "processed_at": datetime.now().isoformat(),
             }
 
-        logger.info("All data validations passed successfully")
+        log.info("All data validations passed successfully")
 
         # Trigger Glue ETL job if configured and validation passed
         etl_job_run_id = None
@@ -129,7 +125,7 @@ def main(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
             etl_job_run_id = validator.trigger_glue_etl_job(job_name, job_arguments)
 
             if not etl_job_run_id:
-                logger.warning(f"Failed to trigger Glue ETL job: {job_name}")
+                log.warning(f"Failed to trigger Glue ETL job: {job_name}")
 
         # Trigger Step Function workflow if configured
         step_function_execution_arn = None
@@ -151,52 +147,48 @@ def main(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                     name=f"{domain}-{table_name}-{int(datetime.now().timestamp())}",
                 )
                 step_function_execution_arn = response["executionArn"]
-                logger.info(f"Started Step Function execution: {step_function_execution_arn}")
+                log.info(f"Started Step Function execution: {step_function_execution_arn}")
             except Exception as e:
-                logger.warning(f"Failed to start Step Function execution: {str(e)}")
+                log.warning(f"Failed to start Step Function execution: {str(e)}")
 
         # Prepare success response
         result = {
-            "statusCode": 200,
-            "body": {
-                "message": "Data validation completed successfully",
-                "source_location": f"s3://{source_bucket}/{source_key}",
-                "table_name": table_name,
-                "domain": domain,
-                "file_type": file_type,
-                "environment": environment,
-                "validation_results": validation_results,
-                "etl_job_run_id": etl_job_run_id,
-                "step_function_execution_arn": step_function_execution_arn,
-                "processed_at": datetime.now().isoformat(),
-            },
+            "validation_passed": True,
+            "message": "Data validation completed successfully",
+            "source_location": f"s3://{source_bucket}/{source_key}",
+            "table_name": table_name,
+            "domain": domain,
+            "file_type": file_type,
+            "environment": environment,
+            "validation_results": validation_results,
+            "etl_job_run_id": etl_job_run_id,
+            "step_function_execution_arn": step_function_execution_arn,
+            "processed_at": datetime.now().isoformat(),
         }
 
-        logger.info(f"Successfully validated and processed data for {domain}/{table_name}")
+        log.info(f"Successfully validated and processed data for {domain}/{table_name}")
         return result
 
     except ValueError as e:
-        logger.error(f"Validation error: {str(e)}")
+        log = logger
+        log.exception("Validation error")
         return {
-            "statusCode": 400,
-            "body": {
-                "error": str(e),
-                "message": "Invalid request parameters",
-                "table_name": event.get("table_name"),
-                "domain": event.get("domain"),
-                "processed_at": datetime.now().isoformat(),
-            },
+            "validation_passed": False,
+            "error": str(e),
+            "message": "Invalid request parameters",
+            "table_name": event.get("table_name"),
+            "domain": event.get("domain"),
+            "processed_at": datetime.now().isoformat(),
         }
 
     except Exception as e:
-        logger.error(f"Error in data validation: {str(e)}")
+        log = logger
+        log.exception("Error in data validation")
         return {
-            "statusCode": 500,
-            "body": {
-                "error": str(e),
-                "message": "Data validation processing failed",
-                "table_name": event.get("table_name"),
-                "domain": event.get("domain"),
-                "processed_at": datetime.now().isoformat(),
-            },
+            "validation_passed": False,
+            "error": str(e),
+            "message": "Data validation processing failed",
+            "table_name": event.get("table_name"),
+            "domain": event.get("domain"),
+            "processed_at": datetime.now().isoformat(),
         }

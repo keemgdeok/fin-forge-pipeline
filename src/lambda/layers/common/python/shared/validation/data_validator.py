@@ -91,4 +91,3 @@ class DataValidator:
             file_type=str(config["file_type"]),
             validation_rules=dict(config["validation_rules"] or {}),
         )
-

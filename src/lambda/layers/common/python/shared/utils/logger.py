@@ -39,7 +39,7 @@ class _Adapter(logging.LoggerAdapter):
         return msg, kwargs
 
 
-def get_logger(name: str, correlation_id: Optional[str] = None) -> logging.Logger:
+def get_logger(name: str, correlation_id: Optional[str] = None) -> logging.LoggerAdapter:
     """Return a JSON-formatted logger adapter with optional correlation_id."""
     base = logging.getLogger(name)
     if not base.handlers:
@@ -58,11 +58,13 @@ def extract_correlation_id(event: Optional[Dict[str, Any]]) -> Optional[str]:
     if not isinstance(event, dict):
         return None
     for key in ("correlation_id", "CorrelationId", "request_id"):
-        if isinstance(event.get(key), str) and event.get(key):
-            return event.get(key)
-    headers = event.get("headers") if isinstance(event.get("headers"), dict) else {}
+        val = event.get(key)
+        if isinstance(val, str) and val:
+            return val
+    hdr_obj = event.get("headers")
+    headers: Dict[str, Any] = hdr_obj if isinstance(hdr_obj, dict) else {}
     for h in ("x-correlation-id", "x-request-id", "x-amzn-trace-id"):
-        if isinstance(headers.get(h), str) and headers.get(h):
-            return headers.get(h)
+        hv = headers.get(h)
+        if isinstance(hv, str) and hv:
+            return hv
     return None
-

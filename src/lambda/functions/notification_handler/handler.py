@@ -1,7 +1,6 @@
 """Notification handler Lambda function for pipeline status notifications."""
 
 import json
-import logging
 import os
 from typing import Dict, Any, Optional, List
 import boto3
@@ -122,9 +121,8 @@ def main(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
     """
     try:
         corr_id = extract_correlation_id(event)
-        if corr_id:
-            globals()["logger"] = get_logger(__name__, correlation_id=corr_id)
-        logger.info(f"Received notification event: {json.dumps(event, default=str)}")
+        log = get_logger(__name__, correlation_id=corr_id) if corr_id else logger
+        log.info(f"Received notification event: {json.dumps(event, default=str)}")
 
         # Environment variables
         environment = os.environ.get("ENVIRONMENT")
@@ -148,7 +146,7 @@ def main(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
         # Add environment and timestamp to event data
         event["environment"] = environment
         event["timestamp"] = datetime.utcnow().isoformat()
-        logger.info(f"Processing {notification_type} notification for {domain}/{table_name}: {status}")
+        log.info(f"Processing {notification_type} notification for {domain}/{table_name}: {status}")
 
         notification_manager = NotificationManager()
         formatted_notification = notification_manager.format_pipeline_message(event)
@@ -173,7 +171,7 @@ def main(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                 message_attributes,
             )
         else:
-            logger.warning("NOTIFICATION_TOPIC_ARN not configured, skipping SNS notification")
+            log.warning("NOTIFICATION_TOPIC_ARN not configured, skipping SNS notification")
 
         # Send email notification for critical statuses
         email_sent = False
@@ -205,13 +203,14 @@ def main(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
             },
         }
 
-        logger.info(f"Successfully processed notification for {domain}/{table_name}: {status}")
+        log.info(f"Successfully processed notification for {domain}/{table_name}: {status}")
         return result
 
     except ValueError as e:
-        logger.error(f"Validation error: {str(e)}")
+        log = logger
+        log.exception("Validation error in notification handler")
         return {"statusCode": 400, "body": {"error": str(e), "message": "Invalid notification event structure"}}
     except Exception as e:
-        logger.error(f"Error processing notification: {str(e)}")
+        log = logger
+        log.exception("Error processing notification")
         return {"statusCode": 500, "body": {"error": str(e), "message": "Failed to process notification"}}
-
