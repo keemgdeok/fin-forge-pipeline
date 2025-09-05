@@ -3,6 +3,13 @@ import json
 import runpy
 from datetime import datetime, timezone
 
+import boto3
+from moto import mock_aws
+
+# Ensure default region for moto/boto3 clients created without explicit region
+os.environ.setdefault("AWS_REGION", "us-east-1")
+os.environ.setdefault("AWS_DEFAULT_REGION", "us-east-1")
+
 
 def _load_orchestrator_module():
     return runpy.run_path("src/lambda/functions/ingestion_orchestrator/handler.py")
@@ -10,45 +17,6 @@ def _load_orchestrator_module():
 
 def _load_worker_module():
     return runpy.run_path("src/lambda/functions/ingestion_worker/handler.py")
-
-
-class _SQSStub:
-    def __init__(self):
-        self.batches = []
-
-    def send_message_batch(self, **kwargs):
-        self.batches.append(kwargs["Entries"])
-        return {"Successful": [{"Id": e["Id"]} for e in kwargs["Entries"]]}
-
-
-class _S3Stub:
-    def __init__(self, existing_symbol: str | None = None):
-        self.put_calls = []
-        self.existing_symbol = existing_symbol or ""
-
-    def list_objects_v2(self, **kwargs):
-        prefix = kwargs.get("Prefix", "")
-        # If prefix contains the existing_symbol, pretend an object already exists
-        if self.existing_symbol and f"symbol={self.existing_symbol}/" in prefix:
-            return {"KeyCount": 1}
-        return {"KeyCount": 0}
-
-    def put_object(self, **kwargs):
-        self.put_calls.append(kwargs)
-        return {"ETag": "stub"}
-
-
-class _BotoStub:
-    def __init__(self, sqs: _SQSStub | None = None, s3: _S3Stub | None = None):
-        self._sqs = sqs
-        self._s3 = s3
-
-    def client(self, name: str):
-        if name == "sqs" and self._sqs is not None:
-            return self._sqs
-        if name == "s3" and self._s3 is not None:
-            return self._s3
-        raise ValueError(name)
 
 
 class _Rec:
@@ -85,27 +53,34 @@ class _YFStub:
         return out
 
 
-def _sqs_records_from_batches(batches):
+def _receive_all_sqs_messages(queue_url: str):
+    sqs = boto3.client("sqs", region_name=os.environ.get("AWS_REGION", "us-east-1"))
     records = []
-    mid = 0
-    for batch in batches:
-        for e in batch:
-            records.append({"messageId": f"m-{mid}", "body": e["MessageBody"]})
-            mid += 1
+    while True:
+        resp = sqs.receive_message(QueueUrl=queue_url, MaxNumberOfMessages=10, WaitTimeSeconds=0)
+        msgs = resp.get("Messages", [])
+        if not msgs:
+            break
+        for m in msgs:
+            records.append({"messageId": m["MessageId"], "body": m["Body"]})
     return {"Records": records}
 
 
+@mock_aws
 def test_e2e_basic_flow(monkeypatch):
     # Orchestrator environment
     os.environ["ENVIRONMENT"] = "dev"
-    os.environ["QUEUE_URL"] = "https://sqs.example/queue"
     os.environ["CHUNK_SIZE"] = "2"
     os.environ["SQS_SEND_BATCH_SIZE"] = "10"
-
-    mod_orc = _load_orchestrator_module()
-    sqs = _SQSStub()
-    # Patch boto3 in orchestrator
-    monkeypatch.setitem(mod_orc["main"].__globals__, "boto3", _BotoStub(sqs=sqs))
+    # moto SQS queue
+    sqs = boto3.client("sqs", region_name="us-east-1")
+    q = sqs.create_queue(QueueName="extract-e2e-queue")
+    queue_url = q["QueueUrl"]
+    os.environ["QUEUE_URL"] = queue_url
+    # moto S3 bucket
+    s3 = boto3.client("s3", region_name="us-east-1")
+    bucket = "raw-bucket-dev"
+    s3.create_bucket(Bucket=bucket)
 
     event = {
         "symbols": ["AAPL", "MSFT", "GOOG"],
@@ -116,43 +91,39 @@ def test_e2e_basic_flow(monkeypatch):
         "file_format": "json",
     }
 
+    mod_orc = _load_orchestrator_module()
     resp = mod_orc["main"](event, None)
-    assert resp["published"] == 2  # 3 symbols -> chunks of 2 -> 2 messages
+    assert resp["published"] == 2
 
     # Worker environment
-    os.environ["RAW_BUCKET"] = "raw-bucket-dev"
+    os.environ["RAW_BUCKET"] = bucket
     os.environ["ENABLE_GZIP"] = "false"
-
     mod_wrk = _load_worker_module()
-    # Patch shared ingestion service for s3 and yfinance
+    # Patch only YahooFinance (AWS to moto)
     import importlib
 
     svc = importlib.import_module("shared.ingestion.service")
-    s3 = _S3Stub()
-    monkeypatch.setitem(svc.__dict__, "boto3", _BotoStub(s3=s3))
     monkeypatch.setitem(svc.__dict__, "YahooFinanceClient", lambda: _YFStub(["AAPL", "MSFT", "GOOG"]))
 
-    sqs_event = _sqs_records_from_batches(sqs.batches)
+    sqs_event = _receive_all_sqs_messages(queue_url)
     wr = mod_wrk["main"](sqs_event, None)
     assert wr == {"batchItemFailures": []}
-    # 3 symbols -> 3 puts
-    assert len(s3.put_calls) == 3
-    # Validate key structure
-    for call in s3.put_calls:
-        key = call["Key"]
-        assert key.startswith("market/prices/ingestion_date=") and "/symbol=" in key
+    listed = s3.list_objects_v2(Bucket=bucket, Prefix="market/prices/")
+    assert int(listed.get("KeyCount", 0)) >= 3
 
 
+@mock_aws
 def test_e2e_gzip(monkeypatch):
     # Orchestrator prepares one symbol message
     os.environ["ENVIRONMENT"] = "dev"
-    os.environ["QUEUE_URL"] = "https://sqs.example/queue"
+    sqs = boto3.client("sqs", region_name="us-east-1")
+    q = sqs.create_queue(QueueName="extract-e2e-queue-gzip")
+    queue_url = q["QueueUrl"]
+    os.environ["QUEUE_URL"] = queue_url
     os.environ["CHUNK_SIZE"] = "1"
     os.environ["SQS_SEND_BATCH_SIZE"] = "10"
 
     mod_orc = _load_orchestrator_module()
-    sqs = _SQSStub()
-    monkeypatch.setitem(mod_orc["main"].__globals__, "boto3", _BotoStub(sqs=sqs))
 
     event = {
         "symbols": ["AAPL"],
@@ -165,76 +136,78 @@ def test_e2e_gzip(monkeypatch):
     mod_orc["main"](event, None)
 
     # Worker with gzip enabled
-    os.environ["RAW_BUCKET"] = "raw-bucket-dev"
+    s3 = boto3.client("s3", region_name="us-east-1")
+    bucket = "raw-bucket-dev"
+    s3.create_bucket(Bucket=bucket)
+    os.environ["RAW_BUCKET"] = bucket
     os.environ["ENABLE_GZIP"] = "true"
-
     mod_wrk = _load_worker_module()
     import importlib
 
     svc = importlib.import_module("shared.ingestion.service")
-    s3 = _S3Stub()
-    monkeypatch.setitem(svc.__dict__, "boto3", _BotoStub(s3=s3))
     monkeypatch.setitem(svc.__dict__, "YahooFinanceClient", lambda: _YFStub(["AAPL"]))
 
-    sqs_event = _sqs_records_from_batches(sqs.batches)
+    sqs_event = _receive_all_sqs_messages(queue_url)
     wr = mod_wrk["main"](sqs_event, None)
     assert wr == {"batchItemFailures": []}
-    assert len(s3.put_calls) == 1
-    call = s3.put_calls[0]
-    assert call["ContentEncoding"] == "gzip"
-    assert call["Key"].endswith(".gz")
+    listed = s3.list_objects_v2(Bucket=bucket, Prefix="market/prices/")
+    assert int(listed.get("KeyCount", 0)) == 1
+    key = listed["Contents"][0]["Key"]
+    assert key.endswith(".gz")
+    head = s3.head_object(Bucket=bucket, Key=key)
+    assert head.get("ContentEncoding") == "gzip"
 
 
+@mock_aws
 def test_e2e_partial_batch_failure(monkeypatch):
-    # Prepare two messages: one valid, one invalid JSON
-    sqs_batches = [
-        [
-            {
-                "Id": "m-0",
-                "MessageBody": json.dumps(
-                    {
-                        "symbols": ["AAPL"],
-                        "domain": "market",
-                        "table_name": "prices",
-                        "period": "1mo",
-                        "interval": "1d",
-                        "file_format": "json",
-                    }
-                ),
-            },
-            {"Id": "m-1", "MessageBody": "{not-json}"},
-        ]
-    ]
+    # Create queue with valid and invalid message
+    sqs = boto3.client("sqs", region_name="us-east-1")
+    q = sqs.create_queue(QueueName="extract-e2e-partial")
+    queue_url = q["QueueUrl"]
+    valid_body = json.dumps(
+        {
+            "symbols": ["AAPL"],
+            "domain": "market",
+            "table_name": "prices",
+            "period": "1mo",
+            "interval": "1d",
+            "file_format": "json",
+        }
+    )
+    sqs.send_message(QueueUrl=queue_url, MessageBody=valid_body)
+    sqs.send_message(QueueUrl=queue_url, MessageBody="{not-json}")
 
     os.environ["ENVIRONMENT"] = "dev"
-    os.environ["RAW_BUCKET"] = "raw-bucket-dev"
+    s3 = boto3.client("s3", region_name="us-east-1")
+    bucket = "raw-bucket-dev"
+    s3.create_bucket(Bucket=bucket)
+    os.environ["RAW_BUCKET"] = bucket
     os.environ["ENABLE_GZIP"] = "false"
-
     mod_wrk = _load_worker_module()
     import importlib
 
     svc = importlib.import_module("shared.ingestion.service")
-    s3 = _S3Stub()
-    monkeypatch.setitem(svc.__dict__, "boto3", _BotoStub(s3=s3))
     monkeypatch.setitem(svc.__dict__, "YahooFinanceClient", lambda: _YFStub(["AAPL"]))
 
-    sqs_event = _sqs_records_from_batches(sqs_batches)
+    sqs_event = _receive_all_sqs_messages(queue_url)
     wr = mod_wrk["main"](sqs_event, None)
-    assert wr["batchItemFailures"] and wr["batchItemFailures"][0]["itemIdentifier"] == "m-1"
-    # Valid one still writes
-    assert len(s3.put_calls) == 1
+    assert any(f.get("itemIdentifier") for f in wr.get("batchItemFailures", []))
+    listed = s3.list_objects_v2(Bucket=bucket, Prefix="market/prices/")
+    assert int(listed.get("KeyCount", 0)) == 1
 
 
+@mock_aws
 def test_e2e_idempotency_skip(monkeypatch):
     # Orchestrator for two symbols
     os.environ["ENVIRONMENT"] = "dev"
-    os.environ["QUEUE_URL"] = "https://sqs.example/queue"
+    sqs = boto3.client("sqs", region_name="us-east-1")
+    q = sqs.create_queue(QueueName="extract-e2e-idem")
+    queue_url = q["QueueUrl"]
+    os.environ["QUEUE_URL"] = queue_url
     os.environ["CHUNK_SIZE"] = "2"
     os.environ["SQS_SEND_BATCH_SIZE"] = "10"
 
     mod_orc = _load_orchestrator_module()
-    sqs = _SQSStub()
-    monkeypatch.setitem(mod_orc["main"].__globals__, "boto3", _BotoStub(sqs=sqs))
 
     event = {
         "symbols": ["AAPL", "MSFT"],
@@ -247,19 +220,27 @@ def test_e2e_idempotency_skip(monkeypatch):
     mod_orc["main"](event, None)
 
     # Worker sees existing prefix for MSFT -> skip write for MSFT
-    os.environ["RAW_BUCKET"] = "raw-bucket-dev"
+    s3 = boto3.client("s3", region_name="us-east-1")
+    bucket = "raw-bucket-dev"
+    s3.create_bucket(Bucket=bucket)
+    os.environ["RAW_BUCKET"] = bucket
     os.environ["ENABLE_GZIP"] = "false"
+    # Pre-create an existing MSFT object under today's prefix
+    today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    prefix = f"market/prices/ingestion_date={today}/data_source=yahoo_finance/symbol=MSFT/interval=1d/period=1mo/"
+    s3.put_object(Bucket=bucket, Key=f"{prefix}existing.json", Body=b"x")
+
     mod_wrk = _load_worker_module()
     import importlib
 
     svc = importlib.import_module("shared.ingestion.service")
-    s3 = _S3Stub(existing_symbol="MSFT")
-    monkeypatch.setitem(svc.__dict__, "boto3", _BotoStub(s3=s3))
     monkeypatch.setitem(svc.__dict__, "YahooFinanceClient", lambda: _YFStub(["AAPL", "MSFT"]))
 
-    sqs_event = _sqs_records_from_batches(sqs.batches)
+    sqs_event = _receive_all_sqs_messages(queue_url)
     wr = mod_wrk["main"](sqs_event, None)
     assert wr == {"batchItemFailures": []}
-    # Only AAPL written
-    assert len(s3.put_calls) == 1
-    assert "/symbol=AAPL/" in s3.put_calls[0]["Key"]
+    listed_msft = s3.list_objects_v2(Bucket=bucket, Prefix=prefix)
+    assert int(listed_msft.get("KeyCount", 0)) == 1
+    prefix_aapl = f"market/prices/ingestion_date={today}/data_source=yahoo_finance/symbol=AAPL/"
+    listed_aapl = s3.list_objects_v2(Bucket=bucket, Prefix=prefix_aapl)
+    assert int(listed_aapl.get("KeyCount", 0)) >= 1

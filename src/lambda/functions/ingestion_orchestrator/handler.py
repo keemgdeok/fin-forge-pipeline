@@ -120,12 +120,14 @@ def main(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
 
     published = 0
     entries: List[Dict[str, Any]] = []
+    msg_id_counter = 0
     chunks_count = 0
     for ch in _chunks(symbols, chunk_size):
         chunks_count += 1
         body = {**params, "symbols": ch}
         payload = json.dumps(body, ensure_ascii=False)
-        entries.append({"Id": f"m-{published}", "MessageBody": payload})
+        entries.append({"Id": f"m-{msg_id_counter}", "MessageBody": payload})
+        msg_id_counter += 1
         if len(entries) >= send_batch_size:
             sqs.send_message_batch(QueueUrl=queue_url, Entries=entries)
             published += len(entries)
