@@ -67,6 +67,156 @@ def _receive_all_sqs_messages(queue_url: str):
 
 
 @mock_aws
+def test_orchestrator_symbols_from_ssm(monkeypatch):
+    # Set default env
+    os.environ["ENVIRONMENT"] = "dev"
+    os.environ["CHUNK_SIZE"] = "3"
+    os.environ["SQS_SEND_BATCH_SIZE"] = "10"
+
+    # moto SQS
+    sqs = boto3.client("sqs", region_name="us-east-1")
+    q = sqs.create_queue(QueueName="extract-e2e-ssm")
+    queue_url = q["QueueUrl"]
+    os.environ["QUEUE_URL"] = queue_url
+
+    # moto SSM: create parameter with symbols
+    ssm = boto3.client("ssm", region_name="us-east-1")
+    param_name = "/ingestion/symbols"
+    ssm.put_parameter(Name=param_name, Value='["AAPL","MSFT","GOOG","AMZN"]', Type="String")
+    os.environ["SYMBOLS_SSM_PARAM"] = param_name
+    # Clear S3 config to force SSM path
+    os.environ.pop("SYMBOLS_S3_BUCKET", None)
+    os.environ.pop("SYMBOLS_S3_KEY", None)
+
+    # Orchestrator should read SSM and publish ceil(4/3)=2 messages
+    event = {
+        "symbols": [],
+        "domain": "market",
+        "table_name": "prices",
+        "period": "1mo",
+        "interval": "1d",
+        "file_format": "json",
+    }
+    mod_orc = _load_orchestrator_module()
+    resp = mod_orc["main"](event, None)
+    assert resp["published"] == 2
+
+    # Read messages and validate symbols coverage equals SSM param
+    records = _receive_all_sqs_messages(queue_url)["Records"]
+    all_syms = set()
+    for r in records:
+        body = json.loads(r["body"]) if isinstance(r["body"], str) else r["body"]
+        all_syms.update(body.get("symbols", []))
+    assert all_syms == {"AAPL", "MSFT", "GOOG", "AMZN"}
+
+
+@mock_aws
+def test_orchestrator_symbols_from_s3(monkeypatch):
+    # Env
+    os.environ["ENVIRONMENT"] = "dev"
+    os.environ["CHUNK_SIZE"] = "3"
+    os.environ["SQS_SEND_BATCH_SIZE"] = "10"
+
+    # moto SQS
+    sqs = boto3.client("sqs", region_name="us-east-1")
+    q = sqs.create_queue(QueueName="extract-e2e-s3")
+    queue_url = q["QueueUrl"]
+    os.environ["QUEUE_URL"] = queue_url
+
+    # moto S3: upload symbol universe as newline-separated text
+    s3 = boto3.client("s3", region_name="us-east-1")
+    bucket = "config-bucket"
+    key = "symbols/universe.txt"
+    s3.create_bucket(Bucket=bucket)
+    s3.put_object(Bucket=bucket, Key=key, Body=b"AAPL\nMSFT\nGOOG\nNVDA\nAMZN\n")
+    os.environ["SYMBOLS_S3_BUCKET"] = bucket
+    os.environ["SYMBOLS_S3_KEY"] = key
+    # Ensure SSM path not used
+    os.environ.pop("SYMBOLS_SSM_PARAM", None)
+
+    # Orchestrator should read S3 object and publish ceil(5/3)=2 messages
+    event = {
+        "symbols": [],
+        "domain": "market",
+        "table_name": "prices",
+        "period": "1mo",
+        "interval": "1d",
+        "file_format": "json",
+    }
+    mod_orc = _load_orchestrator_module()
+    resp = mod_orc["main"](event, None)
+    assert resp["published"] == 2
+
+    # Validate union of symbols equals file contents
+    records = _receive_all_sqs_messages(queue_url)["Records"]
+    all_syms = set()
+    for r in records:
+        body = json.loads(r["body"]) if isinstance(r["body"], str) else r["body"]
+        all_syms.update(body.get("symbols", []))
+    assert all_syms == {"AAPL", "MSFT", "GOOG", "NVDA", "AMZN"}
+
+
+@mock_aws
+def test_dlq_redrive_on_worker_failures(monkeypatch):
+    # Create DLQ
+    sqs = boto3.client("sqs", region_name="us-east-1")
+    dlq = sqs.create_queue(QueueName="extract-dlq")
+    dlq_url = dlq["QueueUrl"]
+    dlq_attrs = sqs.get_queue_attributes(QueueUrl=dlq_url, AttributeNames=["QueueArn"])  # get ARN
+    dlq_arn = dlq_attrs["Attributes"]["QueueArn"]
+
+    # Create main queue with redrive policy and small visibility timeout
+    main = sqs.create_queue(QueueName="extract-main")
+    main_url = main["QueueUrl"]
+    redrive = json.dumps({"deadLetterTargetArn": dlq_arn, "maxReceiveCount": "2"})
+    sqs.set_queue_attributes(QueueUrl=main_url, Attributes={"RedrivePolicy": redrive, "VisibilityTimeout": "0"})
+
+    # Put one valid ingestion message
+    msg_body = json.dumps(
+        {
+            "symbols": ["AAPL"],
+            "domain": "market",
+            "table_name": "prices",
+            "period": "1mo",
+            "interval": "1d",
+            "file_format": "json",
+        }
+    )
+    sqs.send_message(QueueUrl=main_url, MessageBody=msg_body)
+
+    # Prepare Worker that always fails
+    os.environ["ENVIRONMENT"] = "dev"
+    os.environ["RAW_BUCKET"] = "raw-bucket-dev"  # not used since we force failure
+    os.environ["ENABLE_GZIP"] = "false"
+    mod_wrk = _load_worker_module()
+
+    def _fail(*args, **kwargs):
+        raise Exception("forced failure")
+
+    # Patch worker to fail processing
+    monkeypatch.setitem(mod_wrk["main"].__globals__, "process_event", _fail)
+
+    # Receive and process (without deletes) 3 times so that receiveCount exceeds maxReceiveCount=2
+    for _ in range(3):
+        resp = sqs.receive_message(QueueUrl=main_url, MaxNumberOfMessages=1, WaitTimeSeconds=0)
+        msgs = resp.get("Messages", [])
+        if not msgs:
+            break
+        sqs_event = {"Records": [{"messageId": msgs[0]["MessageId"], "body": msgs[0]["Body"]}]}
+        try:
+            _ = mod_wrk["main"](sqs_event, None)
+        except Exception:
+            # Our worker catches exceptions and returns batchItemFailures,
+            # but in case it bubbles up in test, ignore.
+            pass
+        # No delete: message should reappear immediately due to VisibilityTimeout=0
+
+    # DLQ should have the message now
+    dlq_msgs = sqs.receive_message(QueueUrl=dlq_url, MaxNumberOfMessages=10, WaitTimeSeconds=0).get("Messages", [])
+    assert len(dlq_msgs) >= 1
+
+
+@mock_aws
 def test_e2e_basic_flow(monkeypatch):
     # Orchestrator environment
     os.environ["ENVIRONMENT"] = "dev"
