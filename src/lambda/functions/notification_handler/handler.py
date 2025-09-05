@@ -4,7 +4,7 @@ import json
 import os
 from typing import Dict, Any, Optional, List
 import boto3
-from datetime import datetime
+from datetime import datetime, timezone
 from botocore.exceptions import ClientError
 
 from shared.utils.logger import get_logger, extract_correlation_id
@@ -33,7 +33,7 @@ class NotificationManager:
             f"Table: {table_name}",
             f"Status: {status}",
             f"Environment: {environment}",
-            f"Timestamp: {notification_data.get('timestamp', datetime.utcnow().isoformat())}",
+            f"Timestamp: {notification_data.get('timestamp', datetime.now(timezone.utc).isoformat())}",
         ]
 
         if notification_data.get("execution_arn"):
@@ -145,7 +145,7 @@ def main(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
 
         # Add environment and timestamp to event data
         event["environment"] = environment
-        event["timestamp"] = datetime.utcnow().isoformat()
+        event["timestamp"] = datetime.now(timezone.utc).isoformat()
         log.info(f"Processing {notification_type} notification for {domain}/{table_name}: {status}")
 
         notification_manager = NotificationManager()
@@ -199,7 +199,7 @@ def main(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                 "environment": environment,
                 "sns_message_id": sns_message_id,
                 "email_sent": email_sent,
-                "processed_at": datetime.utcnow().isoformat(),
+                "processed_at": datetime.now(timezone.utc).isoformat(),
             },
         }
 

@@ -4,7 +4,7 @@ import json
 import os
 from typing import Dict, Any, Optional
 import boto3
-from datetime import datetime
+from datetime import datetime, timezone
 from botocore.exceptions import ClientError
 
 from shared.utils.logger import get_logger, extract_correlation_id
@@ -23,7 +23,7 @@ class ErrorProcessor:
         """Publish error notification to SNS topic."""
         try:
             message = {
-                "timestamp": datetime.utcnow().isoformat(),
+                "timestamp": datetime.now(timezone.utc).isoformat(),
                 "severity": error_details.get("severity", "ERROR"),
                 "source": error_details.get("source", "unknown"),
                 "error_type": error_details.get("error_type", "unknown"),
@@ -59,7 +59,12 @@ class ErrorProcessor:
     ) -> bool:
         """Put custom metric to CloudWatch."""
         try:
-            metric_data = {"MetricName": metric_name, "Value": value, "Unit": unit, "Timestamp": datetime.utcnow()}
+            metric_data = {
+                "MetricName": metric_name,
+                "Value": value,
+                "Unit": unit,
+                "Timestamp": datetime.now(timezone.utc),
+            }
 
             if dimensions:
                 metric_data["Dimensions"] = [{"Name": key, "Value": value} for key, value in dimensions.items()]
@@ -173,7 +178,7 @@ def main(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                 "severity": error_details["severity"],
                 "notification_sent": notification_sent,
                 "environment": environment,
-                "processed_at": datetime.utcnow().isoformat(),
+                "processed_at": datetime.now(timezone.utc).isoformat(),
             },
         }
 
