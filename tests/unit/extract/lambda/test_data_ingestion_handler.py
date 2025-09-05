@@ -83,9 +83,12 @@ def test_ingestion_does_not_call_stepfunctions(monkeypatch):
                 raise AssertionError("stepfunctions client must not be created")
             raise NotImplementedError(name)
 
-    # Patch symbols in handler module
-    monkeypatch.setitem(mod["main"].__globals__, "YahooFinanceClient", _YF)
-    monkeypatch.setitem(mod["main"].__globals__, "boto3", _Boto)
+    # Patch shared service module used by handler
+    import importlib
+
+    svc = importlib.import_module("shared.ingestion.service")
+    monkeypatch.setitem(svc.__dict__, "YahooFinanceClient", _YF)
+    monkeypatch.setitem(svc.__dict__, "boto3", _Boto)
 
     event = {
         "data_source": "yahoo_finance",

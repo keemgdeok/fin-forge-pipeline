@@ -75,10 +75,13 @@ def test_ingestion_s3_write_json(monkeypatch):
     now = datetime.now(timezone.utc)
     recs = [_StubRecord("AAPL", now), _StubRecord("MSFT", now)]
 
-    # Patch external deps
+    # Patch external deps on shared service module
+    import importlib
+
+    svc = importlib.import_module("shared.ingestion.service")
     s3_stub = _StubS3Client(keycount=0)
-    monkeypatch.setitem(mod["main"].__globals__, "boto3", _StubBoto3(s3_stub))
-    monkeypatch.setitem(mod["main"].__globals__, "YahooFinanceClient", lambda: _StubYahooClient(recs))
+    monkeypatch.setitem(svc.__dict__, "boto3", _StubBoto3(s3_stub))
+    monkeypatch.setitem(svc.__dict__, "YahooFinanceClient", lambda: _StubYahooClient(recs))
 
     event = {
         "data_source": "yahoo_finance",
@@ -110,8 +113,11 @@ def test_ingestion_idempotency_skips(monkeypatch):
     recs = [_StubRecord("AAPL", now)]
 
     s3_stub = _StubS3Client(keycount=1)  # prefix already exists
-    monkeypatch.setitem(mod["main"].__globals__, "boto3", _StubBoto3(s3_stub))
-    monkeypatch.setitem(mod["main"].__globals__, "YahooFinanceClient", lambda: _StubYahooClient(recs))
+    import importlib
+
+    svc = importlib.import_module("shared.ingestion.service")
+    monkeypatch.setitem(svc.__dict__, "boto3", _StubBoto3(s3_stub))
+    monkeypatch.setitem(svc.__dict__, "YahooFinanceClient", lambda: _StubYahooClient(recs))
 
     event = {
         "data_source": "yahoo_finance",
