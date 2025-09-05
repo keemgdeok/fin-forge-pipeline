@@ -29,7 +29,7 @@ class DataValidator:
         self.region = region_name or os.environ.get("AWS_REGION") or os.environ.get("AWS_DEFAULT_REGION")
         self.s3_client = boto3.client("s3", region_name=self.region)
         self.glue_client = boto3.client("glue", region_name=self.region)
-        self.stepfunctions_client = boto3.client("stepfunctions", region_name=self.region)
+        self._stepfunctions_client = None
 
     def validate_data_comprehensive(self, config: Dict[str, Any]) -> Dict[str, Any]:
         try:
@@ -78,6 +78,12 @@ class DataValidator:
         except ClientError as e:
             logger.error("Failed to start Glue job %s: %s", job_name, str(e))
             return None
+
+    @property
+    def stepfunctions_client(self):
+        if self._stepfunctions_client is None:
+            self._stepfunctions_client = boto3.client("stepfunctions", region_name=self.region)
+        return self._stepfunctions_client
 
     @staticmethod
     def _parse_config(config: Dict[str, Any]) -> ValidationConfig:

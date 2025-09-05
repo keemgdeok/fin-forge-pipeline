@@ -50,19 +50,74 @@ class YahooFinanceClient:
             self._yf = None
 
     def fetch_prices(self, symbols: Iterable[str], period: str, interval: str) -> List[PriceRecord]:
-        if not symbols:
+        """Fetch prices for one or more symbols.
+
+        Tries batch download via yfinance.download for multiple tickers to reduce
+        API calls. Falls back to per-ticker history on errors.
+        """
+        syms = [s for s in symbols if str(s).strip()]
+        if not syms:
             return []
         if self._yf is None:
             # Dependency not present; return empty results (handled by caller)
             return []
 
+        # Attempt batched download when multiple tickers
+        if len(syms) > 1:
+            try:
+                df = self._yf.download(
+                    tickers=syms,
+                    period=period,
+                    interval=interval,
+                    group_by="ticker",
+                    auto_adjust=False,
+                    threads=True,
+                )
+                out: List[PriceRecord] = []
+                # df for multi-tickers: columns are MultiIndex (('AAPL','Open'), ...)
+                # For single ticker, returns simple columns. Normalize both.
+                if hasattr(df, "columns") and len(getattr(df, "columns", [])) > 0:
+                    # Detect multi-ticker by MultiIndex columns
+                    if getattr(df.columns, "levels", None) is not None and len(df.columns.levels) >= 2:
+                        # MultiIndex case
+                        for sym in syms:
+                            try:
+                                sub = df[sym]
+                                if sub is None or sub.empty:
+                                    continue
+                                for ts, row in sub.iterrows():  # type: ignore[assignment]
+                                    out.append(
+                                        PriceRecord(
+                                            symbol=sym,
+                                            timestamp=(
+                                                ts.to_pydatetime()
+                                                if hasattr(ts, "to_pydatetime")
+                                                else datetime.fromisoformat(str(ts))
+                                            ),
+                                            open=_safe_float(row, "Open"),
+                                            high=_safe_float(row, "High"),
+                                            low=_safe_float(row, "Low"),
+                                            close=_safe_float(row, "Close"),
+                                            volume=_safe_float(row, "Volume"),
+                                        )
+                                    )
+                            except Exception:
+                                # Skip problematic symbol; fallback later if needed
+                                continue
+                        return out
+                    else:
+                        # Single-like frame; treat as per-ticker for first symbol
+                        pass
+            except Exception:
+                # fallback to per-ticker below
+                pass
+
+        # Fallback to per-ticker sequential fetch
         out: List[PriceRecord] = []
-        # Fetch sequentially to keep it simple/safe; can be optimized later
-        for sym in symbols:
+        for sym in syms:
             try:
                 ticker = self._yf.Ticker(sym)
                 df = ticker.history(period=period, interval=interval)
-                # df index is DatetimeIndex; columns include Open/High/Low/Close/Volume
                 if df is None or df.empty:
                     continue
                 for ts, row in df.iterrows():  # type: ignore[assignment]
@@ -80,7 +135,6 @@ class YahooFinanceClient:
                         )
                     )
             except Exception:
-                # Ignore per-symbol failures; caller can log aggregated stats
                 continue
         return out
 
