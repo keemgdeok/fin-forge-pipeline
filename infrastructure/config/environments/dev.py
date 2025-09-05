@@ -22,6 +22,15 @@ dev_config = {
     "ingestion_file_format": "json",
     "ingestion_domain": "market",
     "ingestion_table_name": "prices",
+    # Fan-out (Extract) defaults
+    "orchestrator_chunk_size": 10,
+    "sqs_send_batch_size": 10,
+    "sqs_batch_size": 1,
+    "worker_reserved_concurrency": 5,
+    "worker_timeout": 300,
+    "worker_memory": 512,
+    "enable_gzip": False,
+    "max_retries": 5,
     "enable_processing_orchestration": False,
     # Processing triggers (S3->EventBridge->SFN). Supports multiple domain/table pairs.
     # Each item: {"domain": str, "table_name": str, "file_type": "json|csv|parquet", "suffixes": [".json", ".csv"]}

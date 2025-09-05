@@ -7,11 +7,14 @@ from aws_cdk import (
     aws_events_targets as targets,
     aws_iam as iam,
     aws_logs as logs,
+    aws_sqs as sqs,
     Duration,
     CfnOutput,
 )
+from aws_cdk import aws_lambda_event_sources as lambda_event_sources
 from aws_cdk.aws_lambda_python_alpha import PythonFunction
 from constructs import Construct
+from aws_cdk import aws_cloudwatch as cw
 
 
 class CustomerDataIngestionStack(Stack):
@@ -40,41 +43,110 @@ class CustomerDataIngestionStack(Stack):
         # Market data dependency layer (e.g., yfinance/pandas)
         self.market_data_deps_layer = self._create_market_data_deps_layer()
 
-        # Customer data ingestion Lambda (real handler)
-        self.ingestion_function = self._create_ingestion_function()
+        # Queues for fan-out processing
+        self.dlq, self.queue = self._create_queues()
 
-        # Event-driven ingestion trigger
+        # Orchestrator Lambda (triggered by schedule)
+        self.orchestrator_function = self._create_orchestrator_function()
+
+        # Worker Lambda (triggered by SQS)
+        self.ingestion_function = self._create_worker_function()
+
+        # Event-driven orchestrator trigger (schedule)
         self.ingestion_schedule = self._create_ingestion_schedule()
+
+        # Alarms and Dashboard for Extract
+        self._create_alarms_and_dashboard()
 
         self._create_outputs()
 
-    def _create_ingestion_function(self) -> lambda_.IFunction:
-        """Create customer data ingestion Lambda function."""
+    def _create_worker_function(self) -> lambda_.IFunction:
+        """Create ingestion worker Lambda function subscribed to SQS."""
+        memory = int(self.config.get("worker_memory", self._lambda_memory()))
+        timeout = Duration.seconds(int(self.config.get("worker_timeout", self.config.get("lambda_timeout", 300))))
+
         function = PythonFunction(
             self,
-            "CustomerIngestionFunction",
-            function_name=f"{self.env_name}-customer-data-ingestion",
+            "CustomerIngestionWorker",
+            function_name=f"{self.env_name}-customer-data-ingestion-worker",
             runtime=lambda_.Runtime.PYTHON_3_12,
-            entry="src/lambda/functions/data_ingestion",
+            entry="src/lambda/functions/ingestion_worker",
             index="handler.py",
             handler="main",
-            memory_size=self._lambda_memory(),
-            timeout=self._lambda_timeout(),
+            memory_size=memory,
+            timeout=timeout,
             log_retention=self._log_retention(),
-            role=iam.Role.from_role_arn(self, "IngestionLambdaRole", self.lambda_execution_role_arn),
+            role=iam.Role.from_role_arn(self, "IngestionWorkerRole", self.lambda_execution_role_arn),
             layers=[self.common_layer, self.market_data_deps_layer],
             environment={
                 "ENVIRONMENT": self.env_name,
                 "RAW_BUCKET": self.shared_storage.raw_bucket.bucket_name,
-                # "PIPELINE_STATE_TABLE":
-                # self.shared_storage.pipeline_state_table.table_name,  # Phase 2
+                "ENABLE_GZIP": str(bool(self.config.get("enable_gzip", False))).lower(),
             },
+            reserved_concurrent_executions=self.config.get("worker_reserved_concurrency"),
         )
 
-        # S3 권한은 SecurityStack의 LambdaExecutionRole에 최소권한으로 부여됨.
-        # (교차 스택 grant로 인한 순환 참조를 피하기 위해 여기서는 grant를 사용하지 않음)
-
+        # Subscribe to SQS with batch size from config (default 1)
+        batch_size = int(self.config.get("sqs_batch_size", 1))
+        function.add_event_source(
+            lambda_event_sources.SqsEventSource(
+                self.queue,
+                batch_size=batch_size,
+                report_batch_item_failures=True,
+            )
+        )
         return function
+
+    def _create_orchestrator_function(self) -> lambda_.IFunction:
+        """Create orchestrator Lambda function to fan-out symbols into SQS."""
+        function = PythonFunction(
+            self,
+            "CustomerIngestionOrchestrator",
+            function_name=f"{self.env_name}-customer-data-orchestrator",
+            runtime=lambda_.Runtime.PYTHON_3_12,
+            entry="src/lambda/functions/ingestion_orchestrator",
+            index="handler.py",
+            handler="main",
+            memory_size=int(self.config.get("orchestrator_memory", 256)),
+            timeout=Duration.seconds(int(self.config.get("orchestrator_timeout", 60))),
+            log_retention=self._log_retention(),
+            role=iam.Role.from_role_arn(self, "IngestionOrchestratorRole", self.lambda_execution_role_arn),
+            layers=[self.common_layer],
+            environment={
+                "ENVIRONMENT": self.env_name,
+                "QUEUE_URL": self.queue.queue_url,
+                "CHUNK_SIZE": str(int(self.config.get("orchestrator_chunk_size", 5))),
+                "SQS_SEND_BATCH_SIZE": str(int(self.config.get("sqs_send_batch_size", 10))),
+                # Optional symbol sources
+                "SYMBOLS_SSM_PARAM": str(self.config.get("symbol_universe_ssm_param", "")),
+                "SYMBOLS_S3_BUCKET": str(self.config.get("symbol_universe_s3_bucket", "")),
+                "SYMBOLS_S3_KEY": str(self.config.get("symbol_universe_s3_key", "")),
+            },
+        )
+        return function
+
+    def _create_queues(self) -> tuple[sqs.Queue, sqs.Queue]:
+        """Create SQS DLQ and main queue for ingestion fan-out."""
+        dlq = sqs.Queue(
+            self,
+            "IngestionDlq",
+            queue_name=f"{self.env_name}-ingestion-dlq",
+            retention_period=Duration.days(14),
+            enforce_ssl=True,
+        )
+
+        # Visibility timeout aligned with worker timeout
+        worker_timeout = int(self.config.get("worker_timeout", self.config.get("lambda_timeout", 300)))
+        visibility = Duration.seconds(worker_timeout * 6)
+        queue = sqs.Queue(
+            self,
+            "IngestionQueue",
+            queue_name=f"{self.env_name}-ingestion-queue",
+            visibility_timeout=visibility,
+            dead_letter_queue=sqs.DeadLetterQueue(max_receive_count=int(self.config.get("max_retries", 5)), queue=dlq),
+            enforce_ssl=True,
+        )
+        return dlq, queue
 
     def _log_retention(self) -> logs.RetentionDays:
         """Map integer days from config to CloudWatch Logs retention enum."""
@@ -114,7 +186,7 @@ class CustomerDataIngestionStack(Stack):
         default_event = self._default_ingestion_event()
         rule.add_target(
             targets.LambdaFunction(
-                self.ingestion_function,
+                self.orchestrator_function,
                 event=events.RuleTargetInput.from_object(default_event),
             )
         )
@@ -127,6 +199,79 @@ class CustomerDataIngestionStack(Stack):
             "IngestionFunctionArn",
             value=self.ingestion_function.function_arn,
             description="Customer data ingestion function ARN",
+        )
+
+        CfnOutput(
+            self,
+            "OrchestratorFunctionArn",
+            value=self.orchestrator_function.function_arn,
+            description="Customer data ingestion orchestrator function ARN",
+        )
+
+        CfnOutput(
+            self,
+            "IngestionQueueUrl",
+            value=self.queue.queue_url,
+            description="Ingestion SQS queue URL",
+        )
+
+    def _create_alarms_and_dashboard(self) -> None:
+        # SQS queue depth alarm
+        depth_metric = self.queue.metric_approximate_number_of_messages_visible(
+            period=Duration.minutes(5),
+            statistic="Average",
+        )
+        cw.Alarm(
+            self,
+            "IngestionQueueDepthAlarm",
+            alarm_description="Ingestion queue depth high",
+            metric=depth_metric,
+            threshold=float(self.config.get("alarm_queue_depth_threshold", 100.0)),
+            evaluation_periods=1,
+            comparison_operator=cw.ComparisonOperator.GREATER_THAN_OR_EQUAL_TO_THRESHOLD,
+        )
+
+        # Oldest message age alarm
+        age_metric = self.queue.metric_approximate_age_of_oldest_message(period=Duration.minutes(5))
+        cw.Alarm(
+            self,
+            "IngestionQueueAgeAlarm",
+            alarm_description="Old messages in ingestion queue",
+            metric=age_metric,
+            threshold=float(self.config.get("alarm_queue_age_seconds", 300.0)),
+            evaluation_periods=1,
+            comparison_operator=cw.ComparisonOperator.GREATER_THAN_OR_EQUAL_TO_THRESHOLD,
+        )
+
+        # Worker Lambda error/throttle alarms
+        errors_metric = self.ingestion_function.metric_errors(period=Duration.minutes(5))
+        throttles_metric = self.ingestion_function.metric_throttles(period=Duration.minutes(5))
+
+        cw.Alarm(
+            self,
+            "IngestionWorkerErrorsAlarm",
+            alarm_description="Ingestion worker errors detected",
+            metric=errors_metric,
+            threshold=1,
+            evaluation_periods=1,
+            comparison_operator=cw.ComparisonOperator.GREATER_THAN_OR_EQUAL_TO_THRESHOLD,
+        )
+        cw.Alarm(
+            self,
+            "IngestionWorkerThrottlesAlarm",
+            alarm_description="Ingestion worker throttles detected",
+            metric=throttles_metric,
+            threshold=1,
+            evaluation_periods=1,
+            comparison_operator=cw.ComparisonOperator.GREATER_THAN_OR_EQUAL_TO_THRESHOLD,
+        )
+
+        # Dashboard
+        dash = cw.Dashboard(self, "IngestionDashboard", dashboard_name=f"{self.env_name}-ingestion-dashboard")
+        dash.add_widgets(
+            cw.GraphWidget(title="SQS Depth", left=[depth_metric]),
+            cw.GraphWidget(title="SQS Oldest Age", left=[age_metric]),
+            cw.GraphWidget(title="Worker Errors/Throttles", left=[errors_metric, throttles_metric]),
         )
 
     def _create_common_layer(self) -> lambda_.LayerVersion:

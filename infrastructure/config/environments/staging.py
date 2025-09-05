@@ -22,6 +22,15 @@ staging_config = {
     "ingestion_file_format": "json",
     "ingestion_domain": "market",
     "ingestion_table_name": "prices",
+    # Fan-out (Extract) defaults
+    "orchestrator_chunk_size": 15,
+    "sqs_send_batch_size": 10,
+    "sqs_batch_size": 2,
+    "worker_reserved_concurrency": 10,
+    "worker_timeout": 600,
+    "worker_memory": 512,
+    "enable_gzip": True,
+    "max_retries": 5,
     "enable_processing_orchestration": False,
     "processing_triggers": [
         {

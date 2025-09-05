@@ -24,6 +24,15 @@ prod_config = {
     "ingestion_file_format": "json",
     "ingestion_domain": "market",
     "ingestion_table_name": "prices",
+    # Fan-out (Extract) defaults
+    "orchestrator_chunk_size": 20,
+    "sqs_send_batch_size": 10,
+    "sqs_batch_size": 2,
+    "worker_reserved_concurrency": 15,
+    "worker_timeout": 900,
+    "worker_memory": 1024,
+    "enable_gzip": True,
+    "max_retries": 6,
     "enable_processing_orchestration": False,
     "processing_triggers": [
         {

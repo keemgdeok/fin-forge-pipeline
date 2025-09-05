@@ -53,6 +53,7 @@ class SecurityStack(Stack):
         ]
 
         glue_job_arn = f"arn:aws:glue:{self.region}:{self.account}:job/{self.env_name}-customer-data-etl"
+        ingestion_queue_arn = f"arn:aws:sqs:{self.region}:{self.account}:{self.env_name}-ingestion-queue"
 
         role = iam.Role(
             self,
@@ -98,6 +99,15 @@ class SecurityStack(Stack):
                             resources=[
                                 f"arn:aws:sns:{self.region}:{self.account}:{self.env_name}-data-platform-alerts"
                             ],
+                        )
+                    ]
+                ),
+                "SqsSendMessage": iam.PolicyDocument(
+                    statements=[
+                        iam.PolicyStatement(
+                            effect=iam.Effect.ALLOW,
+                            actions=["sqs:SendMessage", "sqs:SendMessageBatch"],
+                            resources=[ingestion_queue_arn],
                         )
                     ]
                 ),
