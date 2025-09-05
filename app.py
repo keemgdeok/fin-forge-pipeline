@@ -31,7 +31,7 @@ environment = app.node.try_get_context("environment") or "dev"
 config = get_environment_config(environment)
 
 # CDK environment (account/region)
-cdk_env = cdk.Environment(account=config.get("account_id"), region=config.get("region", "us-east-1"))
+cdk_env = cdk.Environment(account=config.get("account_id"), region=config.get("region", "ap-northeast-2"))
 
 stack_prefix = f"DataPlatform-{environment}"
 
