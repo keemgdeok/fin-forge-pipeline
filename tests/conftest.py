@@ -4,6 +4,13 @@ from pathlib import Path
 import pytest
 import boto3
 
+# Ensure 'shared' layer is importable at collection time (module import stage)
+_repo_root = Path(__file__).resolve().parents[1]
+_shared_path = _repo_root / "src" / "lambda" / "layers" / "common" / "python"
+_shared_str = str(_shared_path)
+if _shared_str not in sys.path:
+    sys.path.insert(0, _shared_str)
+
 
 @pytest.fixture(autouse=True)
 def aws_env(monkeypatch):
@@ -93,6 +100,98 @@ def yf_stub(monkeypatch):
                 return [_Rec(s) for s in symbols]
 
         monkeypatch.setitem(svc.__dict__, "YahooFinanceClient", lambda: _YFStub())
+
+    return _apply
+
+
+@pytest.fixture
+def s3_stub(monkeypatch):
+    """Patch boto3 in shared.ingestion.service with a lightweight S3 stub.
+
+    Returns the stub instance which captures put_calls for assertions and
+    responds to list_objects_v2 with a configurable KeyCount.
+    """
+    import importlib
+
+    class _S3Stub:
+        def __init__(self, keycount: int = 0):
+            self.keycount = keycount
+            self.put_calls = []
+
+        def list_objects_v2(self, **kwargs):
+            return {"KeyCount": self.keycount}
+
+        def put_object(self, **kwargs):
+            self.put_calls.append(kwargs)
+            return {"ETag": "stub"}
+
+    class _BotoStub:
+        def __init__(self, s3stub: _S3Stub):
+            self._s3 = s3stub
+
+        def client(self, name: str, **kwargs):
+            if name == "s3":
+                return self._s3
+            raise ValueError(name)
+
+    def _apply(*, keycount: int = 0):
+        svc = importlib.import_module("shared.ingestion.service")
+        s3 = _S3Stub(keycount=keycount)
+        monkeypatch.setitem(svc.__dict__, "boto3", _BotoStub(s3))
+        return s3
+
+    return _apply
+
+
+@pytest.fixture
+def env_dev(monkeypatch):
+    """Set ENVIRONMENT=dev and optionally RAW_BUCKET.
+
+    Usage: env_dev() or env_dev(raw_bucket="raw-bucket-dev").
+    """
+
+    def _apply(*, raw_bucket: str | None = None):
+        monkeypatch.setenv("ENVIRONMENT", "dev")
+        if raw_bucket:
+            monkeypatch.setenv("RAW_BUCKET", raw_bucket)
+
+    return _apply
+
+
+@pytest.fixture
+def load_module():
+    import runpy
+
+    def _apply(path: str):
+        return runpy.run_path(path)
+
+    return _apply
+
+
+@pytest.fixture
+def fake_python_function(monkeypatch):
+    from aws_cdk import Duration
+
+    def _apply(target_module):
+        from aws_cdk import aws_lambda as lambda_
+
+        def _fake(scope, id, **kwargs):
+            return lambda_.Function(
+                scope,
+                id,
+                runtime=lambda_.Runtime.PYTHON_3_12,
+                handler="index.handler",
+                code=lambda_.Code.from_inline("def handler(event, context): return {}"),
+                memory_size=kwargs.get("memory_size", 128),
+                timeout=kwargs.get("timeout", Duration.seconds(10)),
+                log_retention=kwargs.get("log_retention"),
+                role=kwargs.get("role"),
+                layers=kwargs.get("layers", []),
+                environment=kwargs.get("environment", {}),
+                reserved_concurrent_executions=kwargs.get("reserved_concurrent_executions"),
+            )
+
+        monkeypatch.setattr(target_module, "PythonFunction", _fake, raising=False)
 
     return _apply
 
