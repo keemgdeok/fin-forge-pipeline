@@ -24,8 +24,7 @@ def main(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
         "domain": "string",
         "file_type": "csv|json",
         "validation_rules": {...},          # Optional: override default rules
-        "glue_job_config": {...},           # Optional: trigger ETL if validation passes
-        "step_function_arn": "string"       # Optional: trigger step function workflow
+        "glue_job_config": {...}            # Optional: trigger ETL if validation passes
     }
 
     Args:
@@ -48,7 +47,6 @@ def main(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
         file_type = event.get("file_type", "csv")
         validation_rules = event.get("validation_rules")
         glue_job_config = event.get("glue_job_config", {})
-        step_function_arn = event.get("step_function_arn")
 
         # Environment variables
         environment = os.environ.get("ENVIRONMENT")
@@ -127,30 +125,6 @@ def main(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
             if not etl_job_run_id:
                 log.warning(f"Failed to trigger Glue ETL job: {job_name}")
 
-        # Trigger Step Function workflow if configured
-        step_function_execution_arn = None
-        if step_function_arn:
-            workflow_input = {
-                "source_bucket": source_bucket,
-                "source_key": source_key,
-                "table_name": table_name,
-                "domain": domain,
-                "file_type": file_type,
-                "validation_results": validation_results,
-                "etl_job_run_id": etl_job_run_id,
-            }
-
-            try:
-                response = validator.stepfunctions_client.start_execution(
-                    stateMachineArn=step_function_arn,
-                    input=json.dumps(workflow_input, default=str),
-                    name=f"{domain}-{table_name}-{int(datetime.now().timestamp())}",
-                )
-                step_function_execution_arn = response["executionArn"]
-                log.info(f"Started Step Function execution: {step_function_execution_arn}")
-            except Exception as e:
-                log.warning(f"Failed to start Step Function execution: {str(e)}")
-
         # Prepare success response
         result = {
             "validation_passed": True,
@@ -162,7 +136,6 @@ def main(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
             "environment": environment,
             "validation_results": validation_results,
             "etl_job_run_id": etl_job_run_id,
-            "step_function_execution_arn": step_function_execution_arn,
             "processed_at": datetime.now().isoformat(),
         }
 

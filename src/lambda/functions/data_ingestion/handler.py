@@ -83,7 +83,6 @@ def main(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
         # Environment variables
         raw_bucket = os.environ.get("RAW_BUCKET")
         environment = os.environ.get("ENVIRONMENT")
-        step_function_arn = os.environ.get("STEP_FUNCTION_ARN")
 
         log.info(f"Processing data ingestion for environment: {environment}")
 
@@ -150,32 +149,8 @@ def main(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                 s3.put_object(Bucket=raw_bucket, Key=key, Body=body, ContentType=_content_type(ext))
                 written_keys.append(key)
 
-        # Optionally, trigger a downstream workflow if configured
-        if step_function_arn and processed_records > 0:
-            try:
-                sf = boto3.client("stepfunctions")
-                sf.start_execution(
-                    stateMachineArn=step_function_arn,
-                    name=f"{domain}-{table_name}-{int(datetime.now(timezone.utc).timestamp())}",
-                    input=json.dumps(
-                        {
-                            "domain": domain,
-                            "table_name": table_name,
-                            "data_source": data_source,
-                            "period": period,
-                            "interval": interval,
-                            "symbols": valid_symbols,
-                            "s3_bucket": raw_bucket,
-                            "s3_keys": written_keys,
-                            "processed_records": processed_records,
-                            "environment": environment,
-                        },
-                        default=str,
-                    ),
-                )
-            except Exception:
-                # Not fatal; log only
-                log.warning("Failed to start Step Functions execution", extra={"step_function_arn": step_function_arn})
+        # Downstream orchestration is decoupled from ingestion Lambda.
+        # Any processing workflows should be triggered by S3/EventBridge rules.
 
         # Response
         result = {

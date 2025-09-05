@@ -54,7 +54,7 @@ class SecurityStack(Stack):
 
         glue_job_arn = f"arn:aws:glue:{self.region}:{self.account}:job/{self.env_name}-customer-data-etl"
 
-        return iam.Role(
+        role = iam.Role(
             self,
             "LambdaExecutionRole",
             role_name=f"{self.env_name}-data-platform-lambda-role",
@@ -101,21 +101,6 @@ class SecurityStack(Stack):
                         )
                     ]
                 ),
-                "StatesStartExecution": iam.PolicyDocument(
-                    statements=[
-                        iam.PolicyStatement(
-                            effect=iam.Effect.ALLOW,
-                            actions=["states:StartExecution"],
-                            resources=[
-                                (
-                                    "arn:aws:states:"
-                                    f"{self.region}:{self.account}:stateMachine:"
-                                    f"{self.env_name}-customer-data-processing"
-                                )
-                            ],
-                        )
-                    ]
-                ),
                 "CloudWatchPutMetric": iam.PolicyDocument(
                     statements=[
                         iam.PolicyStatement(
@@ -136,6 +121,7 @@ class SecurityStack(Stack):
                 ),
             },
         )
+        return role
 
     def _create_glue_execution_role(self) -> iam.Role:
         """Create Glue job execution role."""

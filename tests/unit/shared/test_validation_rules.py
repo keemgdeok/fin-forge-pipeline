@@ -11,4 +11,3 @@ def test_standard_rules_default_for_unknown():
     rules = StandardValidationRules.get_validation_rules_by_domain("unknown", "table")
     assert rules["required_columns"] == []
     assert rules["allow_duplicates"] is True
-

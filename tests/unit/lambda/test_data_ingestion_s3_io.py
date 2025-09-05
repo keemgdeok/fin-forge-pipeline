@@ -28,6 +28,7 @@ class _StubBoto3:
         if name == "s3":
             return self._s3
         if name == "stepfunctions":
+
             class _SFN:
                 def start_execution(self, **kwargs):
                     return {"executionArn": "arn:states:stub"}

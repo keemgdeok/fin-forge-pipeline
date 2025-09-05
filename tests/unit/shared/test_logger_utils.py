@@ -16,4 +16,3 @@ def test_get_logger_adapter_has_extras():
     log = get_logger(__name__, correlation_id="abc")
     # Ensure the adapter processes extra without raising
     log.info("hello", extra={"foo": "bar"})
-

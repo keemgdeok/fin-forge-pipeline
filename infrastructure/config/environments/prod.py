@@ -24,6 +24,16 @@ prod_config = {
     "ingestion_file_format": "json",
     "ingestion_domain": "market",
     "ingestion_table_name": "prices",
+    "enable_processing_orchestration": False,
+    "processing_triggers": [
+        {
+            "domain": "market",
+            "table_name": "prices",
+            "file_type": "json",
+            "suffixes": [".json", ".csv"],
+        }
+    ],
+    "processing_suffixes": [".json", ".csv"],
     "tags": {
         "Environment": "prod",
         "Project": "ServerlessDataPipeline",

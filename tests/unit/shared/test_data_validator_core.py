@@ -1,5 +1,3 @@
-from typing import Any
-
 from botocore.exceptions import ClientError
 import shared.validation.data_validator as dv
 
@@ -21,6 +19,7 @@ class _Boto:
     def client(self, name: str, region_name: str | None = None):
         if name == "s3":
             return self._s3
+
         # Unused clients in these tests
         class _Stub:
             pass

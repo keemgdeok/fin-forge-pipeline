@@ -22,6 +22,19 @@ dev_config = {
     "ingestion_file_format": "json",
     "ingestion_domain": "market",
     "ingestion_table_name": "prices",
+    "enable_processing_orchestration": False,
+    # Processing triggers (S3->EventBridge->SFN). Supports multiple domain/table pairs.
+    # Each item: {"domain": str, "table_name": str, "file_type": "json|csv|parquet", "suffixes": [".json", ".csv"]}
+    "processing_triggers": [
+        {
+            "domain": "market",
+            "table_name": "prices",
+            "file_type": "json",
+            "suffixes": [".json", ".csv"],
+        }
+    ],
+    # Default suffixes when processing_triggers not specified
+    "processing_suffixes": [".json", ".csv"],
     "tags": {
         "Environment": "dev",
         "Project": "ServerlessDataPipeline",
