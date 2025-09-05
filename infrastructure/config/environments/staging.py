@@ -4,7 +4,7 @@ import os
 
 staging_config = {
     "account_id": os.environ.get("CDK_DEFAULT_ACCOUNT"),
-    "region": "us-east-1",
+    "region": "ap-northeast-2",
     "lambda_memory": 512,
     "lambda_timeout": 600,
     "glue_max_capacity": 2,
