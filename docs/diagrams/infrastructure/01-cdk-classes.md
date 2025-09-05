@@ -48,19 +48,18 @@ classDiagram
   class CatalogStack {
     +GlueDatabase data_catalog
     +GlueCrawler curated_crawler
-    +GlueCrawler raw_crawler
   }
 
   %% Relationships
   SharedStorageStack *-- DataLakeConstruct : composes
 
-  CustomerDataIngestionStack --> SharedStorageStack : uses(buckets)
-  CustomerDataProcessingStack --> SharedStorageStack : uses(buckets)
-  CatalogStack --> SharedStorageStack : uses(buckets)
+  CustomerDataIngestionStack --> SharedStorageStack : «uses» buckets
+  CustomerDataProcessingStack --> SharedStorageStack : «uses» buckets
+  CatalogStack --> SharedStorageStack : «uses» buckets
 
-  CustomerDataIngestionStack ..> SecurityStack : ref(lambda_execution_role_arn)
-  CustomerDataProcessingStack ..> SecurityStack : ref(lambda/glue/sfn roles)
-  ObservabilityStack ..> CustomerDataIngestionStack : monitors
-  ObservabilityStack ..> CustomerDataProcessingStack : monitors
+  CustomerDataIngestionStack ..> SecurityStack : «refers» lambda_execution_role_arn
+  CustomerDataProcessingStack ..> SecurityStack : «refers» lambda/glue/sfn roles
+  ObservabilityStack ..> CustomerDataIngestionStack : «monitors»
+  ObservabilityStack ..> CustomerDataProcessingStack : «monitors»
 
 ```
