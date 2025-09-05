@@ -1,6 +1,7 @@
 import os
 import runpy
 from datetime import datetime, timezone
+from typing import Any, Dict, List
 
 
 def _load_module():
@@ -10,7 +11,7 @@ def _load_module():
 class _StubS3Client:
     def __init__(self, keycount: int = 0):
         self.keycount = keycount
-        self.put_calls = []
+        self.put_calls: List[Dict[str, Any]] = []
 
     def list_objects_v2(self, **kwargs):
         return {"KeyCount": self.keycount}

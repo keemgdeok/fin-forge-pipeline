@@ -62,6 +62,9 @@ class YahooFinanceClient:
             # Dependency not present; return empty results (handled by caller)
             return []
 
+        # Prepare accumulator
+        out: List[PriceRecord] = []
+
         # Attempt batched download when multiple tickers
         if len(syms) > 1:
             try:
@@ -73,7 +76,6 @@ class YahooFinanceClient:
                     auto_adjust=False,
                     threads=True,
                 )
-                out: List[PriceRecord] = []
                 # df for multi-tickers: columns are MultiIndex (('AAPL','Open'), ...)
                 # For single ticker, returns simple columns. Normalize both.
                 if hasattr(df, "columns") and len(getattr(df, "columns", [])) > 0:
@@ -113,7 +115,6 @@ class YahooFinanceClient:
                 pass
 
         # Fallback to per-ticker sequential fetch
-        out: List[PriceRecord] = []
         for sym in syms:
             try:
                 ticker = self._yf.Ticker(sym)
