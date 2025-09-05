@@ -37,6 +37,9 @@ class CustomerDataIngestionStack(Stack):
         # Common layer for shared code
         self.common_layer = self._create_common_layer()
 
+        # Market data dependency layer (e.g., yfinance/pandas)
+        self.market_data_deps_layer = self._create_market_data_deps_layer()
+
         # Customer data ingestion Lambda (real handler)
         self.ingestion_function = self._create_ingestion_function()
 
@@ -59,7 +62,7 @@ class CustomerDataIngestionStack(Stack):
             timeout=self._lambda_timeout(),
             log_retention=self._log_retention(),
             role=iam.Role.from_role_arn(self, "IngestionLambdaRole", self.lambda_execution_role_arn),
-            layers=[self.common_layer],
+            layers=[self.common_layer, self.market_data_deps_layer],
             environment={
                 "ENVIRONMENT": self.env_name,
                 "RAW_BUCKET": self.shared_storage.raw_bucket.bucket_name,
@@ -138,6 +141,21 @@ class CustomerDataIngestionStack(Stack):
             description="Shared common models and utilities",
             compatible_runtimes=[lambda_.Runtime.PYTHON_3_12],
             code=lambda_.Code.from_asset("src/lambda/layers/common"),
+        )
+
+    def _create_market_data_deps_layer(self) -> lambda_.LayerVersion:
+        """Create a dedicated layer for market data third-party dependencies.
+
+        Best practice: keep heavy deps (yfinance/pandas/numpy) in a separate layer
+        to avoid fat Lambda packages and speed up cold starts.
+        """
+        return lambda_.LayerVersion(
+            self,
+            "MarketDataDepsLayer",
+            layer_version_name=f"{self.env_name}-market-data-deps",
+            description="Third-party deps for market data (yfinance, pandas, etc.)",
+            compatible_runtimes=[lambda_.Runtime.PYTHON_3_12],
+            code=lambda_.Code.from_asset("src/lambda/layers/market_data_deps"),
         )
 
     def _default_ingestion_event(self) -> dict:
