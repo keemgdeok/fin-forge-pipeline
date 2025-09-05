@@ -49,6 +49,10 @@ Thumbs.db
 cdk.out/
 node_modules/
 
+# Lambda Layer vendored site-packages (do not commit)
+src/lambda/layers/market_data_deps/python/*
+!src/lambda/layers/market_data_deps/python/.gitkeep
+
 # Logs
 *.log
 logs/
@@ -66,5 +70,4 @@ htmlcov/
 #coding
 CLAUDE.md
 AGENTS.md
-
 

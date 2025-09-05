@@ -1,0 +1,29 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[tool.black]
+line-length = 120
+target-version = ["py312"]
+# Lambda Layer vendored site-packages 제외(불필요한 포매팅 방지)
+extend-exclude = "(^src/lambda/layers/[^/]+/python/.*$)"
+
+[tool.flake8]
+max-line-length = 120
+extend-ignore = ["E203", "W503"]
+# glob 패턴 기반 exclude
+exclude = [
+  "src/lambda/layers/*/python/*",
+  "cdk.out",
+  "node_modules",
+]
+
+[tool.mypy]
+python_version = "3.12"
+ignore_missing_imports = true
+explicit_package_bases = true
+# 소스 루트 지정
+mypy_path = ["src"]
+# Lambda Layer vendored site-packages 제외(정규식)
+exclude = "(?x)(^src/lambda/layers/[^/]+/python/.*$)"
+

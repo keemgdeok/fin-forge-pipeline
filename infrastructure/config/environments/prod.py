@@ -4,7 +4,7 @@ import os
 
 prod_config = {
     "account_id": os.environ.get("CDK_DEFAULT_ACCOUNT"),
-    "region": "us-east-1",
+    "region": "ap-northeast-2",
     "lambda_memory": 512,
     "lambda_timeout": 900,
     "glue_max_capacity": 2,
@@ -17,6 +17,32 @@ prod_config = {
     "removal_policy": "retain",
     "backup_retention_days": 30,
     "enable_point_in_time_recovery": True,
+    # Ingestion defaults (conservative by default; adjust to production needs)
+    "ingestion_symbols": ["AAPL", "MSFT", "GOOG", "AMZN"],
+    "ingestion_period": "6mo",
+    "ingestion_interval": "1d",
+    "ingestion_file_format": "json",
+    "ingestion_domain": "market",
+    "ingestion_table_name": "prices",
+    # Fan-out (Extract) defaults
+    "orchestrator_chunk_size": 20,
+    "sqs_send_batch_size": 10,
+    "sqs_batch_size": 2,
+    "worker_reserved_concurrency": 15,
+    "worker_timeout": 900,
+    "worker_memory": 1024,
+    "enable_gzip": True,
+    "max_retries": 6,
+    "enable_processing_orchestration": False,
+    "processing_triggers": [
+        {
+            "domain": "market",
+            "table_name": "prices",
+            "file_type": "json",
+            "suffixes": [".json", ".csv"],
+        }
+    ],
+    "processing_suffixes": [".json", ".csv"],
     "tags": {
         "Environment": "prod",
         "Project": "ServerlessDataPipeline",

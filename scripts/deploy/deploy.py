@@ -26,7 +26,7 @@ def deploy_stacks(environment: str, stacks: Optional[str] = None) -> None:
     print(f"Deploying to environment: {environment}")
 
     # Set environment context
-    os.environ["CDK_DEFAULT_REGION"] = "us-east-1"
+    os.environ["CDK_DEFAULT_REGION"] = "ap-northeast-2"
 
     # Bootstrap CDK if needed
     print("Checking CDK bootstrap status...")

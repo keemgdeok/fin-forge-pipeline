@@ -4,7 +4,7 @@ import os
 
 staging_config = {
     "account_id": os.environ.get("CDK_DEFAULT_ACCOUNT"),
-    "region": "us-east-1",
+    "region": "ap-northeast-2",
     "lambda_memory": 512,
     "lambda_timeout": 600,
     "glue_max_capacity": 2,
@@ -15,6 +15,32 @@ staging_config = {
     "enable_detailed_monitoring": True,
     "auto_delete_objects": False,
     "removal_policy": "retain",
+    # Ingestion defaults
+    "ingestion_symbols": ["AAPL", "MSFT", "GOOG"],
+    "ingestion_period": "3mo",
+    "ingestion_interval": "1d",
+    "ingestion_file_format": "json",
+    "ingestion_domain": "market",
+    "ingestion_table_name": "prices",
+    # Fan-out (Extract) defaults
+    "orchestrator_chunk_size": 15,
+    "sqs_send_batch_size": 10,
+    "sqs_batch_size": 2,
+    "worker_reserved_concurrency": 10,
+    "worker_timeout": 600,
+    "worker_memory": 512,
+    "enable_gzip": True,
+    "max_retries": 5,
+    "enable_processing_orchestration": False,
+    "processing_triggers": [
+        {
+            "domain": "market",
+            "table_name": "prices",
+            "file_type": "json",
+            "suffixes": [".json", ".csv"],
+        }
+    ],
+    "processing_suffixes": [".json", ".csv"],
     "tags": {
         "Environment": "staging",
         "Project": "ServerlessDataPipeline",

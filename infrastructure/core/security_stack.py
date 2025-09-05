@@ -53,8 +53,9 @@ class SecurityStack(Stack):
         ]
 
         glue_job_arn = f"arn:aws:glue:{self.region}:{self.account}:job/{self.env_name}-customer-data-etl"
+        ingestion_queue_arn = f"arn:aws:sqs:{self.region}:{self.account}:{self.env_name}-ingestion-queue"
 
-        return iam.Role(
+        role = iam.Role(
             self,
             "LambdaExecutionRole",
             role_name=f"{self.env_name}-data-platform-lambda-role",
@@ -90,8 +91,47 @@ class SecurityStack(Stack):
                         ),
                     ]
                 ),
+                "SnsPublishAlerts": iam.PolicyDocument(
+                    statements=[
+                        iam.PolicyStatement(
+                            effect=iam.Effect.ALLOW,
+                            actions=["sns:Publish"],
+                            resources=[
+                                f"arn:aws:sns:{self.region}:{self.account}:{self.env_name}-data-platform-alerts"
+                            ],
+                        )
+                    ]
+                ),
+                "SqsSendMessage": iam.PolicyDocument(
+                    statements=[
+                        iam.PolicyStatement(
+                            effect=iam.Effect.ALLOW,
+                            actions=["sqs:SendMessage", "sqs:SendMessageBatch"],
+                            resources=[ingestion_queue_arn],
+                        )
+                    ]
+                ),
+                "CloudWatchPutMetric": iam.PolicyDocument(
+                    statements=[
+                        iam.PolicyStatement(
+                            effect=iam.Effect.ALLOW,
+                            actions=["cloudwatch:PutMetricData"],
+                            resources=["*"],
+                        )
+                    ]
+                ),
+                "SesSendEmail": iam.PolicyDocument(
+                    statements=[
+                        iam.PolicyStatement(
+                            effect=iam.Effect.ALLOW,
+                            actions=["ses:SendEmail", "ses:SendRawEmail"],
+                            resources=["*"],
+                        )
+                    ]
+                ),
             },
         )
+        return role
 
     def _create_glue_execution_role(self) -> iam.Role:
         """Create Glue job execution role."""

@@ -4,7 +4,7 @@ import os
 
 dev_config = {
     "account_id": os.environ.get("CDK_DEFAULT_ACCOUNT"),
-    "region": "us-east-1",
+    "region": "ap-northeast-2",
     "lambda_memory": 512,
     "lambda_timeout": 300,
     "glue_max_capacity": 2,
@@ -15,6 +15,35 @@ dev_config = {
     "enable_detailed_monitoring": True,
     "auto_delete_objects": True,
     "removal_policy": "destroy",
+    # Ingestion defaults (EventBridge -> Lambda input)
+    "ingestion_symbols": ["AAPL", "MSFT"],
+    "ingestion_period": "1mo",
+    "ingestion_interval": "1d",
+    "ingestion_file_format": "json",
+    "ingestion_domain": "market",
+    "ingestion_table_name": "prices",
+    # Fan-out (Extract) defaults
+    "orchestrator_chunk_size": 10,
+    "sqs_send_batch_size": 10,
+    "sqs_batch_size": 1,
+    "worker_reserved_concurrency": 5,
+    "worker_timeout": 300,
+    "worker_memory": 512,
+    "enable_gzip": False,
+    "max_retries": 5,
+    "enable_processing_orchestration": False,
+    # Processing triggers (S3->EventBridge->SFN). Supports multiple domain/table pairs.
+    # Each item: {"domain": str, "table_name": str, "file_type": "json|csv|parquet", "suffixes": [".json", ".csv"]}
+    "processing_triggers": [
+        {
+            "domain": "market",
+            "table_name": "prices",
+            "file_type": "json",
+            "suffixes": [".json", ".csv"],
+        }
+    ],
+    # Default suffixes when processing_triggers not specified
+    "processing_suffixes": [".json", ".csv"],
     "tags": {
         "Environment": "dev",
         "Project": "ServerlessDataPipeline",
