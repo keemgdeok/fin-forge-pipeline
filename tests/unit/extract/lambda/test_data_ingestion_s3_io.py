@@ -7,7 +7,7 @@ shared yf_stub fixture which produces deterministic records.
 """
 
 
-def test_ingestion_s3_write_json(env_dev, load_module, yf_stub, s3_stub):
+def test_ingestion_s3_write_json(env_dev, load_module, yf_stub, s3_stub) -> None:
     """
     Given: 두 심볼(AAPL, MSFT)과 RAW 버킷이 존재
     When: JSON 포맷으로 인제스트하면
@@ -40,7 +40,7 @@ def test_ingestion_s3_write_json(env_dev, load_module, yf_stub, s3_stub):
     assert s3.put_calls[0]["ContentType"] == "application/json"
 
 
-def test_ingestion_idempotency_skips(env_dev, load_module, yf_stub, s3_stub):
+def test_ingestion_idempotency_skips(env_dev, load_module, yf_stub, s3_stub) -> None:
     """
     Given: 대상 prefix에 기존 객체가 존재(keycount=1)
     When: 동일 심볼을 인제스트하면

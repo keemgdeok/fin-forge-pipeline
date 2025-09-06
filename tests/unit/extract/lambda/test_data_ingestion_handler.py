@@ -3,7 +3,7 @@ import pytest
 from tests.fixtures.data_builders import build_ingestion_event
 
 
-def test_ingestion_symbols_parsing(env_dev, load_module):
+def test_ingestion_symbols_parsing(env_dev, load_module) -> None:
     """
     Given: 혼합 심볼 목록(공백/숫자 포함)
     When: 핸들러가 이벤트를 처리하면
@@ -21,7 +21,7 @@ def test_ingestion_symbols_parsing(env_dev, load_module):
     assert "invalid_symbols" in body
 
 
-def test_ingestion_does_not_call_stepfunctions(env_dev, load_module, yf_stub, s3_stub):
+def test_ingestion_does_not_call_stepfunctions(env_dev, load_module, yf_stub, s3_stub) -> None:
     """
     Given: 한 개의 심볼과 S3만 사용하는 저장 경로
     When: 핸들러가 이벤트를 처리하면
@@ -51,7 +51,7 @@ def test_ingestion_does_not_call_stepfunctions(env_dev, load_module, yf_stub, s3
         (["A" * 100], ["A" * 100]),
     ],
 )
-def test_ingestion_symbols_validation_parametrized(env_dev, load_module, symbols: List[Any], expected: List[str]):
+def test_ingestion_symbols_validation_parametrized(env_dev, load_module, symbols: List[Any], expected: List[str]) -> None:
     """
     Given: 다양한 심볼 입력 조합
     When: 핸들러가 이벤트를 검증하면

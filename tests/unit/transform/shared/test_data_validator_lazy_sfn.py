@@ -1,7 +1,7 @@
 import runpy
 
 
-def test_data_validator_lazy_stepfunctions(monkeypatch):
+def test_data_validator_lazy_stepfunctions(monkeypatch) -> None:
     """
     Given: boto3.client 호출을 기록하는 스텁
     When: DataValidator 인스턴스를 생성하면

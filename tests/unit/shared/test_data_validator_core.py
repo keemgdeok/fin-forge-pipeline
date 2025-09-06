@@ -2,7 +2,7 @@ import shared.validation.data_validator as dv
 from tests.fixtures.clients import S3Stub, BotoStub
 
 
-def test_validate_file_type_allowed(monkeypatch):
+def test_validate_file_type_allowed(monkeypatch) -> None:
     """
     Given: S3 head 성공 스텁과 허용된 파일 타입(csv)
     When: 종합 검증을 수행하면
@@ -17,7 +17,7 @@ def test_validate_file_type_allowed(monkeypatch):
     assert res["overall_valid"] is True
 
 
-def test_validate_file_type_rejected(monkeypatch):
+def test_validate_file_type_rejected(monkeypatch) -> None:
     """
     Given: S3 head 성공 스텁과 허용되지 않은 파일 타입(xlsx)
     When: 종합 검증을 수행하면
@@ -32,7 +32,7 @@ def test_validate_file_type_rejected(monkeypatch):
     assert any(e.get("type") == "InvalidFileType" for e in res["errors"])  # type: ignore[arg-type]
 
 
-def test_validate_s3_head_failure(monkeypatch):
+def test_validate_s3_head_failure(monkeypatch) -> None:
     """
     Given: S3 head 404 실패 스텁과 허용된 파일 타입(csv)
     When: 종합 검증을 수행하면

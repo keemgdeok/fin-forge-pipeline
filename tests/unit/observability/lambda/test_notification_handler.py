@@ -3,7 +3,7 @@ import runpy
 from tests.fixtures.clients import SnsStub, SesStub, BotoStub
 
 
-def test_notification_sns_only(monkeypatch):
+def test_notification_sns_only(monkeypatch) -> None:
     """
     Given: 정상(SUCCEEDED) 상태의 파이프라인 알림 이벤트와 SNS 토픽 ARN
     When: 알림 핸들러가 이벤트를 처리하면
@@ -30,7 +30,7 @@ def test_notification_sns_only(monkeypatch):
     assert len(ses.sent) == 0
 
 
-def test_notification_email_on_critical(monkeypatch):
+def test_notification_email_on_critical(monkeypatch) -> None:
     """
     Given: 오류(ERROR) 상태의 알림과 이메일 설정
     When: 알림 핸들러가 이벤트를 처리하면
@@ -60,7 +60,7 @@ def test_notification_email_on_critical(monkeypatch):
     assert len(ses.sent) == 1
 
 
-def test_notification_missing_fields(monkeypatch):
+def test_notification_missing_fields(monkeypatch) -> None:
     """
     Given: 필수 필드가 누락된 이벤트
     When: 알림 핸들러가 이벤트를 검증하면

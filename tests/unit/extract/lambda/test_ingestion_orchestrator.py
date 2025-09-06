@@ -3,7 +3,7 @@ import runpy
 from tests.fixtures.clients import SQSStub, BotoStub
 
 
-def test_orchestrator_batches_messages(monkeypatch):
+def test_orchestrator_batches_messages(monkeypatch) -> None:
     """
     Given: 23개의 심볼, chunk_size=5, batch_size=10 환경
     When: 오케스트레이터를 실행하면

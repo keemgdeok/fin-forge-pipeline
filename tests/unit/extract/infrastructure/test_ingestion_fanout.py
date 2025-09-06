@@ -21,7 +21,7 @@ def _base_config():
     }
 
 
-def test_fanout_resources(fake_python_function):
+def test_fanout_resources(fake_python_function) -> None:
     """
     Given: 인제스트 팬아웃 스택 기본 설정
     When: 스택을 합성하면

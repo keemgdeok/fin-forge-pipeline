@@ -28,7 +28,7 @@ def _base_config():
     }
 
 
-def test_raw_bucket_eventbridge_enabled():
+def test_raw_bucket_eventbridge_enabled() -> None:
     """
     Given: 처리 오케스트레이션 비활성화 설정
     When: 공유 스토리지 스택을 합성하면
@@ -61,7 +61,7 @@ def test_raw_bucket_eventbridge_enabled():
     )
 
 
-def test_eventbridge_rule_has_prefix_and_suffixes(monkeypatch):
+def test_eventbridge_rule_has_prefix_and_suffixes(monkeypatch) -> None:
     """
     Given: 처리 오케스트레이션 활성화 및 PythonFunction 대체
     When: 처리 스택을 합성하면
@@ -122,7 +122,7 @@ def test_eventbridge_rule_has_prefix_and_suffixes(monkeypatch):
     assert any(_has_expected_key_filters(r) for r in rules.values())
 
 
-def test_eventbridge_rules_disabled_by_flag(monkeypatch):
+def test_eventbridge_rules_disabled_by_flag(monkeypatch) -> None:
     """
     Given: 처리 오케스트레이션 비활성화
     When: 처리 스택을 합성하면

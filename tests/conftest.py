@@ -1,6 +1,7 @@
 import os
 import sys
 from pathlib import Path
+from typing import Any, Callable, Iterator
 import pytest
 import boto3
 
@@ -13,7 +14,7 @@ if _shared_str not in sys.path:
 
 
 @pytest.fixture(autouse=True)
-def aws_env(monkeypatch):
+def aws_env(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
     """Ensure default AWS region is set for moto/boto3 clients."""
     monkeypatch.setenv("AWS_REGION", os.environ.get("AWS_REGION", "us-east-1"))
     monkeypatch.setenv("AWS_DEFAULT_REGION", os.environ.get("AWS_DEFAULT_REGION", "us-east-1"))
@@ -25,7 +26,7 @@ def aws_env(monkeypatch):
 
 
 @pytest.fixture(autouse=True)
-def pythonpath():
+def pythonpath() -> Iterator[None]:
     """Ensure Lambda layer 'shared' package is importable in tests.
 
     Adds src/lambda/layers/common/python to sys.path so that `import shared.*`
@@ -40,7 +41,7 @@ def pythonpath():
 
 
 @pytest.fixture
-def orchestrator_env(monkeypatch):
+def orchestrator_env(monkeypatch: pytest.MonkeyPatch) -> Callable[[str], None]:
     """Apply orchestrator-related environment variables."""
 
     def _apply(queue_url: str, *, chunk_size: int = 2, batch_size: int = 10, environment: str = "dev") -> None:
@@ -53,7 +54,7 @@ def orchestrator_env(monkeypatch):
 
 
 @pytest.fixture
-def worker_env(monkeypatch):
+def worker_env(monkeypatch: pytest.MonkeyPatch) -> Callable[[str], None]:
     """Apply worker-related environment variables."""
 
     def _apply(raw_bucket: str, *, enable_gzip: bool = False, environment: str = "dev") -> None:
@@ -65,7 +66,7 @@ def worker_env(monkeypatch):
 
 
 @pytest.fixture
-def yf_stub(monkeypatch):
+def yf_stub(monkeypatch: pytest.MonkeyPatch) -> Callable[[list[str]], None]:
     """Patch YahooFinanceClient with a deterministic stub returning fixed records."""
     import importlib
 
@@ -105,7 +106,7 @@ def yf_stub(monkeypatch):
 
 
 @pytest.fixture
-def s3_stub(monkeypatch):
+def s3_stub(monkeypatch: pytest.MonkeyPatch) -> Callable[..., Any]:
     """Patch boto3 in shared.ingestion.service with a lightweight S3 stub.
 
     Returns the stub instance which captures put_calls for assertions and
@@ -114,7 +115,7 @@ def s3_stub(monkeypatch):
     import importlib
     from tests.fixtures.clients import S3Stub, BotoStub
 
-    def _apply(*, keycount: int = 0):
+    def _apply(*, keycount: int = 0) -> Any:
         svc = importlib.import_module("shared.ingestion.service")
         s3 = S3Stub(keycount=keycount)
         monkeypatch.setitem(svc.__dict__, "boto3", BotoStub(s3=s3))
@@ -124,13 +125,13 @@ def s3_stub(monkeypatch):
 
 
 @pytest.fixture
-def env_dev(monkeypatch):
+def env_dev(monkeypatch: pytest.MonkeyPatch) -> Callable[..., None]:
     """Set ENVIRONMENT=dev and optionally RAW_BUCKET.
 
     Usage: env_dev() or env_dev(raw_bucket="raw-bucket-dev").
     """
 
-    def _apply(*, raw_bucket: str | None = None):
+    def _apply(*, raw_bucket: str | None = None) -> None:
         monkeypatch.setenv("ENVIRONMENT", "dev")
         if raw_bucket:
             monkeypatch.setenv("RAW_BUCKET", raw_bucket)
@@ -139,20 +140,20 @@ def env_dev(monkeypatch):
 
 
 @pytest.fixture
-def load_module():
+def load_module() -> Callable[[str], dict[str, Any]]:
     import runpy
 
-    def _apply(path: str):
+    def _apply(path: str) -> dict[str, Any]:
         return runpy.run_path(path)
 
     return _apply
 
 
 @pytest.fixture
-def fake_python_function(monkeypatch):
+def fake_python_function(monkeypatch: pytest.MonkeyPatch) -> Callable[[Any], None]:
     from aws_cdk import Duration
 
-    def _apply(target_module):
+    def _apply(target_module: Any) -> None:
         from aws_cdk import aws_lambda as lambda_
 
         def _fake(scope, id, **kwargs):
@@ -177,7 +178,7 @@ def fake_python_function(monkeypatch):
 
 
 @pytest.fixture
-def make_queue():
+def make_queue() -> Callable[[str], str]:
     def _create(name: str) -> str:
         client = boto3.client("sqs", region_name=os.environ.get("AWS_REGION", "us-east-1"))
         return client.create_queue(QueueName=name)["QueueUrl"]
@@ -186,7 +187,7 @@ def make_queue():
 
 
 @pytest.fixture
-def make_bucket():
+def make_bucket() -> Callable[[str], str]:
     def _create(name: str) -> str:
         client = boto3.client("s3", region_name=os.environ.get("AWS_REGION", "us-east-1"))
         client.create_bucket(Bucket=name)

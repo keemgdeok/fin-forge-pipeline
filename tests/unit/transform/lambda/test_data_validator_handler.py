@@ -22,7 +22,7 @@ class _StubValidator:
         return "jr-1234"
 
 
-def test_validator_success_path(monkeypatch):
+def test_validator_success_path(monkeypatch) -> None:
     """
     Given: RAW/CURATED 버킷 환경과 성공을 반환하는 검증기 스텁
     When: 데이터 검증 핸들러를 실행하면
@@ -53,7 +53,7 @@ def test_validator_success_path(monkeypatch):
     assert "step_function_execution_arn" not in resp
 
 
-def test_validator_missing_params(monkeypatch):
+def test_validator_missing_params(monkeypatch) -> None:
     """
     Given: 필수 파라미터가 없는 이벤트
     When: 데이터 검증 핸들러를 실행하면

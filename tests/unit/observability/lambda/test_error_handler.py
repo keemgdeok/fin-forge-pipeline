@@ -3,7 +3,7 @@ import runpy
 from tests.fixtures.clients import SnsStub, CloudWatchStub, BotoStub
 
 
-def test_error_handler_success(monkeypatch):
+def test_error_handler_success(monkeypatch) -> None:
     """
     Given: 오류 이벤트와 SNS/CW 스텁
     When: 에러 핸들러를 실행하면
@@ -35,7 +35,7 @@ def test_error_handler_success(monkeypatch):
     assert len(cw.metrics) >= 1
 
 
-def test_error_handler_missing_fields(monkeypatch):
+def test_error_handler_missing_fields(monkeypatch) -> None:
     """
     Given: 필수 필드가 누락된 오류 이벤트
     When: 에러 핸들러를 실행하면

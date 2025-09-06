@@ -1,13 +1,14 @@
 import os
 import json
 from datetime import datetime, timezone
+from typing import Any, Dict
 
 from moto import mock_aws
 import boto3
 from tests.fixtures.data_builders import build_ingestion_event, build_raw_s3_prefix
 
 
-def _receive_all_sqs_messages(queue_url: str):
+def _receive_all_sqs_messages(queue_url: str) -> dict[str, Any]:
     sqs_client = boto3.client("sqs", region_name=os.environ.get("AWS_REGION", "us-east-1"))
     records = []
     while True:
@@ -21,7 +22,7 @@ def _receive_all_sqs_messages(queue_url: str):
 
 
 @mock_aws
-def test_orchestrator_symbols_from_ssm(monkeypatch, orchestrator_env, make_queue, load_module):
+def test_orchestrator_symbols_from_ssm(monkeypatch, orchestrator_env, make_queue, load_module) -> None:
     """
     Given: SSM 파라미터에 4개 심볼이 저장되고 chunk_size=3, 배치크기=10
     When: 오케스트레이터를 실행하여 메시지를 발행하면
@@ -60,7 +61,7 @@ def test_orchestrator_symbols_from_ssm(monkeypatch, orchestrator_env, make_queue
 
 
 @mock_aws
-def test_orchestrator_symbols_from_s3(monkeypatch, orchestrator_env, make_queue, make_bucket, load_module):
+def test_orchestrator_symbols_from_s3(monkeypatch, orchestrator_env, make_queue, make_bucket, load_module) -> None:
     """
     Given: S3 객체에 5개 심볼 목록이 존재하고 chunk_size=3
     When: 오케스트레이터가 S3에서 심볼을 읽어 메시지를 발행하면
@@ -99,7 +100,7 @@ def test_orchestrator_symbols_from_s3(monkeypatch, orchestrator_env, make_queue,
 
 
 @mock_aws
-def test_dlq_redrive_on_worker_failures(monkeypatch, make_queue, load_module):
+def test_dlq_redrive_on_worker_failures(monkeypatch, make_queue, load_module) -> None:
     """
     Given: DLQ가 연결된 메인 큐와 실패를 유발하는 워커
     When: 동일 메시지를 반복 수신 처리하면
@@ -162,7 +163,7 @@ def test_dlq_redrive_on_worker_failures(monkeypatch, make_queue, load_module):
 
 
 @mock_aws
-def test_e2e_basic_flow(monkeypatch, orchestrator_env, worker_env, yf_stub, make_queue, make_bucket, load_module):
+def test_e2e_basic_flow(monkeypatch, orchestrator_env, worker_env, yf_stub, make_queue, make_bucket, load_module) -> None:
     """
     Given: 3개 심볼과 chunk_size=2로 오케스트레이터와 워커 환경 구성
     When: 오케스트레이터 실행 후 워커가 처리하면
@@ -209,7 +210,7 @@ def test_e2e_basic_flow(monkeypatch, orchestrator_env, worker_env, yf_stub, make
 
 
 @mock_aws
-def test_e2e_gzip(monkeypatch, orchestrator_env, worker_env, yf_stub, make_queue, make_bucket, load_module):
+def test_e2e_gzip(monkeypatch, orchestrator_env, worker_env, yf_stub, make_queue, make_bucket, load_module) -> None:
     """
     Given: 단일 심볼과 gzip 활성화된 워커 환경
     When: 오케스트레이터 실행 후 워커가 처리하면
@@ -244,7 +245,7 @@ def test_e2e_gzip(monkeypatch, orchestrator_env, worker_env, yf_stub, make_queue
 
 
 @mock_aws
-def test_e2e_partial_batch_failure(monkeypatch, worker_env, yf_stub, make_queue, make_bucket, load_module):
+def test_e2e_partial_batch_failure(monkeypatch, worker_env, yf_stub, make_queue, make_bucket, load_module) -> None:
     """
     Given: 유효/무효 메시지가 섞인 SQS 배치
     When: 워커가 배치를 처리하면
@@ -281,7 +282,7 @@ def test_e2e_partial_batch_failure(monkeypatch, worker_env, yf_stub, make_queue,
 
 
 @mock_aws
-def test_e2e_idempotency_skip(monkeypatch, orchestrator_env, worker_env, yf_stub, make_queue, make_bucket, load_module):
+def test_e2e_idempotency_skip(monkeypatch, orchestrator_env, worker_env, yf_stub, make_queue, make_bucket, load_module) -> None:
     """
     Given: MSFT prefix에 기존 객체가 존재하고 AAPL은 비어있음
     When: 워커가 두 심볼을 처리하면

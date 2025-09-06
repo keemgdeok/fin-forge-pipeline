@@ -10,14 +10,14 @@ class S3Stub:
         self.head_ok = head_ok
         self.put_calls: List[Dict[str, Any]] = []
 
-    def list_objects_v2(self, **kwargs):
+    def list_objects_v2(self, **kwargs: Any) -> Dict[str, Any]:
         return {"KeyCount": self.keycount}
 
-    def put_object(self, **kwargs):
+    def put_object(self, **kwargs: Any) -> Dict[str, Any]:
         self.put_calls.append(kwargs)
         return {"ETag": "stub"}
 
-    def head_object(self, **kwargs):
+    def head_object(self, **kwargs: Any) -> Dict[str, Any]:
         if self.head_ok:
             return {"ResponseMetadata": {"HTTPStatusCode": 200}}
         raise ClientError({"Error": {"Code": "404", "Message": "Not Found"}}, "HeadObject")
@@ -27,7 +27,7 @@ class SQSStub:
     def __init__(self) -> None:
         self.batches: List[List[Dict[str, Any]]] = []
 
-    def send_message_batch(self, **kwargs):
+    def send_message_batch(self, **kwargs: Any) -> Dict[str, Any]:
         entries = kwargs.get("Entries", [])
         self.batches.append(entries)
         return {"Successful": [{"Id": e.get("Id", str(i))} for i, e in enumerate(entries)]}
@@ -37,7 +37,7 @@ class SnsStub:
     def __init__(self) -> None:
         self.published: List[Dict[str, Any]] = []
 
-    def publish(self, **kwargs):
+    def publish(self, **kwargs: Any) -> Dict[str, Any]:
         self.published.append(kwargs)
         return {"MessageId": "mid-123"}
 
@@ -46,13 +46,13 @@ class CloudWatchStub:
     def __init__(self) -> None:
         self.metrics: List[Dict[str, Any]] = []
 
-    def put_metric_data(self, **kwargs):
+    def put_metric_data(self, **kwargs: Any) -> Dict[str, Any]:
         self.metrics.append(kwargs)
         return {}
 
 
 class StepFunctionsStub:
-    def start_execution(self, **kwargs):
+    def start_execution(self, **kwargs: Any) -> Dict[str, Any]:
         return {"executionArn": "arn:states:stub"}
 
 
@@ -60,7 +60,7 @@ class SesStub:
     def __init__(self) -> None:
         self.sent: List[Dict[str, Any]] = []
 
-    def send_email(self, **kwargs):
+    def send_email(self, **kwargs: Any) -> Dict[str, Any]:
         self.sent.append(kwargs)
         return {"MessageId": "em-1"}
 
@@ -85,7 +85,7 @@ class BotoStub:
         self._ssm = ssm
         self._ses = ses
 
-    def client(self, name: str, **kwargs):
+    def client(self, name: str, **kwargs: Any) -> Any:
         if name == "s3" and self._s3 is not None:
             return self._s3
         if name == "sqs" and self._sqs is not None:
