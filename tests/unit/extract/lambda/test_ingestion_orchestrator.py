@@ -1,41 +1,22 @@
 import os
 import runpy
-
-
-def _load_module():
-    return runpy.run_path("src/lambda/functions/ingestion_orchestrator/handler.py")
-
-
-class _SQS:
-    def __init__(self):
-        self.batches = []
-
-    def send_message_batch(self, **kwargs):
-        # Record batch entries
-        self.batches.append(kwargs["Entries"])
-        # Simulate SQS response
-        return {"Successful": [{"Id": e["Id"]} for e in kwargs["Entries"]]}
-
-
-class _Boto:
-    def __init__(self, sqs):
-        self._sqs = sqs
-
-    def client(self, name: str):
-        if name == "sqs":
-            return self._sqs
-        raise ValueError(name)
+from tests.fixtures.clients import SQSStub, BotoStub
 
 
 def test_orchestrator_batches_messages(monkeypatch):
+    """
+    Given: 23개의 심볼, chunk_size=5, batch_size=10 환경
+    When: 오케스트레이터를 실행하면
+    Then: 총 5개의 청크 메시지가 1회 배치 전송으로 발행되어야 함
+    """
     os.environ["ENVIRONMENT"] = "dev"
     os.environ["QUEUE_URL"] = "https://sqs.example/queue"
     os.environ["CHUNK_SIZE"] = "5"
     os.environ["SQS_SEND_BATCH_SIZE"] = "10"
 
-    mod = _load_module()
-    sqs = _SQS()
-    monkeypatch.setitem(mod["main"].__globals__, "boto3", _Boto(sqs))
+    mod = runpy.run_path("src/lambda/functions/ingestion_orchestrator/handler.py")
+    sqs = SQSStub()
+    monkeypatch.setitem(mod["main"].__globals__, "boto3", BotoStub(sqs=sqs))
 
     # 23 symbols -> chunks of 5 => 5 chunk messages
     # send_batch_size=10 => entries are flushed once at end (1 batch)

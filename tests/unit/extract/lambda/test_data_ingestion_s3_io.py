@@ -1,36 +1,6 @@
 from typing import Any, Dict, List
 
 
-class _StubS3Client:
-    def __init__(self, keycount: int = 0):
-        self.keycount = keycount
-        self.put_calls: List[Dict[str, Any]] = []
-
-    def list_objects_v2(self, **kwargs):
-        return {"KeyCount": self.keycount}
-
-    def put_object(self, **kwargs):
-        self.put_calls.append(kwargs)
-        return {"ETag": "stub"}
-
-
-class _StubBoto3:
-    def __init__(self, s3_client: _StubS3Client):
-        self._s3 = s3_client
-
-    def client(self, name: str):
-        if name == "s3":
-            return self._s3
-        if name == "stepfunctions":
-
-            class _SFN:
-                def start_execution(self, **kwargs):
-                    return {"executionArn": "arn:states:stub"}
-
-            return _SFN()
-        raise ValueError(name)
-
-
 """
 Note: Local record stubs and datetime imports were removed in favor of
 shared yf_stub fixture which produces deterministic records.
@@ -38,6 +8,11 @@ shared yf_stub fixture which produces deterministic records.
 
 
 def test_ingestion_s3_write_json(env_dev, load_module, yf_stub, s3_stub):
+    """
+    Given: 두 심볼(AAPL, MSFT)과 RAW 버킷이 존재
+    When: JSON 포맷으로 인제스트하면
+    Then: 처리 레코드 2, 최소 1개 이상의 S3 put, ContentType이 application/json이어야 함
+    """
     env_dev(raw_bucket="raw-bucket-dev")
     mod = load_module("src/lambda/functions/data_ingestion/handler.py")
     # Patch service deps
@@ -66,6 +41,11 @@ def test_ingestion_s3_write_json(env_dev, load_module, yf_stub, s3_stub):
 
 
 def test_ingestion_idempotency_skips(env_dev, load_module, yf_stub, s3_stub):
+    """
+    Given: 대상 prefix에 기존 객체가 존재(keycount=1)
+    When: 동일 심볼을 인제스트하면
+    Then: idempotency로 인해 쓰기가 생략되고 put 호출이 없어야 함
+    """
     env_dev(raw_bucket="raw-bucket-dev")
     mod = load_module("src/lambda/functions/data_ingestion/handler.py")
     yf_stub(["AAPL"])  # one record

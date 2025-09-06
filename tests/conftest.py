@@ -112,32 +112,12 @@ def s3_stub(monkeypatch):
     responds to list_objects_v2 with a configurable KeyCount.
     """
     import importlib
-
-    class _S3Stub:
-        def __init__(self, keycount: int = 0):
-            self.keycount = keycount
-            self.put_calls = []
-
-        def list_objects_v2(self, **kwargs):
-            return {"KeyCount": self.keycount}
-
-        def put_object(self, **kwargs):
-            self.put_calls.append(kwargs)
-            return {"ETag": "stub"}
-
-    class _BotoStub:
-        def __init__(self, s3stub: _S3Stub):
-            self._s3 = s3stub
-
-        def client(self, name: str, **kwargs):
-            if name == "s3":
-                return self._s3
-            raise ValueError(name)
+    from tests.fixtures.clients import S3Stub, BotoStub
 
     def _apply(*, keycount: int = 0):
         svc = importlib.import_module("shared.ingestion.service")
-        s3 = _S3Stub(keycount=keycount)
-        monkeypatch.setitem(svc.__dict__, "boto3", _BotoStub(s3))
+        s3 = S3Stub(keycount=keycount)
+        monkeypatch.setitem(svc.__dict__, "boto3", BotoStub(s3=s3))
         return s3
 
     return _apply

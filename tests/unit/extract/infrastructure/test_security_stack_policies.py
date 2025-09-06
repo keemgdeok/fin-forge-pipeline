@@ -9,6 +9,11 @@ def _cfg():
 
 
 def test_lambda_role_has_sqs_send_permissions():
+    """
+    Given: 보안 스택을 합성하면
+    When: Lambda 실행 역할의 정책을 검사하면
+    Then: sqs:SendMessage 또는 sqs:SendMessageBatch 권한이 존재해야 함
+    """
     app = App()
     stack = SecurityStack(app, "SecStack", environment="dev", config=_cfg())
     t = Template.from_stack(stack)

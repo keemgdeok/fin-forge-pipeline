@@ -22,6 +22,11 @@ def _base_config():
 
 
 def test_fanout_resources(fake_python_function):
+    """
+    Given: 인제스트 팬아웃 스택 기본 설정
+    When: 스택을 합성하면
+    Then: SQS 큐 2개(메인+DLQ), 워커 ESM, 스케줄 Rule이 생성되어야 함
+    """
     app = App()
     cfg = _base_config()
 
