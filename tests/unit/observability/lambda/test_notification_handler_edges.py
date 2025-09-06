@@ -50,4 +50,3 @@ def test_notification_handler_sns_skipped_when_topic_missing(monkeypatch) -> Non
     }
     resp = mod["main"](event, None)
     assert resp["statusCode"] == 200
-

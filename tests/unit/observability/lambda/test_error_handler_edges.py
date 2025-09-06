@@ -51,4 +51,3 @@ def test_error_handler_skips_sns_when_topic_not_configured(monkeypatch) -> None:
     }
     resp = mod["main"](event, None)
     assert resp["statusCode"] == 200
-

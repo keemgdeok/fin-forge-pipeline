@@ -99,4 +99,3 @@ def test_orchestrator_ssm_error_then_s3_error_then_default(monkeypatch) -> None:
     assert resp["published"] == 1
     assert len(sent_batches) == 1
     assert len(sent_batches[0]) == 1
-
