@@ -4,9 +4,7 @@ from datetime import datetime, timezone
 
 from moto import mock_aws
 import boto3
-
-
- 
+from tests.fixtures.data_builders import build_ingestion_event, build_raw_s3_prefix
 
 
 def _receive_all_sqs_messages(queue_url: str):
@@ -24,6 +22,11 @@ def _receive_all_sqs_messages(queue_url: str):
 
 @mock_aws
 def test_orchestrator_symbols_from_ssm(monkeypatch, orchestrator_env, make_queue, load_module):
+    """
+    Given: SSM 파라미터에 4개 심볼이 저장되고 chunk_size=3, 배치크기=10
+    When: 오케스트레이터를 실행하여 메시지를 발행하면
+    Then: 총 2개의 청크 메시지가 SQS로 발행되고 모든 심볼이 커버되어야 함
+    """
     # Set default env
     # Env defaults
     os.environ["ENVIRONMENT"] = "dev"
@@ -42,14 +45,7 @@ def test_orchestrator_symbols_from_ssm(monkeypatch, orchestrator_env, make_queue
     os.environ.pop("SYMBOLS_S3_KEY", None)
 
     # Orchestrator should read SSM and publish ceil(4/3)=2 messages
-    event = {
-        "symbols": [],
-        "domain": "market",
-        "table_name": "prices",
-        "period": "1mo",
-        "interval": "1d",
-        "file_format": "json",
-    }
+    event = build_ingestion_event(symbols=[])
     mod_orc = load_module("src/lambda/functions/ingestion_orchestrator/handler.py")
     resp = mod_orc["main"](event, None)
     assert resp["published"] == 2
@@ -65,6 +61,11 @@ def test_orchestrator_symbols_from_ssm(monkeypatch, orchestrator_env, make_queue
 
 @mock_aws
 def test_orchestrator_symbols_from_s3(monkeypatch, orchestrator_env, make_queue, make_bucket, load_module):
+    """
+    Given: S3 객체에 5개 심볼 목록이 존재하고 chunk_size=3
+    When: 오케스트레이터가 S3에서 심볼을 읽어 메시지를 발행하면
+    Then: 총 2개의 청크 메시지가 발행되고, 모든 심볼이 커버되어야 함
+    """
     # Env
     os.environ["ENVIRONMENT"] = "dev"
 
@@ -83,14 +84,7 @@ def test_orchestrator_symbols_from_s3(monkeypatch, orchestrator_env, make_queue,
     os.environ.pop("SYMBOLS_SSM_PARAM", None)
 
     # Orchestrator should read S3 object and publish ceil(5/3)=2 messages
-    event = {
-        "symbols": [],
-        "domain": "market",
-        "table_name": "prices",
-        "period": "1mo",
-        "interval": "1d",
-        "file_format": "json",
-    }
+    event = build_ingestion_event(symbols=[])
     mod_orc = load_module("src/lambda/functions/ingestion_orchestrator/handler.py")
     resp = mod_orc["main"](event, None)
     assert resp["published"] == 2
@@ -106,6 +100,11 @@ def test_orchestrator_symbols_from_s3(monkeypatch, orchestrator_env, make_queue,
 
 @mock_aws
 def test_dlq_redrive_on_worker_failures(monkeypatch, make_queue, load_module):
+    """
+    Given: DLQ가 연결된 메인 큐와 실패를 유발하는 워커
+    When: 동일 메시지를 반복 수신 처리하면
+    Then: 최대 수신 횟수 초과 후 메시지가 DLQ로 이동해야 함
+    """
     # Create DLQ
     sqs = boto3.client("sqs", region_name="us-east-1")
     dlq_url = make_queue("extract-dlq")
@@ -164,6 +163,11 @@ def test_dlq_redrive_on_worker_failures(monkeypatch, make_queue, load_module):
 
 @mock_aws
 def test_e2e_basic_flow(monkeypatch, orchestrator_env, worker_env, yf_stub, make_queue, make_bucket, load_module):
+    """
+    Given: 3개 심볼과 chunk_size=2로 오케스트레이터와 워커 환경 구성
+    When: 오케스트레이터 실행 후 워커가 처리하면
+    Then: 각 심볼별 RAW S3 prefix에 정확히 1개 객체가 생성되어야 함
+    """
     # Orchestrator environment
     os.environ["ENVIRONMENT"] = "dev"
     # moto SQS queue
@@ -173,14 +177,7 @@ def test_e2e_basic_flow(monkeypatch, orchestrator_env, worker_env, yf_stub, make
     bucket = make_bucket("raw-bucket-dev")
     s3 = boto3.client("s3", region_name="us-east-1")
 
-    event = {
-        "symbols": ["AAPL", "MSFT", "GOOG"],
-        "domain": "market",
-        "table_name": "prices",
-        "period": "1mo",
-        "interval": "1d",
-        "file_format": "json",
-    }
+    event = build_ingestion_event(symbols=["AAPL", "MSFT", "GOOG"])
 
     mod_orc = load_module("src/lambda/functions/ingestion_orchestrator/handler.py")
     resp = mod_orc["main"](event, None)
@@ -196,11 +193,16 @@ def test_e2e_basic_flow(monkeypatch, orchestrator_env, worker_env, yf_stub, make
     wr = mod_wrk["main"](sqs_event, None)
     assert wr == {"batchItemFailures": []}
     # 각 심볼의 prefix별 정확한 객체 수 검증(심볼당 1개)
-    today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    today_dt = datetime.now(timezone.utc)
     for sym in ["AAPL", "MSFT", "GOOG"]:
-        prefix = (
-            f"market/prices/ingestion_date={today}/data_source=yahoo_finance/"
-            f"symbol={sym}/interval=1d/period=1mo/"
+        prefix = build_raw_s3_prefix(
+            domain="market",
+            table_name="prices",
+            data_source="yahoo_finance",
+            symbol=sym,
+            period="1mo",
+            interval="1d",
+            date=today_dt,
         )
         listed_sym = s3.list_objects_v2(Bucket=bucket, Prefix=prefix)
         assert int(listed_sym.get("KeyCount", 0)) == 1
@@ -208,6 +210,11 @@ def test_e2e_basic_flow(monkeypatch, orchestrator_env, worker_env, yf_stub, make
 
 @mock_aws
 def test_e2e_gzip(monkeypatch, orchestrator_env, worker_env, yf_stub, make_queue, make_bucket, load_module):
+    """
+    Given: 단일 심볼과 gzip 활성화된 워커 환경
+    When: 오케스트레이터 실행 후 워커가 처리하면
+    Then: gz 확장자와 ContentEncoding=gzip으로 1개 객체가 생성되어야 함
+    """
     # Orchestrator prepares one symbol message
     os.environ["ENVIRONMENT"] = "dev"
     queue_url = make_queue("extract-e2e-queue-gzip")
@@ -215,14 +222,7 @@ def test_e2e_gzip(monkeypatch, orchestrator_env, worker_env, yf_stub, make_queue
 
     mod_orc = load_module("src/lambda/functions/ingestion_orchestrator/handler.py")
 
-    event = {
-        "symbols": ["AAPL"],
-        "domain": "market",
-        "table_name": "prices",
-        "period": "1mo",
-        "interval": "1d",
-        "file_format": "json",
-    }
+    event = build_ingestion_event(symbols=["AAPL"])
     mod_orc["main"](event, None)
 
     # Worker with gzip enabled
@@ -245,6 +245,11 @@ def test_e2e_gzip(monkeypatch, orchestrator_env, worker_env, yf_stub, make_queue
 
 @mock_aws
 def test_e2e_partial_batch_failure(monkeypatch, worker_env, yf_stub, make_queue, make_bucket, load_module):
+    """
+    Given: 유효/무효 메시지가 섞인 SQS 배치
+    When: 워커가 배치를 처리하면
+    Then: 무효 메시지에 대해 batchItemFailures가 보고되고 유효 메시지는 정상 처리되어야 함
+    """
     # Create queue with valid and invalid message
     queue_url = make_queue("extract-e2e-partial")
     sqs = boto3.client("sqs", region_name=os.environ.get("AWS_REGION", "us-east-1"))
@@ -277,6 +282,11 @@ def test_e2e_partial_batch_failure(monkeypatch, worker_env, yf_stub, make_queue,
 
 @mock_aws
 def test_e2e_idempotency_skip(monkeypatch, orchestrator_env, worker_env, yf_stub, make_queue, make_bucket, load_module):
+    """
+    Given: MSFT prefix에 기존 객체가 존재하고 AAPL은 비어있음
+    When: 워커가 두 심볼을 처리하면
+    Then: MSFT는 건너뛰고 AAPL만 1개 객체가 생성되어야 함
+    """
     # Orchestrator for two symbols
     os.environ["ENVIRONMENT"] = "dev"
     queue_url = make_queue("extract-e2e-idem")
@@ -284,14 +294,7 @@ def test_e2e_idempotency_skip(monkeypatch, orchestrator_env, worker_env, yf_stub
 
     mod_orc = load_module("src/lambda/functions/ingestion_orchestrator/handler.py")
 
-    event = {
-        "symbols": ["AAPL", "MSFT"],
-        "domain": "market",
-        "table_name": "prices",
-        "period": "1mo",
-        "interval": "1d",
-        "file_format": "json",
-    }
+    event = build_ingestion_event(symbols=["AAPL", "MSFT"])
     mod_orc["main"](event, None)
 
     # Worker sees existing prefix for MSFT -> skip write for MSFT
@@ -299,8 +302,16 @@ def test_e2e_idempotency_skip(monkeypatch, orchestrator_env, worker_env, yf_stub
     s3 = boto3.client("s3", region_name="us-east-1")
     worker_env(bucket, enable_gzip=False)
     # Pre-create an existing MSFT object under today's prefix
-    today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
-    prefix = f"market/prices/ingestion_date={today}/data_source=yahoo_finance/symbol=MSFT/interval=1d/period=1mo/"
+    today_dt = datetime.now(timezone.utc)
+    prefix = build_raw_s3_prefix(
+        domain="market",
+        table_name="prices",
+        data_source="yahoo_finance",
+        symbol="MSFT",
+        period="1mo",
+        interval="1d",
+        date=today_dt,
+    )
     s3.put_object(Bucket=bucket, Key=f"{prefix}existing.json", Body=b"x")
 
     mod_wrk = load_module("src/lambda/functions/ingestion_worker/handler.py")
@@ -311,6 +322,14 @@ def test_e2e_idempotency_skip(monkeypatch, orchestrator_env, worker_env, yf_stub
     assert wr == {"batchItemFailures": []}
     listed_msft = s3.list_objects_v2(Bucket=bucket, Prefix=prefix)
     assert int(listed_msft.get("KeyCount", 0)) == 1
-    prefix_aapl = f"market/prices/ingestion_date={today}/data_source=yahoo_finance/symbol=AAPL/"
+    prefix_aapl = build_raw_s3_prefix(
+        domain="market",
+        table_name="prices",
+        data_source="yahoo_finance",
+        symbol="AAPL",
+        period="1mo",
+        interval="1d",
+        date=today_dt,
+    )
     listed_aapl = s3.list_objects_v2(Bucket=bucket, Prefix=prefix_aapl)
     assert int(listed_aapl.get("KeyCount", 0)) == 1
