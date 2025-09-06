@@ -1,56 +1,12 @@
 import os
 import json
-import runpy
 from datetime import datetime, timezone
 
 from moto import mock_aws
 import boto3
 
-# Ensure default region for moto/boto3 clients created without explicit region
-os.environ.setdefault("AWS_REGION", "us-east-1")
-os.environ.setdefault("AWS_DEFAULT_REGION", "us-east-1")
 
-
-def _load_orchestrator_module():
-    return runpy.run_path("src/lambda/functions/ingestion_orchestrator/handler.py")
-
-
-def _load_worker_module():
-    return runpy.run_path("src/lambda/functions/ingestion_worker/handler.py")
-
-
-class _Rec:
-    def __init__(self, symbol: str, ts: datetime):
-        self.symbol = symbol
-        self.timestamp = ts
-        self.open = 1.0
-        self.high = 1.0
-        self.low = 1.0
-        self.close = 1.0
-        self.volume = 1.0
-
-    def as_dict(self):
-        return {
-            "symbol": self.symbol,
-            "timestamp": self.timestamp.isoformat(),
-            "open": self.open,
-            "high": self.high,
-            "low": self.low,
-            "close": self.close,
-            "volume": self.volume,
-        }
-
-
-class _YFStub:
-    def __init__(self, symbols):
-        self._symbols = symbols
-
-    def fetch_prices(self, symbols, period, interval):
-        ts = datetime(2024, 1, 1, tzinfo=timezone.utc)
-        out = []
-        for s in symbols:
-            out.append(_Rec(s, ts))
-        return out
+ 
 
 
 def _receive_all_sqs_messages(queue_url: str):
@@ -67,7 +23,7 @@ def _receive_all_sqs_messages(queue_url: str):
 
 
 @mock_aws
-def test_orchestrator_symbols_from_ssm(monkeypatch, orchestrator_env, make_queue):
+def test_orchestrator_symbols_from_ssm(monkeypatch, orchestrator_env, make_queue, load_module):
     # Set default env
     # Env defaults
     os.environ["ENVIRONMENT"] = "dev"
@@ -94,7 +50,7 @@ def test_orchestrator_symbols_from_ssm(monkeypatch, orchestrator_env, make_queue
         "interval": "1d",
         "file_format": "json",
     }
-    mod_orc = _load_orchestrator_module()
+    mod_orc = load_module("src/lambda/functions/ingestion_orchestrator/handler.py")
     resp = mod_orc["main"](event, None)
     assert resp["published"] == 2
 
@@ -108,7 +64,7 @@ def test_orchestrator_symbols_from_ssm(monkeypatch, orchestrator_env, make_queue
 
 
 @mock_aws
-def test_orchestrator_symbols_from_s3(monkeypatch, orchestrator_env, make_queue, make_bucket):
+def test_orchestrator_symbols_from_s3(monkeypatch, orchestrator_env, make_queue, make_bucket, load_module):
     # Env
     os.environ["ENVIRONMENT"] = "dev"
 
@@ -135,7 +91,7 @@ def test_orchestrator_symbols_from_s3(monkeypatch, orchestrator_env, make_queue,
         "interval": "1d",
         "file_format": "json",
     }
-    mod_orc = _load_orchestrator_module()
+    mod_orc = load_module("src/lambda/functions/ingestion_orchestrator/handler.py")
     resp = mod_orc["main"](event, None)
     assert resp["published"] == 2
 
@@ -149,7 +105,7 @@ def test_orchestrator_symbols_from_s3(monkeypatch, orchestrator_env, make_queue,
 
 
 @mock_aws
-def test_dlq_redrive_on_worker_failures(monkeypatch, make_queue):
+def test_dlq_redrive_on_worker_failures(monkeypatch, make_queue, load_module):
     # Create DLQ
     sqs = boto3.client("sqs", region_name="us-east-1")
     dlq_url = make_queue("extract-dlq")
@@ -178,7 +134,7 @@ def test_dlq_redrive_on_worker_failures(monkeypatch, make_queue):
     os.environ["ENVIRONMENT"] = "dev"
     os.environ["RAW_BUCKET"] = "raw-bucket-dev"  # not used since we force failure
     os.environ["ENABLE_GZIP"] = "false"
-    mod_wrk = _load_worker_module()
+    mod_wrk = load_module("src/lambda/functions/ingestion_worker/handler.py")
 
     def _fail(*args, **kwargs):
         raise Exception("forced failure")
@@ -207,7 +163,7 @@ def test_dlq_redrive_on_worker_failures(monkeypatch, make_queue):
 
 
 @mock_aws
-def test_e2e_basic_flow(monkeypatch, orchestrator_env, worker_env, yf_stub, make_queue, make_bucket):
+def test_e2e_basic_flow(monkeypatch, orchestrator_env, worker_env, yf_stub, make_queue, make_bucket, load_module):
     # Orchestrator environment
     os.environ["ENVIRONMENT"] = "dev"
     # moto SQS queue
@@ -226,31 +182,38 @@ def test_e2e_basic_flow(monkeypatch, orchestrator_env, worker_env, yf_stub, make
         "file_format": "json",
     }
 
-    mod_orc = _load_orchestrator_module()
+    mod_orc = load_module("src/lambda/functions/ingestion_orchestrator/handler.py")
     resp = mod_orc["main"](event, None)
     assert resp["published"] == 2
 
     # Worker environment
     worker_env(bucket, enable_gzip=False)
-    mod_wrk = _load_worker_module()
+    mod_wrk = load_module("src/lambda/functions/ingestion_worker/handler.py")
     # Patch only YahooFinance (AWS to moto)
     yf_stub(["AAPL", "MSFT", "GOOG"])
 
     sqs_event = _receive_all_sqs_messages(queue_url)
     wr = mod_wrk["main"](sqs_event, None)
     assert wr == {"batchItemFailures": []}
-    listed = s3.list_objects_v2(Bucket=bucket, Prefix="market/prices/")
-    assert int(listed.get("KeyCount", 0)) >= 3
+    # 각 심볼의 prefix별 정확한 객체 수 검증(심볼당 1개)
+    today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    for sym in ["AAPL", "MSFT", "GOOG"]:
+        prefix = (
+            f"market/prices/ingestion_date={today}/data_source=yahoo_finance/"
+            f"symbol={sym}/interval=1d/period=1mo/"
+        )
+        listed_sym = s3.list_objects_v2(Bucket=bucket, Prefix=prefix)
+        assert int(listed_sym.get("KeyCount", 0)) == 1
 
 
 @mock_aws
-def test_e2e_gzip(monkeypatch, orchestrator_env, worker_env, yf_stub, make_queue, make_bucket):
+def test_e2e_gzip(monkeypatch, orchestrator_env, worker_env, yf_stub, make_queue, make_bucket, load_module):
     # Orchestrator prepares one symbol message
     os.environ["ENVIRONMENT"] = "dev"
     queue_url = make_queue("extract-e2e-queue-gzip")
     orchestrator_env(queue_url, chunk_size=1, batch_size=10)
 
-    mod_orc = _load_orchestrator_module()
+    mod_orc = load_module("src/lambda/functions/ingestion_orchestrator/handler.py")
 
     event = {
         "symbols": ["AAPL"],
@@ -266,7 +229,7 @@ def test_e2e_gzip(monkeypatch, orchestrator_env, worker_env, yf_stub, make_queue
     bucket = make_bucket("raw-bucket-dev")
     s3 = boto3.client("s3", region_name="us-east-1")
     worker_env(bucket, enable_gzip=True)
-    mod_wrk = _load_worker_module()
+    mod_wrk = load_module("src/lambda/functions/ingestion_worker/handler.py")
     yf_stub(["AAPL"])
 
     sqs_event = _receive_all_sqs_messages(queue_url)
@@ -281,7 +244,7 @@ def test_e2e_gzip(monkeypatch, orchestrator_env, worker_env, yf_stub, make_queue
 
 
 @mock_aws
-def test_e2e_partial_batch_failure(monkeypatch, worker_env, yf_stub, make_queue, make_bucket):
+def test_e2e_partial_batch_failure(monkeypatch, worker_env, yf_stub, make_queue, make_bucket, load_module):
     # Create queue with valid and invalid message
     queue_url = make_queue("extract-e2e-partial")
     sqs = boto3.client("sqs", region_name=os.environ.get("AWS_REGION", "us-east-1"))
@@ -302,7 +265,7 @@ def test_e2e_partial_batch_failure(monkeypatch, worker_env, yf_stub, make_queue,
     bucket = make_bucket("raw-bucket-dev")
     s3 = boto3.client("s3", region_name="us-east-1")
     worker_env(bucket, enable_gzip=False)
-    mod_wrk = _load_worker_module()
+    mod_wrk = load_module("src/lambda/functions/ingestion_worker/handler.py")
     yf_stub(["AAPL"])
 
     sqs_event = _receive_all_sqs_messages(queue_url)
@@ -313,13 +276,13 @@ def test_e2e_partial_batch_failure(monkeypatch, worker_env, yf_stub, make_queue,
 
 
 @mock_aws
-def test_e2e_idempotency_skip(monkeypatch, orchestrator_env, worker_env, yf_stub, make_queue, make_bucket):
+def test_e2e_idempotency_skip(monkeypatch, orchestrator_env, worker_env, yf_stub, make_queue, make_bucket, load_module):
     # Orchestrator for two symbols
     os.environ["ENVIRONMENT"] = "dev"
     queue_url = make_queue("extract-e2e-idem")
     orchestrator_env(queue_url, chunk_size=2, batch_size=10)
 
-    mod_orc = _load_orchestrator_module()
+    mod_orc = load_module("src/lambda/functions/ingestion_orchestrator/handler.py")
 
     event = {
         "symbols": ["AAPL", "MSFT"],
@@ -340,7 +303,7 @@ def test_e2e_idempotency_skip(monkeypatch, orchestrator_env, worker_env, yf_stub
     prefix = f"market/prices/ingestion_date={today}/data_source=yahoo_finance/symbol=MSFT/interval=1d/period=1mo/"
     s3.put_object(Bucket=bucket, Key=f"{prefix}existing.json", Body=b"x")
 
-    mod_wrk = _load_worker_module()
+    mod_wrk = load_module("src/lambda/functions/ingestion_worker/handler.py")
     yf_stub(["AAPL", "MSFT"])
 
     sqs_event = _receive_all_sqs_messages(queue_url)
@@ -350,4 +313,4 @@ def test_e2e_idempotency_skip(monkeypatch, orchestrator_env, worker_env, yf_stub
     assert int(listed_msft.get("KeyCount", 0)) == 1
     prefix_aapl = f"market/prices/ingestion_date={today}/data_source=yahoo_finance/symbol=AAPL/"
     listed_aapl = s3.list_objects_v2(Bucket=bucket, Prefix=prefix_aapl)
-    assert int(listed_aapl.get("KeyCount", 0)) >= 1
+    assert int(listed_aapl.get("KeyCount", 0)) == 1

@@ -1,4 +1,5 @@
-from typing import Any, Dict
+from typing import Any, Dict, List
+import pytest
 
 
 def test_ingestion_symbols_parsing(env_dev, load_module):
@@ -45,3 +46,33 @@ def test_ingestion_does_not_call_stepfunctions(env_dev, load_module, yf_stub, s3
     resp = main(event, None)
     assert resp["statusCode"] == 200
     assert resp["body"]["processed_records"] == 1
+
+
+@pytest.mark.parametrize(
+    "symbols,expected",
+    [
+        ([], []),
+        (["AAPL"], ["AAPL"]),
+        (["AAPL", None, "", " "], ["AAPL"]),
+        (["AAPL", 123, "MSFT"], ["AAPL", "MSFT"]),
+        (["A" * 100], ["A" * 100]),
+    ],
+)
+def test_ingestion_symbols_validation_parametrized(env_dev, load_module, symbols: List[Any], expected: List[str]):
+    env_dev(raw_bucket="raw-bucket-dev")
+    main = load_module("src/lambda/functions/data_ingestion/handler.py")["main"]
+
+    event: Dict[str, Any] = {
+        "data_source": "yahoo_finance",
+        "data_type": "prices",
+        "symbols": symbols,
+        "period": "1mo",
+        "interval": "1d",
+        "domain": "market",
+        "table_name": "prices",
+        "file_format": "parquet",
+    }
+
+    resp = main(event, None)
+    assert resp["statusCode"] == 200
+    assert resp["body"]["symbols_processed"] == expected
