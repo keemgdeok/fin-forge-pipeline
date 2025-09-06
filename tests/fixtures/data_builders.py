@@ -64,4 +64,3 @@ def build_raw_s3_prefix(
         f"{domain}/{table_name}/ingestion_date={d}/"
         f"data_source={data_source}/symbol={symbol}/interval={interval}/period={period}/"
     )
-

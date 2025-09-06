@@ -51,7 +51,9 @@ def test_ingestion_does_not_call_stepfunctions(env_dev, load_module, yf_stub, s3
         (["A" * 100], ["A" * 100]),
     ],
 )
-def test_ingestion_symbols_validation_parametrized(env_dev, load_module, symbols: List[Any], expected: List[str]) -> None:
+def test_ingestion_symbols_validation_parametrized(
+    env_dev, load_module, symbols: List[Any], expected: List[str]
+) -> None:
     """
     Given: 다양한 심볼 입력 조합
     When: 핸들러가 이벤트를 검증하면

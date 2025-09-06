@@ -100,6 +100,7 @@ class BotoStub:
             return self._ssm
         if name == "ses" and self._ses is not None:
             return self._ses
+
         # Provide minimal stub for unknown client names
         class _Stub:
             pass
