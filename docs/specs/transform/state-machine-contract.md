@@ -1,0 +1,99 @@
+# Step Functions Transform State Machine — I/O 계약 명세
+
+본 문서는 Transform 상태 머신의 입력/출력 계약, 실패 코드, 재시도 정책을 정의합니다. 모든 예시는 UTC 기준이며, CDK가 생성한 리소스와 일관되게 유지해야 합니다.
+
+## 입력(Inputs)
+
+| 필드 | 타입 | 필수 | 예시 | 제약/설명 |
+|---|---|:---:|---|---|
+| environment | string | Y | `dev` | `dev|stg|prod` 중 하나 |
+| domain | string | Y | `customer-data` | 도메인 식별자 |
+| table | string | Y | `orders` | 데이터셋/테이블 이름 |
+| ds | string | C | `2025-09-07` | `YYYY-MM-DD` (UTC). `date_range`와 상호 배타(XOR) |
+| date_range.start | string | C | `2025-09-01` | `YYYY-MM-DD` (UTC) |
+| date_range.end | string | C | `2025-09-07` | `YYYY-MM-DD` (UTC), `start ≤ end` |
+| reprocess | boolean | N | `false` | 기본 `false`. 재처리 시 멱등 락 무시하고 진행 |
+| execution_id | string | N | `ext-req-123` | 상관키. 미제공 시 상태 머신이 생성 |
+
+- ds 또는 date_range 중 하나는 반드시 제공되어야 합니다(XOR).
+- 백필(Map) 사용 시 `date_range` 길이는 운영 정책 범위 내에서 제한(권장: ≤ 31일).
+
+## 출력(Outputs)
+
+단일 실행(ds)과 범위(Map) 모두를 포괄합니다.
+
+| 필드 | 타입 | 예시 | 설명 |
+|---|---|---|---|
+| ok | boolean | `true` | 전체 실행 성공 여부 |
+| correlationId | string | `customer-data:orders:2025-09-07` | `domain:table:ds` 또는 생성된 실행 키 |
+| domain | string | `customer-data` | 입력 반사 |
+| table | string | `orders` | 입력 반사 |
+| partitions | array<string> | `["ds=2025-09-07"]` | 성공적으로 처리된 파티션 목록 |
+| stats.rowCount | number | `123456` | 출력 레코드 수(합계) |
+| stats.bytesWritten | number | `987654321` | Curated 총 바이트 |
+| stats.fileCount | number | `24` | Curated 생성 파일 수 |
+| glueRunIds | array<string> | `["jr_abcdef"]` | Glue StartJobRun ID 리스트(Map 포함) |
+
+실패 시에는 `ok=false`와 함께 오류 페이로드를 반환합니다(아래 참조).
+
+## 실패 코드 및 오류 페이로드
+
+| code | 발생 지점 | 설명 | 재시도 |
+|---|---|---|---|
+| PRE_VALIDATION_FAILED | Preflight | 입력 누락/형식 불일치 등 | 지수 백오프 최대 2회 |
+| IDEMPOTENT_SKIP | Preflight | 이미 처리/잠금 중 → 스킵 | 재시도 없음(정상 종료 취급 가능) |
+| NO_RAW_DATA | Preflight | 대상 Raw 파티션 없음 | 재시도 없음 |
+| GLUE_JOB_FAILED | Glue | 애플리케이션 오류/리소스 부족 | 최대 1회 재시도 |
+| DQ_FAILED | Glue | 데이터 품질 치명 규칙 위반 | 재시도 없음(수정 후 재실행) |
+| CRAWLER_FAILED | Crawler | 크롤러 실패/타임아웃 | 최대 2회 재시도(백오프) |
+| TIMEOUT | SFN/Glue | 전체/태스크 타임아웃 | 원인에 따라 1회 재시도 |
+| UNEXPECTED_ERROR | 전체 | 알 수 없는 예외 | 1회 재시도 후 실패 |
+
+오류 페이로드 예시:
+
+```json
+{
+  "ok": false,
+  "correlationId": "customer-data:orders:2025-09-07",
+  "error": {
+    "code": "DQ_FAILED",
+    "message": "null ratio exceeded for column price",
+    "partition": "ds=2025-09-07"
+  }
+}
+```
+
+## 성공 페이로드 예시
+
+```json
+{
+  "ok": true,
+  "correlationId": "customer-data:orders:2025-09-07",
+  "domain": "customer-data",
+  "table": "orders",
+  "partitions": ["ds=2025-09-07"],
+  "stats": {"rowCount": 123456, "bytesWritten": 987654321, "fileCount": 24},
+  "glueRunIds": ["jr_abcdef"]
+}
+```
+
+## 재시도 정책(요약)
+
+- Preflight: 지수 백오프(예: 2x) 최대 2회. 검증 실패/데이터 없음은 비재시도.
+- Glue: 시스템/일시 오류 시 1회. DQ_FAILED는 비재시도.
+- Crawler: 최대 2회, 백오프로 간격 증가.
+- 전체 실행: 표준 타입, 태스크별 `Retry`와 공통 `Catch`로 실패 페이로드 구성.
+
+## 관측/로그
+
+- CloudWatch Metrics: `ExecutionsSucceeded/Failed` 사용, 알람 구성 권장.
+- Logs: 성공 요약/오류 최소 정보만 기록(PII 금지). DQ 실패는 `DQ_FAIL` 태그 포함(필터/알람 연계).
+
+## 멱등성/상관키
+
+- `correlationId = domain:table:ds`(단일) 또는 `execution_id` 기반. Preflight에서 DynamoDB 등으로 락 보장.
+
+## 보안
+
+- 최소권한 원칙: 프리픽스 단위 S3 접근, 로그 그룹/KMS 권한 한정.
+- Glue Catalog/Athena 권한은 IAM으로 관리합니다. 컬럼 수준 제한이 필요하면 Athena View/별도 테이블로 분리해 뷰 단위로 권한을 부여합니다.
