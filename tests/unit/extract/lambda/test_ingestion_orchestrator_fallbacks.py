@@ -49,6 +49,7 @@ def test_orchestrator_fallback_to_default_symbol_when_no_sources(monkeypatch) ->
     }
     resp = mod["main"](event, None)
     assert resp["published"] == 1
+    assert resp["chunks"] == 1
     assert len(sent_batches) == 1
     assert len(sent_batches[0]) == 1
 
@@ -97,5 +98,6 @@ def test_orchestrator_ssm_error_then_s3_error_then_default(monkeypatch) -> None:
     event: Dict[str, Any] = {"symbols": []}
     resp = mod["main"](event, None)
     assert resp["published"] == 1
+    assert resp["chunks"] == 1
     assert len(sent_batches) == 1
     assert len(sent_batches[0]) == 1

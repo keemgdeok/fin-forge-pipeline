@@ -31,5 +31,6 @@ def test_orchestrator_batches_messages(monkeypatch) -> None:
 
     resp = mod["main"](event, None)
     assert resp["published"] == 5  # 5 chunk messages
+    assert resp["chunks"] == 5
     assert len(sqs.batches) == 1
     assert sum(len(b) for b in sqs.batches) == 5

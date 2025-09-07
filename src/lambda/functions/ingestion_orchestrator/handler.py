@@ -25,6 +25,80 @@ def _chunks(items: List[str], size: int):
         yield items[i : i + size]
 
 
+def _send_batch_with_retry(
+    sqs_client: Any,
+    queue_url: str,
+    entries: List[Dict[str, Any]],
+    log: Any,
+    *,
+    max_retry: int = 1,
+) -> int:
+    """Send SQS batch, log partial failures, retry failed entries once, and raise on residual failures.
+
+    Returns number of successfully published entries.
+    """
+    published = 0
+    id_to_entry = {e.get("Id"): e for e in entries}
+
+    try:
+        resp = sqs_client.send_message_batch(QueueUrl=queue_url, Entries=entries)
+    except ClientError:
+        log.exception("Failed to send SQS batch (ClientError)")
+        raise
+    except Exception:
+        log.exception("Failed to send SQS batch (unexpected)")
+        raise
+
+    published += len(resp.get("Successful", []))
+    failed = list(resp.get("Failed", []))
+    if not failed:
+        return published
+
+    # Log failed entries
+    log.warning(
+        "SQS batch returned failed entries",
+        extra={
+            "failed_count": len(failed),
+            "failed_ids": [f.get("Id") for f in failed],
+            "failed_codes": [f.get("Code") for f in failed],
+        },
+    )
+
+    # Retry only failed entries up to max_retry times
+    failed_entries = [id_to_entry[i] for i in [f.get("Id") for f in failed] if i in id_to_entry]
+    attempts = 0
+    while failed_entries and attempts < max_retry:
+        attempts += 1
+        try:
+            resp2 = sqs_client.send_message_batch(QueueUrl=queue_url, Entries=failed_entries)
+        except ClientError:
+            log.exception("Retry send SQS batch failed (ClientError)")
+            raise
+        except Exception:
+            log.exception("Retry send SQS batch failed (unexpected)")
+            raise
+
+        published += len(resp2.get("Successful", []))
+        failed = list(resp2.get("Failed", []))
+        failed_entries = [id_to_entry[i] for i in [f.get("Id") for f in failed] if i in id_to_entry]
+        if failed:
+            log.warning(
+                "SQS batch retry still has failed entries",
+                extra={
+                    "failed_count": len(failed),
+                    "failed_ids": [f.get("Id") for f in failed],
+                    "failed_codes": [f.get("Code") for f in failed],
+                    "attempts": attempts,
+                },
+            )
+
+    if failed_entries:
+        # Residual failures after retry: raise to surface problem to scheduler/retry
+        raise RuntimeError("SQS batch had failed entries after retry")
+
+    return published
+
+
 def _load_symbols_from_sources(
     ssm_param: Optional[str], s3_bucket: Optional[str], s3_key: Optional[str]
 ) -> Optional[List[str]]:
@@ -129,13 +203,11 @@ def main(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
         entries.append({"Id": f"m-{msg_id_counter}", "MessageBody": payload})
         msg_id_counter += 1
         if len(entries) >= send_batch_size:
-            sqs.send_message_batch(QueueUrl=queue_url, Entries=entries)
-            published += len(entries)
+            published += _send_batch_with_retry(sqs, queue_url, entries, log, max_retry=1)
             entries = []
 
     if entries:
-        sqs.send_message_batch(QueueUrl=queue_url, Entries=entries)
-        published += len(entries)
+        published += _send_batch_with_retry(sqs, queue_url, entries, log, max_retry=1)
 
     log.info(
         "Orchestrated symbols into SQS", extra={"environment": env, "chunks": chunks_count, "published": published}

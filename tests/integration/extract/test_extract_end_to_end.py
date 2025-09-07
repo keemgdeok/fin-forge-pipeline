@@ -50,6 +50,7 @@ def test_orchestrator_symbols_from_ssm(monkeypatch, orchestrator_env, make_queue
     mod_orc = load_module("src/lambda/functions/ingestion_orchestrator/handler.py")
     resp = mod_orc["main"](event, None)
     assert resp["published"] == 2
+    assert resp["chunks"] == 2
 
     # Read messages and validate symbols coverage equals SSM param
     records = _receive_all_sqs_messages(queue_url)["Records"]
@@ -89,6 +90,7 @@ def test_orchestrator_symbols_from_s3(monkeypatch, orchestrator_env, make_queue,
     mod_orc = load_module("src/lambda/functions/ingestion_orchestrator/handler.py")
     resp = mod_orc["main"](event, None)
     assert resp["published"] == 2
+    assert resp["chunks"] == 2
 
     # Validate union of symbols equals file contents
     records = _receive_all_sqs_messages(queue_url)["Records"]
@@ -185,6 +187,7 @@ def test_e2e_basic_flow(
     mod_orc = load_module("src/lambda/functions/ingestion_orchestrator/handler.py")
     resp = mod_orc["main"](event, None)
     assert resp["published"] == 2
+    assert resp["chunks"] == 2
 
     # Worker environment
     worker_env(bucket, enable_gzip=False)
