@@ -22,6 +22,10 @@ def test_orchestrator_raises_on_sqs_client_error(monkeypatch) -> None:
     os.environ["QUEUE_URL"] = "https://sqs.example/queue"
     os.environ["CHUNK_SIZE"] = "2"
     os.environ["SQS_SEND_BATCH_SIZE"] = "10"
+    # Ensure no external symbol source is used in this unit test
+    os.environ.pop("SYMBOLS_SSM_PARAM", None)
+    os.environ.pop("SYMBOLS_S3_BUCKET", None)
+    os.environ.pop("SYMBOLS_S3_KEY", None)
 
     mod = _load_orchestrator()
 
@@ -60,6 +64,9 @@ def test_orchestrator_retries_partial_failure_then_succeeds(monkeypatch) -> None
     os.environ["QUEUE_URL"] = "https://sqs.example/queue"
     os.environ["CHUNK_SIZE"] = "3"  # 한 메시지(청크)로 3심볼을 담음 → 메시지 수 1
     os.environ["SQS_SEND_BATCH_SIZE"] = "10"
+    os.environ.pop("SYMBOLS_SSM_PARAM", None)
+    os.environ.pop("SYMBOLS_S3_BUCKET", None)
+    os.environ.pop("SYMBOLS_S3_KEY", None)
 
     mod = _load_orchestrator()
 
@@ -115,6 +122,9 @@ def test_orchestrator_retries_partial_failure_then_raises(monkeypatch) -> None:
     os.environ["QUEUE_URL"] = "https://sqs.example/queue"
     os.environ["CHUNK_SIZE"] = "3"
     os.environ["SQS_SEND_BATCH_SIZE"] = "10"
+    os.environ.pop("SYMBOLS_SSM_PARAM", None)
+    os.environ.pop("SYMBOLS_S3_BUCKET", None)
+    os.environ.pop("SYMBOLS_S3_KEY", None)
 
     mod = _load_orchestrator()
 

@@ -13,6 +13,10 @@ def test_orchestrator_batches_messages(monkeypatch) -> None:
     os.environ["QUEUE_URL"] = "https://sqs.example/queue"
     os.environ["CHUNK_SIZE"] = "5"
     os.environ["SQS_SEND_BATCH_SIZE"] = "10"
+    # Ensure external symbol sources are disabled for this test (isolation from other tests)
+    os.environ.pop("SYMBOLS_SSM_PARAM", None)
+    os.environ.pop("SYMBOLS_S3_BUCKET", None)
+    os.environ.pop("SYMBOLS_S3_KEY", None)
 
     mod = runpy.run_path("src/lambda/functions/ingestion_orchestrator/handler.py")
     sqs = SQSStub()

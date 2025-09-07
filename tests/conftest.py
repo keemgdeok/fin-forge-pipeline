@@ -15,13 +15,22 @@ if _shared_str not in sys.path:
 
 @pytest.fixture(autouse=True)
 def aws_env(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
-    """Ensure default AWS region is set for moto/boto3 clients."""
+    """Ensure default AWS region is set for moto/boto3 clients and clear cross-test env leaks.
+
+    Also removes external symbol source envs to prevent test cross contamination
+    between integration and unit tests.
+    """
     monkeypatch.setenv("AWS_REGION", os.environ.get("AWS_REGION", "us-east-1"))
     monkeypatch.setenv("AWS_DEFAULT_REGION", os.environ.get("AWS_DEFAULT_REGION", "us-east-1"))
     # Provide dummy credentials so botocore signing doesn't fail under moto
     monkeypatch.setenv("AWS_ACCESS_KEY_ID", os.environ.get("AWS_ACCESS_KEY_ID", "testing"))
     monkeypatch.setenv("AWS_SECRET_ACCESS_KEY", os.environ.get("AWS_SECRET_ACCESS_KEY", "testing"))
     monkeypatch.setenv("AWS_SESSION_TOKEN", os.environ.get("AWS_SESSION_TOKEN", "testing"))
+
+    # Clear external symbol sources to avoid test cross-contamination
+    monkeypatch.delenv("SYMBOLS_SSM_PARAM", raising=False)
+    monkeypatch.delenv("SYMBOLS_S3_BUCKET", raising=False)
+    monkeypatch.delenv("SYMBOLS_S3_KEY", raising=False)
     yield
 
 
