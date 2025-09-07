@@ -1,50 +1,21 @@
 import os
 import runpy
+from tests.fixtures.clients import SnsStub, CloudWatchStub, BotoStub
 
 
-def _load_module():
-    return runpy.run_path("src/lambda/functions/error_handler/handler.py")
-
-
-class _Sns:
-    def __init__(self):
-        self.published = []
-
-    def publish(self, **kwargs):
-        self.published.append(kwargs)
-        return {"MessageId": "mid-123"}
-
-
-class _CW:
-    def __init__(self):
-        self.metrics = []
-
-    def put_metric_data(self, **kwargs):
-        self.metrics.append(kwargs)
-        return {}
-
-
-class _Boto:
-    def __init__(self, sns, cw):
-        self._sns = sns
-        self._cw = cw
-
-    def client(self, name: str, region_name=None):
-        if name == "sns":
-            return self._sns
-        if name == "cloudwatch":
-            return self._cw
-        raise ValueError(name)
-
-
-def test_error_handler_success(monkeypatch):
+def test_error_handler_success(monkeypatch) -> None:
+    """
+    Given: 오류 이벤트와 SNS/CW 스텁
+    When: 에러 핸들러를 실행하면
+    Then: SNS 발행과 CloudWatch 지표 기록이 정상 수행되어야 함
+    """
     os.environ["ENVIRONMENT"] = "dev"
     os.environ["ERROR_TOPIC_ARN"] = "arn:sns:dev:topic"
-    mod = _load_module()
+    mod = runpy.run_path("src/lambda/functions/error_handler/handler.py")
 
-    sns = _Sns()
-    cw = _CW()
-    monkeypatch.setitem(mod["main"].__globals__, "boto3", _Boto(sns, cw))
+    sns = SnsStub()
+    cw = CloudWatchStub()
+    monkeypatch.setitem(mod["main"].__globals__, "boto3", BotoStub(sns=sns, cloudwatch=cw))
 
     event = {
         "error": {
@@ -64,9 +35,14 @@ def test_error_handler_success(monkeypatch):
     assert len(cw.metrics) >= 1
 
 
-def test_error_handler_missing_fields(monkeypatch):
+def test_error_handler_missing_fields(monkeypatch) -> None:
+    """
+    Given: 필수 필드가 누락된 오류 이벤트
+    When: 에러 핸들러를 실행하면
+    Then: 400 상태 코드가 반환되어야 함
+    """
     os.environ["ENVIRONMENT"] = "dev"
-    mod = _load_module()
-    monkeypatch.setitem(mod["main"].__globals__, "boto3", _Boto(_Sns(), _CW()))
+    mod = runpy.run_path("src/lambda/functions/error_handler/handler.py")
+    monkeypatch.setitem(mod["main"].__globals__, "boto3", BotoStub(sns=SnsStub(), cloudwatch=CloudWatchStub()))
     resp = mod["main"]({"error": {"error_message": "oops"}}, None)
     assert resp["statusCode"] == 400

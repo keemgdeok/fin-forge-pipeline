@@ -22,7 +22,12 @@ class _StubValidator:
         return "jr-1234"
 
 
-def test_validator_success_path(monkeypatch):
+def test_validator_success_path(monkeypatch) -> None:
+    """
+    Given: RAW/CURATED 버킷 환경과 성공을 반환하는 검증기 스텁
+    When: 데이터 검증 핸들러를 실행하면
+    Then: validation_passed=True, glue ETL job run id가 반환되고 SFN 결과는 포함되지 않아야 함
+    """
     os.environ["ENVIRONMENT"] = "dev"
     os.environ["RAW_BUCKET"] = "raw-bucket-dev"
     os.environ["CURATED_BUCKET"] = "curated-bucket-dev"
@@ -48,7 +53,12 @@ def test_validator_success_path(monkeypatch):
     assert "step_function_execution_arn" not in resp
 
 
-def test_validator_missing_params(monkeypatch):
+def test_validator_missing_params(monkeypatch) -> None:
+    """
+    Given: 필수 파라미터가 없는 이벤트
+    When: 데이터 검증 핸들러를 실행하면
+    Then: validation_passed=False와 오류 메시지가 반환되어야 함
+    """
     mod = load_validator_module()
     resp = mod["main"]({"domain": "market"}, None)
     assert resp["validation_passed"] is False

@@ -42,7 +42,13 @@ def main(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
 
         try:
             # Delegate to shared ingestion logic (single call per message)
-            _ = process_event(payload, context)
+            result = process_event(payload, context)
+            # Treat non-2xx (explicit 4xx/5xx) as failure to enable retry/DLQ
+            if isinstance(result, dict):
+                status_code = result.get("statusCode")
+                if isinstance(status_code, int) and status_code >= 400:
+                    failures.append({"itemIdentifier": msg_id})
+                    continue
         except Exception:
             # If ingestion fails for this message, signal partial failure for retry
             log.exception("Worker failed to process message")

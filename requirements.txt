@@ -6,6 +6,7 @@ aws-cdk.aws-lambda-python-alpha>=2.100.0a0
 # Development and testing
 pytest>=7.0.0
 pytest-cov>=4.0.0
+pytest-timeout>=2.1.0
 black>=23.0.0
 flake8>=6.0.0
 mypy>=1.0.0

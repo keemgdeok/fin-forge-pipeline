@@ -1,49 +1,20 @@
 import os
 import runpy
+from tests.fixtures.clients import SnsStub, SesStub, BotoStub
 
 
-def _load_module():
-    return runpy.run_path("src/lambda/functions/notification_handler/handler.py")
-
-
-class _SNS:
-    def __init__(self):
-        self.publishes = []
-
-    def publish(self, **kwargs):
-        self.publishes.append(kwargs)
-        return {"MessageId": "mid-999"}
-
-
-class _SES:
-    def __init__(self):
-        self.sent = []
-
-    def send_email(self, **kwargs):
-        self.sent.append(kwargs)
-        return {"MessageId": "em-1"}
-
-
-class _Boto:
-    def __init__(self, sns, ses):
-        self._sns = sns
-        self._ses = ses
-
-    def client(self, name: str, region_name=None):
-        if name == "sns":
-            return self._sns
-        if name == "ses":
-            return self._ses
-        raise ValueError(name)
-
-
-def test_notification_sns_only(monkeypatch):
+def test_notification_sns_only(monkeypatch) -> None:
+    """
+    Given: 정상(SUCCEEDED) 상태의 파이프라인 알림 이벤트와 SNS 토픽 ARN
+    When: 알림 핸들러가 이벤트를 처리하면
+    Then: SNS 게시 1건이 발생하고 이메일은 전송되지 않아야 함
+    """
     os.environ["ENVIRONMENT"] = "dev"
     os.environ["NOTIFICATION_TOPIC_ARN"] = "arn:sns:dev:topic"
-    mod = _load_module()
-    sns = _SNS()
-    ses = _SES()
-    monkeypatch.setitem(mod["main"].__globals__, "boto3", _Boto(sns, ses))
+    mod = runpy.run_path("src/lambda/functions/notification_handler/handler.py")
+    sns = SnsStub()
+    ses = SesStub()
+    monkeypatch.setitem(mod["main"].__globals__, "boto3", BotoStub(sns=sns, ses=ses))
 
     event = {
         "pipeline_name": "customer-data",
@@ -54,21 +25,26 @@ def test_notification_sns_only(monkeypatch):
 
     resp = mod["main"](event, None)
     assert resp["statusCode"] == 200
-    assert len(sns.publishes) == 1
+    assert len(sns.published) == 1
     # No email for non-critical status
     assert len(ses.sent) == 0
 
 
-def test_notification_email_on_critical(monkeypatch):
+def test_notification_email_on_critical(monkeypatch) -> None:
+    """
+    Given: 오류(ERROR) 상태의 알림과 이메일 설정
+    When: 알림 핸들러가 이벤트를 처리하면
+    Then: SNS 게시와 함께 이메일이 1건 전송되어야 함
+    """
     os.environ["ENVIRONMENT"] = "dev"
     os.environ["NOTIFICATION_TOPIC_ARN"] = "arn:sns:dev:topic"
     os.environ["SOURCE_EMAIL"] = "noreply@example.com"
     os.environ["ADMIN_EMAILS"] = "ops@example.com"
 
-    mod = _load_module()
-    sns = _SNS()
-    ses = _SES()
-    monkeypatch.setitem(mod["main"].__globals__, "boto3", _Boto(sns, ses))
+    mod = runpy.run_path("src/lambda/functions/notification_handler/handler.py")
+    sns = SnsStub()
+    ses = SesStub()
+    monkeypatch.setitem(mod["main"].__globals__, "boto3", BotoStub(sns=sns, ses=ses))
 
     event = {
         "pipeline_name": "customer-data",
@@ -84,8 +60,13 @@ def test_notification_email_on_critical(monkeypatch):
     assert len(ses.sent) == 1
 
 
-def test_notification_missing_fields(monkeypatch):
-    mod = _load_module()
-    monkeypatch.setitem(mod["main"].__globals__, "boto3", _Boto(_SNS(), _SES()))
+def test_notification_missing_fields(monkeypatch) -> None:
+    """
+    Given: 필수 필드가 누락된 이벤트
+    When: 알림 핸들러가 이벤트를 검증하면
+    Then: 400 상태 코드가 반환되어야 함
+    """
+    mod = runpy.run_path("src/lambda/functions/notification_handler/handler.py")
+    monkeypatch.setitem(mod["main"].__globals__, "boto3", BotoStub(sns=SnsStub(), ses=SesStub()))
     resp = mod["main"]({"domain": "x"}, None)
     assert resp["statusCode"] == 400

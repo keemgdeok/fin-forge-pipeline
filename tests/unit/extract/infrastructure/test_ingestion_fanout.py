@@ -1,4 +1,4 @@
-from aws_cdk import App, Duration
+from aws_cdk import App
 from aws_cdk.assertions import Template
 
 from infrastructure.core.shared_storage_stack import SharedStorageStack
@@ -21,30 +21,17 @@ def _base_config():
     }
 
 
-def test_fanout_resources(monkeypatch):
+def test_fanout_resources(fake_python_function) -> None:
+    """
+    Given: 인제스트 팬아웃 스택 기본 설정
+    When: 스택을 합성하면
+    Then: SQS 큐 2개(메인+DLQ), 워커 ESM, 스케줄 Rule이 생성되어야 함
+    """
     app = App()
     cfg = _base_config()
 
     # Patch PythonFunction to avoid bundling
-    def _fake_python_function(scope, id, **kwargs):
-        from aws_cdk import aws_lambda as lambda_
-
-        return lambda_.Function(
-            scope,
-            id,
-            runtime=lambda_.Runtime.PYTHON_3_12,
-            handler="index.handler",
-            code=lambda_.Code.from_inline("def handler(event, context): return {}"),
-            memory_size=kwargs.get("memory_size", 128),
-            timeout=kwargs.get("timeout", Duration.seconds(10)),
-            log_retention=kwargs.get("log_retention"),
-            role=kwargs.get("role"),
-            layers=kwargs.get("layers", []),
-            environment=kwargs.get("environment", {}),
-            reserved_concurrent_executions=kwargs.get("reserved_concurrent_executions"),
-        )
-
-    monkeypatch.setattr(ing, "PythonFunction", _fake_python_function, raising=False)
+    fake_python_function(ing)
 
     shared = SharedStorageStack(app, "SharedStorageFanout", environment="dev", config=cfg)
     stack = ing.CustomerDataIngestionStack(

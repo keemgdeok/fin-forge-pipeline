@@ -27,3 +27,13 @@ mypy_path = ["src"]
 # Lambda Layer vendored site-packages 제외(정규식)
 exclude = "(?x)(^src/lambda/layers/[^/]+/python/.*$)"
 
+[tool.coverage.run]
+branch = true
+omit = [
+  # Optional external provider client; behavior validated via higher-level tests
+  "src/lambda/layers/common/python/shared/clients/market_data.py",
+]
+
+[tool.coverage.report]
+show_missing = true
+skip_covered = true

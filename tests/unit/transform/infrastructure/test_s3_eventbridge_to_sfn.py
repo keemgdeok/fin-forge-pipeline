@@ -28,7 +28,12 @@ def _base_config():
     }
 
 
-def test_raw_bucket_eventbridge_enabled():
+def test_raw_bucket_eventbridge_enabled() -> None:
+    """
+    Given: 처리 오케스트레이션 비활성화 설정
+    When: 공유 스토리지 스택을 합성하면
+    Then: RAW 버킷(EventBridge 통합) 혹은 커스텀 리소스에 EventBridge 설정이 존재해야 함
+    """
     app = App()
     cfg = _base_config()
     cfg["enable_processing_orchestration"] = False
@@ -56,7 +61,12 @@ def test_raw_bucket_eventbridge_enabled():
     )
 
 
-def test_eventbridge_rule_has_prefix_and_suffixes(monkeypatch):
+def test_eventbridge_rule_has_prefix_and_suffixes(monkeypatch) -> None:
+    """
+    Given: 처리 오케스트레이션 활성화 및 PythonFunction 대체
+    When: 처리 스택을 합성하면
+    Then: S3 key 필터에 'market/prices/' prefix와 '.json', '.csv' suffix가 포함된 EventBridge Rule이 있어야 함
+    """
     app = App()
     cfg = _base_config()
     cfg["enable_processing_orchestration"] = True
@@ -112,7 +122,12 @@ def test_eventbridge_rule_has_prefix_and_suffixes(monkeypatch):
     assert any(_has_expected_key_filters(r) for r in rules.values())
 
 
-def test_eventbridge_rules_disabled_by_flag(monkeypatch):
+def test_eventbridge_rules_disabled_by_flag(monkeypatch) -> None:
+    """
+    Given: 처리 오케스트레이션 비활성화
+    When: 처리 스택을 합성하면
+    Then: EventBridge Rule이 생성되지 않아야 함
+    """
     app = App()
     cfg = _base_config()
     cfg["enable_processing_orchestration"] = False
