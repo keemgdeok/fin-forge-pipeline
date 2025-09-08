@@ -32,6 +32,8 @@ dev_config = {
     "enable_gzip": False,
     "max_retries": 5,
     "enable_processing_orchestration": False,
+    # Catalog update policy for crawler: on_schema_change|never|force
+    "catalog_update": "on_schema_change",
     # Processing triggers (S3->EventBridge->SFN). Supports multiple domain/table pairs.
     # Each item: {"domain": str, "table_name": str, "file_type": "json|csv|parquet", "suffixes": [".json", ".csv"]}
     "processing_triggers": [

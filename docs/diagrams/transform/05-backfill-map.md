@@ -7,16 +7,15 @@ flowchart TD
     I1["Preflight(ds_i)"] --> J{skip?}
     J -->|true| SKIP(["Skip (no Glue)"])
     J -->|false| G["Glue ETL (ds_i)"]
-    G --> CR["Start Crawler (optional)"]
+    G --> CR["Start Crawler (스키마 변경 시)"]
     CR --> EV["EventBridge DataReady"]
-    G --> CWL["CWL: log success/failure"]
+    
   end
 
   M --> I1
   I1 --> J
   SKIP --> Z
   EV --> Z
-  CWL --> Z
   subgraph Aggregation
     Z["Reduce: success/failed counts,<br/>rows/bytes sum"]
   end

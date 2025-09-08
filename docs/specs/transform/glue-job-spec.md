@@ -27,6 +27,7 @@
 | `--enable-s3-parquet-optimized-committer` | `1` | 원자적 커밋 |
 | `--codec` | `zstd` | Parquet 압축(고정) |
 | `--target_file_mb` | `256` | 파일 타깃 크기(MB) |
+| `--schema_fingerprint_s3_uri` | `s3://<artifacts-bucket>/<domain>/<table>/_schema/latest.json` | 스키마 지문 산출물 저장 위치(Optional) |
 
 ## 입력(Contract)
 
@@ -52,7 +53,7 @@
 | 구분 | 규칙 예시 | 실패 시 동작 |
 |---|---|---|
 | 치명 | 스키마/타입 일치, PK not null, 음수 금지, 값 범위 | 잡 실패(커밋 차단) |
-| 경고 | null 비율 < 5%, 범주 화이트리스트 일부 위반 | 통과 + 로그/메트릭 집계 |
+| 경고 | null 비율 < 5%, 범주 화이트리스트 일부 위반 | 통과 + 요약 집계(도구 무관) |
 
 ## 성능/자원
 
@@ -63,13 +64,12 @@
 | 셔플/조인 | 소규모 룩업은 브로드캐스트, 불필요한 repartition 지양 |
 | 파일 병합 | `coalesce` 또는 `maxRecordsPerFile`로 타깃 파일 크기 맞춤 |
 
-## 관측성
+## 관측성(선택)
 
 | 항목 | 값 |
 |---|---|
-| 로그 | CloudWatch Logs(성공/실패 요약) |
-| 메트릭 | rows_out, bytes_out, file_count(로그 기반 집계) |
-| 알람 | AWS/States `ExecutionsFailed`(StateMachine), 필요 시 Metric Filter |
+| 요약 | 성공/실패 및 행/바이트/파일 수 요약(도구 무관) |
+| 스키마 지문 | `<artifacts>/_schema/latest.json` 또는 `<curated>/_schema/current.json`에 `{columns, types, hash}` 기록(선택) |
 
 ## 보안/IAM
 
@@ -77,8 +77,7 @@
 |---|---|
 | S3 Raw | `List/Get` on `arn:aws:s3:::<raw-bucket>/<domain>/<table>/*` |
 | S3 Curated | `Put/List` on `arn:aws:s3:::<curated-bucket>/<domain>/<table>/*` |
-| KMS | 관련 키 `Decrypt/Encrypt`(로그/버킷) |
-| Logs | `CreateLogStream/PutLogEvents` (해당 LogGroup) |
+| KMS | 관련 키 `Decrypt/Encrypt`(버킷 등 필요한 리소스) |
 
 ## 태그(예시)
 

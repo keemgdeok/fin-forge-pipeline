@@ -25,12 +25,8 @@ flowchart TD
     W2 --> W3["Optimized commit<br/>--enable-s3-parquet-optimized-committer=1"]
   end
 
-  subgraph Post
-    P1["Emit metrics<br/>rows_out, bytes_out, file_count"] --> P2["CloudWatch Logs summary"]
-  end
-
   A2 --> R1 --> R2 --> T1 --> T2 --> DQ1 --> DQ2
-  DQP --> W1 --> W2 --> W3 --> P1 --> P2
+  DQP --> W1 --> W2 --> W3
 
   classDef note fill:#eef7ff,stroke:#3d7ea6,color:#244a5b;
 ```

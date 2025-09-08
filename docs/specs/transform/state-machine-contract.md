@@ -14,6 +14,7 @@
 | date_range.end | string | C | `2025-09-07` | `YYYY-MM-DD` (UTC), `start ≤ end` |
 | reprocess | boolean | N | `false` | 기본 `false`. 재처리 시 멱등 락 무시하고 진행 |
 | execution_id | string | N | `ext-req-123` | 상관키. 미제공 시 상태 머신이 생성 |
+| catalog_update | string | N | `on_schema_change` | `on_schema_change|never|force`. 기본은 스키마 변경 감지 시에만 크롤러 실행 |
 
 - ds 또는 date_range 중 하나는 반드시 제공되어야 합니다(XOR).
 - 백필(Map) 사용 시 `date_range` 길이는 운영 정책 범위 내에서 제한(권장: ≤ 31일).
@@ -46,6 +47,7 @@
 | GLUE_JOB_FAILED | Glue | 애플리케이션 오류/리소스 부족 | 최대 1회 재시도 |
 | DQ_FAILED | Glue | 데이터 품질 치명 규칙 위반 | 재시도 없음(수정 후 재실행) |
 | CRAWLER_FAILED | Crawler | 크롤러 실패/타임아웃 | 최대 2회 재시도(백오프) |
+| SCHEMA_CHECK_FAILED | Pre/Post | 스키마 지문 계산/비교 실패 | 1회 재시도 |
 | TIMEOUT | SFN/Glue | 전체/태스크 타임아웃 | 원인에 따라 1회 재시도 |
 | UNEXPECTED_ERROR | 전체 | 알 수 없는 예외 | 1회 재시도 후 실패 |
 
@@ -81,13 +83,13 @@
 
 - Preflight: 지수 백오프(예: 2x) 최대 2회. 검증 실패/데이터 없음은 비재시도.
 - Glue: 시스템/일시 오류 시 1회. DQ_FAILED는 비재시도.
+- Schema check: 1회(일시 오류만)
 - Crawler: 최대 2회, 백오프로 간격 증가.
 - 전체 실행: 표준 타입, 태스크별 `Retry`와 공통 `Catch`로 실패 페이로드 구성.
 
-## 관측/로그
+## 관측(선택)
 
-- CloudWatch Metrics: `ExecutionsSucceeded/Failed` 사용, 알람 구성 권장.
-- Logs: 성공 요약/오류 최소 정보만 기록(PII 금지). DQ 실패는 `DQ_FAIL` 태그 포함(필터/알람 연계).
+- 최소 요약만 보존 가능: 성공/실패 카운트와 오류 코드 중심(PII 금지). 특정 도구 의존 없음.
 
 ## 멱등성/상관키
 
@@ -95,5 +97,5 @@
 
 ## 보안
 
-- 최소권한 원칙: 프리픽스 단위 S3 접근, 로그 그룹/KMS 권한 한정.
+- 최소권한 원칙: 프리픽스 단위 S3 접근, 로깅 저장소/KMS 권한은 필요한 범위로 한정.
 - Glue Catalog/Athena 권한은 IAM으로 관리합니다. 컬럼 수준 제한이 필요하면 Athena View/별도 테이블로 분리해 뷰 단위로 권한을 부여합니다.

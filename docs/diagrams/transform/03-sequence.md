@@ -9,14 +9,11 @@ sequenceDiagram
   participant CR as Glue Crawler
   participant CAT as Glue Data Catalog
   participant EV as EventBridge
-  participant CWL as CloudWatch Logs
-  participant CWM as CloudWatch Metrics/Alarms
 
   SF->>PRE: Invoke (domain, table, date)
   PRE-->>SF: Glue args + idempotency key
   alt Preflight 실패
-    SF->>CWL: PutLogEvents(Failure: reason)
-    SF->>CWM: Increment ExecutionsFailed
+    SF-->>SF: Fail
     SF-->>SF: Fail
   else Preflight 통과
     SF->>GLUE: StartJobRun(args)
@@ -24,12 +21,16 @@ sequenceDiagram
     GLUE->>GLUE: Transform + validate
     GLUE->>CUR: Write Parquet (partitioned)
     GLUE-->>SF: Success(runId, stats)
-    SF->>CR: StartCrawler
-    CR->>CUR: Scan new paths
-    CR-->>CAT: Update table/partitions
+    SF->>PRE: Schema drift check
+    PRE-->>SF: changed? (true/false)
+    alt Schema changed
+      SF->>CR: StartCrawler
+      CR->>CUR: Scan new paths
+      CR-->>CAT: Update table/partitions
+    else No change
+      SF-->>SF: Skip crawler
+    end
     SF->>EV: PutEvent(DataReady)
-    SF->>CWL: PutLogEvents(Success: partitions, bytes, rows)
-    SF->>CWM: Increment ExecutionsSucceeded
     SF-->>SF: Succeed
   end
 

@@ -10,6 +10,7 @@ from aws_cdk import (
     aws_lambda as lambda_,
     aws_iam as iam,
     aws_logs as logs,
+    aws_s3_assets as s3_assets,
     Duration,
     CfnOutput,
 )
@@ -63,6 +64,26 @@ class CustomerDataProcessingStack(Stack):
 
     def _create_etl_job(self) -> glue.CfnJob:
         """Create Glue ETL job for customer data processing."""
+        # Package Glue script as a CDK asset and reference its S3 location
+        glue_script_asset = s3_assets.Asset(
+            self,
+            "CustomerTransformScriptAsset",
+            path="src/glue/jobs/customer_data_etl.py",
+        )
+        # Ensure Glue execution role can read the script asset
+        glue_exec_role_ref = iam.Role.from_role_arn(self, "GlueExecRoleRefForScript", self.glue_execution_role_arn)
+        glue_script_asset.grant_read(glue_exec_role_ref)
+
+        domain: str = str(self.config.get("ingestion_domain", "market"))
+        table_name: str = str(self.config.get("ingestion_table_name", "prices"))
+
+        raw_prefix = f"{domain}/{table_name}/"
+        curated_prefix = f"{domain}/{table_name}/"
+
+        schema_fp_uri = (
+            f"s3://{self.shared_storage.artifacts_bucket.bucket_name}/schemas/{domain}/{table_name}/latest.json"
+        )
+
         return glue.CfnJob(
             self,
             "CustomerETLJob",
@@ -70,20 +91,22 @@ class CustomerDataProcessingStack(Stack):
             role=self.glue_execution_role_arn,
             command=glue.CfnJob.JobCommandProperty(
                 name="glueetl",
-                script_location=(
-                    f"s3://{self.shared_storage.artifacts_bucket.bucket_name}" "/glue-scripts/customer_data_etl.py"
-                ),  # TODO: Upload script in Phase 2
+                script_location=glue_script_asset.s3_object_url,
                 python_version="3",
             ),
             default_arguments={
                 "--job-language": "python",
                 "--job-bookmark-option": "job-bookmark-enable",
-                "--enable-metrics": "true",
-                "--enable-continuous-cloudwatch-log": "true",
+                "--enable-s3-parquet-optimized-committer": "1",
+                "--codec": "zstd",
+                "--target_file_mb": "256",
                 "--TempDir": (f"s3://{self.shared_storage.artifacts_bucket.bucket_name}" "/temp/"),
                 "--raw_bucket": self.shared_storage.raw_bucket.bucket_name,
+                "--raw_prefix": raw_prefix,
                 "--curated_bucket": self.shared_storage.curated_bucket.bucket_name,
+                "--curated_prefix": curated_prefix,
                 "--environment": self.env_name,
+                "--schema_fingerprint_s3_uri": schema_fp_uri,
             },
             glue_version="4.0",
             max_retries=2,
@@ -94,11 +117,11 @@ class CustomerDataProcessingStack(Stack):
 
     def _create_processing_workflow(self) -> sfn.StateMachine:
         """Create Step Functions workflow for customer data processing."""
-        # Data validation task
-        validate_data_task = tasks.LambdaInvoke(
+        # Preflight task: derive ds, idempotency skip, build Glue args
+        preflight_task = tasks.LambdaInvoke(
             self,
-            "ValidateCustomerData",
-            lambda_function=self._create_validation_function(),
+            "PreflightCustomerData",
+            lambda_function=self._create_preflight_function(),
             output_path="$.Payload",
         )
 
@@ -108,6 +131,7 @@ class CustomerDataProcessingStack(Stack):
             "ProcessCustomerData",
             glue_job_name=self.etl_job_name,
             integration_pattern=sfn.IntegrationPattern.RUN_JOB,
+            arguments=sfn.TaskInput.from_json_path_at("$.glue_args"),
         )
 
         # Data quality check task
@@ -116,6 +140,33 @@ class CustomerDataProcessingStack(Stack):
             "QualityCheckCustomerData",
             lambda_function=self._create_quality_check_function(),
             output_path="$.Payload",
+        )
+
+        # Schema check task (decide whether to run crawler)
+        schema_check_task = tasks.LambdaInvoke(
+            self,
+            "SchemaCheckCustomerData",
+            lambda_function=self._create_schema_check_function(),
+            payload=sfn.TaskInput.from_object(
+                {
+                    "domain": self.config.get("ingestion_domain", "market"),
+                    "table_name": self.config.get("ingestion_table_name", "prices"),
+                    "catalog_update": self.config.get("catalog_update", "on_schema_change"),
+                }
+            ),
+            output_path="$.Payload",
+        )
+
+        # Conditional crawler start using AWS SDK integration
+        crawler_name = f"{self.env_name}-curated-data-crawler"
+        start_crawler_task = tasks.CallAwsService(
+            self,
+            "StartCrawlerIfNeeded",
+            service="glue",
+            action="startCrawler",
+            parameters={"Name": crawler_name},
+            iam_resources=[f"arn:aws:glue:{Stack.of(self).region}:{Stack.of(self).account}:crawler/{crawler_name}"],
+            result_path=sfn.JsonPath.DISCARD,
         )
 
         # Success notification
@@ -133,22 +184,27 @@ class CustomerDataProcessingStack(Stack):
         )
 
         # Define workflow
-        definition = validate_data_task.next(
-            sfn.Choice(self, "ValidationChoice")
+        definition = preflight_task.next(
+            sfn.Choice(self, "PreflightChoice")
             .when(
-                sfn.Condition.boolean_equals("$.validation_passed", True),
-                etl_task.next(
-                    quality_check_task.next(
-                        sfn.Choice(self, "QualityChoice")
-                        .when(
-                            sfn.Condition.boolean_equals("$.quality_passed", True),
-                            success_task,
-                        )
-                        .otherwise(error_task)
+                sfn.Condition.boolean_equals("$.proceed", True),
+                etl_task.next(quality_check_task).next(
+                    sfn.Choice(self, "QualityChoice")
+                    .when(
+                        sfn.Condition.boolean_equals("$.quality_passed", True),
+                        schema_check_task.next(
+                            sfn.Choice(self, "CatalogUpdateChoice")
+                            .when(
+                                sfn.Condition.boolean_equals("$.should_crawl", True),
+                                start_crawler_task.next(success_task),
+                            )
+                            .otherwise(success_task)
+                        ),
                     )
+                    .otherwise(error_task)
                 ),
             )
-            .otherwise(error_task)
+            .otherwise(success_task)
         )
 
         # Create log group for the state machine with retention from config
@@ -272,6 +328,30 @@ class CustomerDataProcessingStack(Stack):
         # (교차 스택 grant로 인한 순환 참조를 피하기 위해 여기서는 grant를 사용하지 않음)
         return function
 
+    def _create_preflight_function(self) -> lambda_.IFunction:
+        """Create preflight Lambda function for ds/idempotency/args."""
+        function = PythonFunction(
+            self,
+            "CustomerDataPreflightFunction",
+            function_name=f"{self.env_name}-customer-data-preflight",
+            runtime=lambda_.Runtime.PYTHON_3_12,
+            entry="src/lambda/functions/preflight",
+            index="handler.py",
+            handler="lambda_handler",
+            memory_size=self._lambda_memory(),
+            timeout=self._lambda_timeout(),
+            log_retention=self._log_retention(),
+            role=iam.Role.from_role_arn(self, "PreflightLambdaRole", self.lambda_execution_role_arn),
+            layers=[self.common_layer],
+            environment={
+                "ENVIRONMENT": self.env_name,
+                "RAW_BUCKET": self.shared_storage.raw_bucket.bucket_name,
+                "CURATED_BUCKET": self.shared_storage.curated_bucket.bucket_name,
+                "ARTIFACTS_BUCKET": self.shared_storage.artifacts_bucket.bucket_name,
+            },
+        )
+        return function
+
     def _create_quality_check_function(self) -> lambda_.Function:
         """Create data quality check Lambda function."""
         function = lambda_.Function(
@@ -296,6 +376,31 @@ class CustomerDataProcessingStack(Stack):
 
         # S3 권한은 SecurityStack의 LambdaExecutionRole에 최소권한으로 부여됨
         # (교차 스택 grant로 인한 순환 참조를 피하기 위해 여기서는 grant를 사용하지 않음)
+        return function
+
+    def _create_schema_check_function(self) -> lambda_.IFunction:
+        """Create schema change check Lambda function."""
+        function = PythonFunction(
+            self,
+            "CustomerDataSchemaCheckFunction",
+            function_name=f"{self.env_name}-customer-data-schema-check",
+            runtime=lambda_.Runtime.PYTHON_3_12,
+            entry="src/lambda/functions/schema_check",
+            index="handler.py",
+            handler="lambda_handler",
+            memory_size=self._lambda_memory(),
+            timeout=self._lambda_timeout(),
+            log_retention=self._log_retention(),
+            role=iam.Role.from_role_arn(self, "SchemaCheckLambdaRole", self.lambda_execution_role_arn),
+            layers=[self.common_layer],
+            environment={
+                "ENVIRONMENT": self.env_name,
+                "CURATED_BUCKET": self.shared_storage.curated_bucket.bucket_name,
+                "ARTIFACTS_BUCKET": self.shared_storage.artifacts_bucket.bucket_name,
+                "CATALOG_UPDATE_DEFAULT": str(self.config.get("catalog_update", "on_schema_change")),
+            },
+        )
+
         return function
 
     def _create_outputs(self) -> None:

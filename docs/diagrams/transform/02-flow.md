@@ -7,31 +7,15 @@ flowchart TD
   E --> F["Glue: Raw 파티션 읽기"]
   F --> G["변환/정합성·품질 검증"]
   G --> H["Curated Parquet 쓰기 (ds=YYYY-MM-DD)"]
-  H --> I["Glue 크롤러 시작(선택)"]
+  H --> I["Glue 크롤러 시작(스키마 변경 시)"]
   I --> J["새 경로 스캔 → Catalog 갱신"]
   J --> K["EventBridge DataReady 발행"]
-  K --> L["CloudWatch Logs: 성공 요약 기록"]
 
   %% DQ 상세 참고 노트
   NDQ["품질 실패/격리 경로는<br/>04-data-quality-gate 참조"]:::note
   G -.-> NDQ
 
-  %% 오류/우회 경로
-  B -. 오류 .-> X["CloudWatch Logs: 실패 상세 기록"]
-  E -. 오류 .-> X
-  G -. 품질 실패 .-> X
-  I -. 오류 .-> X
-
-  %% 메트릭/알람
-  subgraph Observability
-    M1["AWS/States Metrics<br/>ExecutionsSucceeded/Failed"]
-    M2["Logs Metric Filter (선택)"]
-    A1["CloudWatch Alarm (선택)"]
-  end
-  A --> M1
-  X --> M2
-  M1 --> A1
-  M2 --> A1
+  %% 오류/우회 경로: 단순화 위해 생략(핵심 플로우만 표시)
 
   H --> EB["EventBridge (S3 Integration): ObjectCreated"]
   EB -. optional .-> K

@@ -178,7 +178,10 @@ class SecurityStack(Stack):
         """Create Step Functions execution role."""
         validation_fn_name = f"{self.env_name}-customer-data-validation"
         quality_fn_name = f"{self.env_name}-customer-data-quality-check"
+        schema_check_fn_name = f"{self.env_name}-customer-data-schema-check"
+        preflight_fn_name = f"{self.env_name}-customer-data-preflight"
         glue_job_arn = f"arn:aws:glue:{self.region}:{self.account}:job/{self.env_name}-customer-data-etl"
+        crawler_arn = f"arn:aws:glue:{self.region}:{self.account}:crawler/{self.env_name}-curated-data-crawler"
 
         return iam.Role(
             self,
@@ -194,6 +197,8 @@ class SecurityStack(Stack):
                             resources=[
                                 f"arn:aws:lambda:{self.region}:{self.account}:function/{validation_fn_name}",
                                 f"arn:aws:lambda:{self.region}:{self.account}:function/{quality_fn_name}",
+                                f"arn:aws:lambda:{self.region}:{self.account}:function/{schema_check_fn_name}",
+                                f"arn:aws:lambda:{self.region}:{self.account}:function/{preflight_fn_name}",
                             ],
                         ),
                     ]
@@ -208,6 +213,18 @@ class SecurityStack(Stack):
                                 "glue:BatchStopJobRun",
                             ],
                             resources=[glue_job_arn],
+                        ),
+                    ]
+                ),
+                "GlueCrawlerManagement": iam.PolicyDocument(
+                    statements=[
+                        iam.PolicyStatement(
+                            effect=iam.Effect.ALLOW,
+                            actions=[
+                                "glue:StartCrawler",
+                                "glue:GetCrawler",
+                            ],
+                            resources=[crawler_arn],
                         ),
                     ]
                 ),

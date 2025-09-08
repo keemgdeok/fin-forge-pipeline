@@ -4,14 +4,13 @@ graph LR
     SS["SharedStorageStack<br/>DataLake (RAW/Curated)"]
     SEC["SecurityStack<br/>IAM Roles & KMS"]
     GOV["CatalogStack<br/>Glue Database"]
-    OBS["Observability<br/>CloudWatch Logs & Alarms"]
   end
 
   subgraph Pipeline_Transform
     SFN["Step Functions<br/>Transform Workflow"]
     PRE["Preflight Lambda<br/>(구성/멱등성/인수 구성)"]
     GLUE["Glue ETL Job<br/>(PySpark/PyGlue)"]
-    CRAWL["Glue Crawler<br/>(선택)"]
+    CRAWL["Glue Crawler<br/>(스키마 변경 시)"]
     EV["EventBridge<br/>DataReady (<domain>.<table>)"]
     ATH["Athena WorkGroup<br/>Ad-hoc Query"]
   end
@@ -19,7 +18,6 @@ graph LR
   SS -->|버킷 이름/프리픽스| SFN
   SEC -->|Role ARN 참조| SFN
   GOV -->|DB/Table 참조| SFN
-  OBS -->|LogGroup/Alarm 참조| SFN
 
   SFN --> PRE
   PRE --> GLUE
@@ -29,7 +27,6 @@ graph LR
   CRAWL --> CAT[(Glue Data Catalog)]
   SFN --> EV
   EV -. optional .-> ATH
-  SFN -->|Execution/Task Logs| OBS
 
   %% Governance/Security notes
   N1["IAM + Glue Catalog 권한<br/>KMS 암호화(버킷/로그)"]:::note

@@ -34,6 +34,8 @@ prod_config = {
     "enable_gzip": True,
     "max_retries": 6,
     "enable_processing_orchestration": False,
+    # Catalog update policy for crawler: on_schema_change|never|force
+    "catalog_update": "on_schema_change",
     "processing_triggers": [
         {
             "domain": "market",

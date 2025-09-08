@@ -112,19 +112,32 @@ class DataCatalogStack(Stack):
 
         # Only curated data crawler - Raw data is processed directly by Step Functions
         # Curated data crawler
+        # Build S3 targets scoped to configured domain/table pairs (fallback to bucket root)
+        triggers: list[dict] = list(self.config.get("processing_triggers", []))
+        s3_targets: list[glue.CfnCrawler.S3TargetProperty] = []
+        if triggers:
+            for t in triggers:
+                d = str(t.get("domain", "")).strip()
+                tbl = str(t.get("table_name", "")).strip()
+                if not d or not tbl:
+                    continue
+                s3_targets.append(
+                    glue.CfnCrawler.S3TargetProperty(
+                        path=f"s3://{self.shared_storage.curated_bucket.bucket_name}/{d}/{tbl}/",
+                    )
+                )
+        else:
+            s3_targets.append(
+                glue.CfnCrawler.S3TargetProperty(path=f"s3://{self.shared_storage.curated_bucket.bucket_name}/")
+            )
+
         crawlers["curated_data"] = glue.CfnCrawler(
             self,
             "CuratedDataCrawler",
             name=f"{self.env_name}-curated-data-crawler",
             role=crawler_role.role_arn,
             database_name=self.glue_database.ref,
-            targets=glue.CfnCrawler.TargetsProperty(
-                s3_targets=[
-                    glue.CfnCrawler.S3TargetProperty(
-                        path=f"s3://{self.shared_storage.curated_bucket.bucket_name}/",
-                    )
-                ]
-            ),
+            targets=glue.CfnCrawler.TargetsProperty(s3_targets=s3_targets),
             # On-demand crawling triggered by Step Functions, not scheduled
             # schedule=glue.CfnCrawler.ScheduleProperty(
             #     schedule_expression="cron(30 6 * * ? *)",  # Daily at 6:30 AM
@@ -134,6 +147,7 @@ class DataCatalogStack(Stack):
                 '{"AddOrUpdateBehavior":"InheritFromTable"}},'
                 '"Grouping":{"TableGroupingPolicy":"CombineCompatibleSchemas"}}'
             ),
+            recrawl_policy=glue.CfnCrawler.RecrawlPolicyProperty(recrawl_behavior="CRAWL_NEW_FOLDERS_ONLY"),
             schema_change_policy=glue.CfnCrawler.SchemaChangePolicyProperty(
                 update_behavior="UPDATE_IN_DATABASE",
                 delete_behavior="LOG",
