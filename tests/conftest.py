@@ -83,63 +83,10 @@ def worker_env(monkeypatch: pytest.MonkeyPatch) -> Callable[[str], None]:
     return _apply
 
 
-@pytest.fixture
-def yf_stub(monkeypatch: pytest.MonkeyPatch) -> Callable[[list[str]], None]:
-    """Patch YahooFinanceClient with a deterministic stub returning fixed records."""
-    import importlib
-
-    def _apply(symbols: list[str]):
-        svc = importlib.import_module("shared.ingestion.service")
-
-        class _Rec:
-            def __init__(self, symbol: str):
-                from datetime import datetime, timezone
-
-                self.symbol = symbol
-                self.timestamp = datetime(2024, 1, 1, tzinfo=timezone.utc)
-                self.open = 1.0
-                self.high = 1.0
-                self.low = 1.0
-                self.close = 1.0
-                self.volume = 1.0
-
-            def as_dict(self):
-                return {
-                    "symbol": self.symbol,
-                    "timestamp": self.timestamp.isoformat(),
-                    "open": self.open,
-                    "high": self.high,
-                    "low": self.low,
-                    "close": self.close,
-                    "volume": self.volume,
-                }
-
-        class _YFStub:
-            def fetch_prices(self, _symbols, period, interval):
-                return [_Rec(s) for s in symbols]
-
-        monkeypatch.setitem(svc.__dict__, "YahooFinanceClient", lambda: _YFStub())
-
-    return _apply
+# Removed yf_stub - not used in transform tests
 
 
-@pytest.fixture
-def s3_stub(monkeypatch: pytest.MonkeyPatch) -> Callable[..., Any]:
-    """Patch boto3 in shared.ingestion.service with a lightweight S3 stub.
-
-    Returns the stub instance which captures put_calls for assertions and
-    responds to list_objects_v2 with a configurable KeyCount.
-    """
-    import importlib
-    from tests.fixtures.clients import S3Stub, BotoStub
-
-    def _apply(*, keycount: int = 0) -> Any:
-        svc = importlib.import_module("shared.ingestion.service")
-        s3 = S3Stub(keycount=keycount)
-        monkeypatch.setitem(svc.__dict__, "boto3", BotoStub(s3=s3))
-        return s3
-
-    return _apply
+# Removed s3_stub - using direct moto mocking instead
 
 
 @pytest.fixture
@@ -252,65 +199,21 @@ def transform_env(monkeypatch: pytest.MonkeyPatch) -> Callable[..., None]:
     return _apply
 
 
-@pytest.fixture
-def preflight_module() -> Callable[[], dict[str, Any]]:
-    """Load preflight Lambda module for testing."""
-    import runpy
-
-    def _load() -> dict[str, Any]:
-        return runpy.run_path("src/lambda/functions/preflight/handler.py")
-
-    return _load
-
-
-@pytest.fixture
-def schema_check_module() -> Callable[[], dict[str, Any]]:
-    """Load schema check Lambda module for testing."""
-    import runpy
-
-    def _load() -> dict[str, Any]:
-        return runpy.run_path("src/lambda/functions/schema_check/handler.py")
-
-    return _load
-
-
-@pytest.fixture
-def build_dates_module() -> Callable[[], dict[str, Any]]:
-    """Load build dates Lambda module for testing."""
-    import runpy
-
-    def _load() -> dict[str, Any]:
-        return runpy.run_path("src/lambda/functions/build_dates/handler.py")
-
-    return _load
+# Removed individual module fixtures - use load_module() fixture instead
 
 
 def pytest_configure(config):
-    """Configure pytest with custom markers for transform testing."""
-    # Add transform-specific markers
+    """Configure pytest with essential markers."""
+    # Essential markers only
     config.addinivalue_line("markers", "unit: unit test")
     config.addinivalue_line("markers", "integration: integration test")
     config.addinivalue_line("markers", "slow: slow running test")
     config.addinivalue_line("markers", "transform: transform pipeline test")
-    config.addinivalue_line("markers", "lambda_test: Lambda function test")
-    config.addinivalue_line("markers", "glue: Glue job test")
-    config.addinivalue_line("markers", "infrastructure: Infrastructure/CDK test")
-    config.addinivalue_line("markers", "preflight: Preflight Lambda tests")
-    config.addinivalue_line("markers", "schema_check: Schema check Lambda tests")
-    config.addinivalue_line("markers", "build_dates: Build dates Lambda tests")
-    config.addinivalue_line("markers", "data_quality: Data quality validation tests")
-    config.addinivalue_line("markers", "error_contract: Error contract validation tests")
 
 
 def pytest_addoption(parser):
-    """Add custom command line options for transform testing."""
+    """Add essential command line options."""
     parser.addoption("--runslow", action="store_true", default=False, help="run slow tests")
-    parser.addoption(
-        "--component",
-        action="store",
-        default=None,
-        help="run tests for specific component (lambda, glue, infrastructure)",
-    )
     parser.addoption(
         "--transform-only",
         action="store_true",
@@ -355,23 +258,7 @@ def pytest_runtest_setup(item):
     if "slow" in item.keywords and not item.config.getoption("--runslow"):
         pytest.skip("need --runslow option to run")
 
-    # Filter by component if specified
-    component = item.config.getoption("--component")
-    if component:
-        if component not in [mark.name for mark in item.iter_markers()]:
-            pytest.skip(f"test not in component {component}")
-
     # Run only transform tests if requested
     if item.config.getoption("--transform-only"):
-        if not any(
-            mark.name
-            in [
-                "transform",
-                "preflight",
-                "schema_check",
-                "build_dates",
-                "glue",
-            ]
-            for mark in item.iter_markers()
-        ):
+        if not any(mark.name == "transform" for mark in item.iter_markers()):
             pytest.skip("not a transform pipeline test")
