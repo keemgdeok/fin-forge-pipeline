@@ -9,7 +9,6 @@ flowchart TD
   G --> H["Curated Parquet 쓰기 (ds=YYYY-MM-DD)"]
   H --> I["Glue 크롤러 시작(스키마 변경 시)"]
   I --> J["새 경로 스캔 → Catalog 갱신"]
-  J --> K["EventBridge DataReady 발행"]
 
   %% DQ 상세 참고 노트
   NDQ["품질 실패/격리 경로는<br/>04-data-quality-gate 참조"]:::note
@@ -17,8 +16,7 @@ flowchart TD
 
   %% 오류/우회 경로: 단순화 위해 생략(핵심 플로우만 표시)
 
-  H --> EB["EventBridge (S3 Integration): ObjectCreated"]
-  EB -. optional .-> K
+  
 
   classDef note fill:#fff3cd,stroke:#d39e00,color:#5c4800;
 ```

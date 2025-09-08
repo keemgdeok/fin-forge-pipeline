@@ -11,7 +11,6 @@ graph LR
     PRE["Preflight Lambda<br/>(구성/멱등성/인수 구성)"]
     GLUE["Glue ETL Job<br/>(PySpark/PyGlue)"]
     CRAWL["Glue Crawler<br/>(스키마 변경 시)"]
-    EV["EventBridge<br/>DataReady (<domain>.<table>)"]
     ATH["Athena WorkGroup<br/>Ad-hoc Query"]
   end
 
@@ -25,8 +24,6 @@ graph LR
   GLUE --> CUR[(S3 Curated)]
   GLUE --- RAW[(S3 Raw)]
   CRAWL --> CAT[(Glue Data Catalog)]
-  SFN --> EV
-  EV -. optional .-> ATH
 
   %% Governance/Security notes
   N1["IAM + Glue Catalog 권한<br/>KMS 암호화(버킷/로그)"]:::note

@@ -15,9 +15,22 @@
 | reprocess | boolean | N | `false` | 기본 `false`. 재처리 시 멱등 락 무시하고 진행 |
 | execution_id | string | N | `ext-req-123` | 상관키. 미제공 시 상태 머신이 생성 |
 | catalog_update | string | N | `on_schema_change` | `on_schema_change|never|force`. 기본은 스키마 변경 감지 시에만 크롤러 실행 |
+| source_bucket | string | C | `data-pipeline-raw-dev-1234` | S3 트리거 모드일 때 필수 |
+| source_key | string | C | `market/prices/ingestion_date=2025-09-07/file.json` | S3 트리거 모드일 때 필수 |
+| file_type | string | N | `json` | `json|csv|parquet`. S3 트리거 모드에서 권장 |
 
-- ds 또는 date_range 중 하나는 반드시 제공되어야 합니다(XOR).
+- 두 가지 입력 모드를 지원합니다.
+  - 직접 모드: `ds` 또는 `date_range` 제공(XOR).
+  - S3 트리거 모드: `source_bucket`/`source_key` 제공 → Preflight에서 `ds`를 도출.
 - 백필(Map) 사용 시 `date_range` 길이는 운영 정책 범위 내에서 제한(권장: ≤ 31일).
+
+### Preflight 출력(요약)
+
+| 필드 | 타입 | 예시 | 설명 |
+|---|---|---|---|
+| proceed | boolean | `true` | 진행 여부(멱등 스킵 시 `false`) |
+| ds | string | `2025-09-07` | 도출된 파티션(UTC) |
+| glue_args | object | `{ "--ds": "2025-09-07", ... }` | Glue StartJobRun 인자 집합 |
 
 ## 출력(Outputs)
 
@@ -93,7 +106,9 @@
 
 ## 멱등성/상관키
 
-- `correlationId = domain:table:ds`(단일) 또는 `execution_id` 기반. Preflight에서 DynamoDB 등으로 락 보장.
+- `correlationId = domain:table:ds`(단일) 또는 `execution_id` 기반.
+- 현재 구현: Curated 경로 `/<domain>/<table>/ds=<ds>/`에 출력 존재 시 스킵(멱등).
+- 선택적 고도화: DynamoDB 기반 실행 락/상태 추적을 추가 가능.
 
 ## 보안
 

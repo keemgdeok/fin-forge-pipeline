@@ -8,12 +8,11 @@ sequenceDiagram
   participant CUR as S3 Curated Bucket
   participant CR as Glue Crawler
   participant CAT as Glue Data Catalog
-  participant EV as EventBridge
+  
 
   SF->>PRE: Invoke (domain, table, date)
   PRE-->>SF: Glue args + idempotency key
   alt Preflight 실패
-    SF-->>SF: Fail
     SF-->>SF: Fail
   else Preflight 통과
     SF->>GLUE: StartJobRun(args)
@@ -30,7 +29,6 @@ sequenceDiagram
     else No change
       SF-->>SF: Skip crawler
     end
-    SF->>EV: PutEvent(DataReady)
     SF-->>SF: Succeed
   end
 

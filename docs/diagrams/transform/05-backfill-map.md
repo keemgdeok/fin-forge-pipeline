@@ -8,14 +8,13 @@ flowchart TD
     J -->|true| SKIP(["Skip (no Glue)"])
     J -->|false| G["Glue ETL (ds_i)"]
     G --> CR["Start Crawler (스키마 변경 시)"]
-    CR --> EV["EventBridge DataReady"]
     
   end
 
   M --> I1
   I1 --> J
   SKIP --> Z
-  EV --> Z
+  CR --> Z
   subgraph Aggregation
     Z["Reduce: success/failed counts,<br/>rows/bytes sum"]
   end
