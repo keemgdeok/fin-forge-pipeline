@@ -8,7 +8,9 @@ def _load_orchestrator() -> Dict[str, Any]:
     return runpy.run_path("src/lambda/functions/ingestion_orchestrator/handler.py")
 
 
-def test_orchestrator_fallback_to_default_symbol_when_no_sources(monkeypatch) -> None:
+def test_orchestrator_fallback_to_default_symbol_when_no_sources(
+    monkeypatch,
+) -> None:
     """
     Given: SSM/S3 심볼 소스가 설정되지 않고 event.symbols도 비어있음
     When: 오케스트레이터 main을 실행하면
@@ -54,7 +56,9 @@ def test_orchestrator_fallback_to_default_symbol_when_no_sources(monkeypatch) ->
     assert len(sent_batches[0]) == 1
 
 
-def test_orchestrator_ssm_error_then_s3_error_then_default(monkeypatch) -> None:
+def test_orchestrator_ssm_error_then_s3_error_then_default(
+    monkeypatch,
+) -> None:
     """
     Given: SSM 파라미터 조회가 ClientError로 실패하고 S3 get_object도 실패
     When: 오케스트레이터 main을 실행하면
@@ -70,11 +74,17 @@ def test_orchestrator_ssm_error_then_s3_error_then_default(monkeypatch) -> None:
 
     class _SSM:
         def get_parameter(self, **kwargs):
-            raise ClientError({"Error": {"Code": "AccessDenied", "Message": "nope"}}, "GetParameter")
+            raise ClientError(
+                {"Error": {"Code": "AccessDenied", "Message": "nope"}},
+                "GetParameter",
+            )
 
     class _S3:
         def get_object(self, **kwargs):
-            raise ClientError({"Error": {"Code": "NoSuchKey", "Message": "nope"}}, "GetObject")
+            raise ClientError(
+                {"Error": {"Code": "NoSuchKey", "Message": "nope"}},
+                "GetObject",
+            )
 
     sent_batches = []
 

@@ -43,6 +43,10 @@ def test_error_handler_missing_fields(monkeypatch) -> None:
     """
     os.environ["ENVIRONMENT"] = "dev"
     mod = runpy.run_path("src/lambda/functions/error_handler/handler.py")
-    monkeypatch.setitem(mod["main"].__globals__, "boto3", BotoStub(sns=SnsStub(), cloudwatch=CloudWatchStub()))
+    monkeypatch.setitem(
+        mod["main"].__globals__,
+        "boto3",
+        BotoStub(sns=SnsStub(), cloudwatch=CloudWatchStub()),
+    )
     resp = mod["main"]({"error": {"error_message": "oops"}}, None)
     assert resp["statusCode"] == 400

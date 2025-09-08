@@ -13,8 +13,18 @@ def _base_config():
         "ingestion_domain": "market",
         "ingestion_table_name": "prices",
         "processing_triggers": [
-            {"domain": "market", "table_name": "prices", "file_type": "json", "suffixes": [".json"]},
-            {"domain": "sales", "table_name": "orders", "file_type": "csv", "suffixes": [".csv"]},
+            {
+                "domain": "market",
+                "table_name": "prices",
+                "file_type": "json",
+                "suffixes": [".json"],
+            },
+            {
+                "domain": "sales",
+                "table_name": "orders",
+                "file_type": "csv",
+                "suffixes": [".csv"],
+            },
         ],
     }
 

@@ -56,9 +56,20 @@ class DataValidator:
 
         allowed_types = {"csv", "json", "parquet"}
         file_type_ok = parsed.file_type.lower() in allowed_types
-        checks.append({"name": "file_type_allowed", "passed": file_type_ok, "value": parsed.file_type})
+        checks.append(
+            {
+                "name": "file_type_allowed",
+                "passed": file_type_ok,
+                "value": parsed.file_type,
+            }
+        )
         if not file_type_ok:
-            errors.append({"type": "InvalidFileType", "message": f"Unsupported file type: {parsed.file_type}"})
+            errors.append(
+                {
+                    "type": "InvalidFileType",
+                    "message": f"Unsupported file type: {parsed.file_type}",
+                }
+            )
 
         if parsed.validation_rules:
             checks.append({"name": "rules_present", "passed": True})
@@ -66,7 +77,11 @@ class DataValidator:
             checks.append({"name": "rules_present", "passed": False})
 
         overall_valid = all(check.get("passed", False) for check in checks)
-        return {"overall_valid": overall_valid, "errors": errors, "checks": checks}
+        return {
+            "overall_valid": overall_valid,
+            "errors": errors,
+            "checks": checks,
+        }
 
     def trigger_glue_etl_job(self, job_name: str, arguments: Optional[Dict[str, str]] = None) -> Optional[str]:
         try:
@@ -87,7 +102,16 @@ class DataValidator:
 
     @staticmethod
     def _parse_config(config: Dict[str, Any]) -> ValidationConfig:
-        missing = [k for k in ("source_bucket", "source_key", "file_type", "validation_rules") if k not in config]
+        missing = [
+            k
+            for k in (
+                "source_bucket",
+                "source_key",
+                "file_type",
+                "validation_rules",
+            )
+            if k not in config
+        ]
         if missing:
             raise ValueError(f"Missing validation config fields: {missing}")
 

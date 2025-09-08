@@ -1,8 +1,12 @@
 """Preflight Lambda for Transform pipeline.
 
-Derives `ds` from the raw S3 object key (expects `ingestion_date=YYYY-MM-DD` in key),
-performs idempotency check by looking for an existing curated partition, and
-returns Glue arguments for the transform job.
+Derives partition `ds` from the raw S3 object key (expects
+`ingestion_date=YYYY-MM-DD` in key), performs idempotency check by looking for an
+existing curated partition, and returns Glue arguments for the transform job.
+
+Error contract (spec-aligned):
+- PRE_VALIDATION_FAILED: Missing/invalid inputs
+- IDEMPOTENT_SKIP: Already processed (treat as successful short-circuit at SFN)
 
 Input event example (from S3->EventBridge rule):
 {
@@ -46,22 +50,49 @@ def _curated_partition_exists(s3_client, bucket: str, prefix: str) -> bool:
 
 
 def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
-    # Required inputs
+    # Inputs: support two modes per spec: direct ds or S3-trigger
     source_bucket = str(event.get("source_bucket", ""))
     source_key = str(event.get("source_key", ""))
     domain = str(event.get("domain", ""))
     table_name = str(event.get("table_name", ""))
     file_type = str(event.get("file_type", "json"))
+    direct_ds = str(event.get("ds", ""))
 
-    if not source_bucket or not source_key or not domain or not table_name:
+    if not domain or not table_name:
         return {
             "proceed": False,
             "reason": "Missing required fields",
+            "error": {
+                "code": "PRE_VALIDATION_FAILED",
+                "message": "Missing domain/table_name",
+            },
         }
 
-    ds = _extract_ds_from_key(source_key)
-    if not ds:
-        return {"proceed": False, "reason": "ingestion_date not found in key"}
+    if direct_ds:
+        ds = direct_ds
+    else:
+        if not source_bucket or not source_key:
+            return {
+                "proceed": False,
+                "reason": "Missing required fields",
+                "error": {
+                    "code": "PRE_VALIDATION_FAILED",
+                    "message": "Missing source_bucket/source_key for S3 trigger mode",
+                },
+            }
+        extracted_ds = _extract_ds_from_key(source_key or "")
+        if not extracted_ds:
+            return {
+                "proceed": False,
+                "reason": "ingestion_date not found in key",
+                "error": {
+                    "code": "PRE_VALIDATION_FAILED",
+                    "message": "ingestion_date=YYYY-MM-DD not found in key",
+                },
+            }
+
+        # At this point extracted_ds is guaranteed to be non-None due to the check above
+        ds = extracted_ds
 
     # Env
     curated_bucket = os.environ.get("CURATED_BUCKET", "")
@@ -70,14 +101,30 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
     environment = os.environ.get("ENVIRONMENT", "dev")
 
     if not curated_bucket or not raw_bucket or not artifacts_bucket:
-        return {"proceed": False, "reason": "Bucket env not configured"}
+        return {
+            "proceed": False,
+            "reason": "Bucket env not configured",
+            "ds": ds,
+            "error": {
+                "code": "PRE_VALIDATION_FAILED",
+                "message": "Missing CURATED_BUCKET/RAW_BUCKET/ARTIFACTS_BUCKET",
+            },
+        }
 
     s3 = boto3.client("s3")
 
     # Idempotency: skip if curated ds partition already exists
     curated_prefix = f"{domain}/{table_name}/ds={ds}/"
     if _curated_partition_exists(s3, curated_bucket, curated_prefix):
-        return {"proceed": False, "reason": "Already processed", "ds": ds}
+        return {
+            "proceed": False,
+            "reason": "Already processed",
+            "ds": ds,
+            "error": {
+                "code": "IDEMPOTENT_SKIP",
+                "message": "Curated partition already exists",
+            },
+        }
 
     # Build Glue args (merge with job defaults on StartJobRun)
     glue_args: Dict[str, str] = {
@@ -86,7 +133,8 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
         "--raw_prefix": f"{domain}/{table_name}/",
         "--curated_bucket": curated_bucket,
         "--curated_prefix": f"{domain}/{table_name}/",
-        "--schema_fingerprint_s3_uri": f"s3://{artifacts_bucket}/schemas/{domain}/{table_name}/latest.json",
+        # Artifacts path aligned to spec: <domain>/<table>/_schema/latest.json
+        "--schema_fingerprint_s3_uri": f"s3://{artifacts_bucket}/{domain}/{table_name}/_schema/latest.json",
         "--codec": "zstd",
         "--target_file_mb": "256",
         "--ds": ds,

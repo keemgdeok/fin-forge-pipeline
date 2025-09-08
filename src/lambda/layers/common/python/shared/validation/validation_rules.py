@@ -11,9 +11,18 @@ class StandardValidationRules:
         key = f"{domain.lower()}/{table_name.lower()}"
         presets: Dict[str, Dict[str, Any]] = {
             "customer/transactions": {
-                "required_columns": ["transaction_id", "customer_id", "amount", "timestamp"],
+                "required_columns": [
+                    "transaction_id",
+                    "customer_id",
+                    "amount",
+                    "timestamp",
+                ],
                 "non_null": ["transaction_id", "customer_id", "amount"],
-                "dtypes": {"transaction_id": "str", "customer_id": "str", "amount": "float"},
+                "dtypes": {
+                    "transaction_id": "str",
+                    "customer_id": "str",
+                    "amount": "float",
+                },
                 "ranges": {"amount": {"min": 0}},
                 "allow_duplicates": False,
             },

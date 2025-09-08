@@ -1,0 +1,137 @@
+import os
+import runpy
+
+
+def _load_module():
+    return runpy.run_path("src/lambda/functions/preflight/handler.py")
+
+
+class _S3Stub:
+    def __init__(self, keycount: int = 0):
+        self._keycount = keycount
+        self.calls = []
+
+    def list_objects_v2(self, Bucket: str, Prefix: str, MaxKeys: int = 1):
+        self.calls.append((Bucket, Prefix))
+        return {"KeyCount": self._keycount}
+
+
+class _Boto:
+    def __init__(self, s3_stub: _S3Stub):
+        self._s3 = s3_stub
+
+    def client(self, name: str):
+        assert name == "s3"
+        return self._s3
+
+
+def test_missing_required_fields_returns_pre_validation_failed(
+    monkeypatch,
+) -> None:
+    mod = _load_module()
+    os.environ["ENVIRONMENT"] = "dev"
+    os.environ["RAW_BUCKET"] = "raw-bucket-dev"
+    os.environ["CURATED_BUCKET"] = "curated-bucket-dev"
+    os.environ["ARTIFACTS_BUCKET"] = "artifacts-bucket-dev"
+
+    s3 = _S3Stub(0)
+    monkeypatch.setitem(mod["boto3"].__dict__, "client", _Boto(s3).client)
+
+    resp = mod["lambda_handler"]({}, None)
+    assert resp["proceed"] is False
+    assert resp["error"]["code"] == "PRE_VALIDATION_FAILED"
+
+
+def test_no_ingestion_date_in_key_returns_pre_validation_failed(
+    monkeypatch,
+) -> None:
+    mod = _load_module()
+    os.environ["ENVIRONMENT"] = "dev"
+    os.environ["RAW_BUCKET"] = "raw-bucket-dev"
+    os.environ["CURATED_BUCKET"] = "curated-bucket-dev"
+    os.environ["ARTIFACTS_BUCKET"] = "artifacts-bucket-dev"
+
+    s3 = _S3Stub(0)
+    monkeypatch.setitem(mod["boto3"].__dict__, "client", _Boto(s3).client)
+
+    event = {
+        "source_bucket": "raw-bucket-dev",
+        "source_key": "market/prices/file.json",
+        "domain": "market",
+        "table_name": "prices",
+        "file_type": "json",
+    }
+    resp = mod["lambda_handler"](event, None)
+    assert resp["proceed"] is False
+    assert resp["error"]["code"] == "PRE_VALIDATION_FAILED"
+
+
+def test_missing_bucket_env_returns_pre_validation_failed(monkeypatch) -> None:
+    mod = _load_module()
+    # Intentionally do not set bucket envs
+    os.environ.pop("RAW_BUCKET", None)
+    os.environ.pop("CURATED_BUCKET", None)
+    os.environ.pop("ARTIFACTS_BUCKET", None)
+    os.environ["ENVIRONMENT"] = "dev"
+
+    s3 = _S3Stub(0)
+    monkeypatch.setitem(mod["boto3"].__dict__, "client", _Boto(s3).client)
+
+    event = {
+        "source_bucket": "raw-bucket-dev",
+        "source_key": "market/prices/ingestion_date=2025-09-07/file.json",
+        "domain": "market",
+        "table_name": "prices",
+        "file_type": "json",
+    }
+    resp = mod["lambda_handler"](event, None)
+    assert resp["proceed"] is False
+    assert resp["error"]["code"] == "PRE_VALIDATION_FAILED"
+
+
+def test_idempotent_skip_returns_expected_code_and_ds(monkeypatch) -> None:
+    mod = _load_module()
+    os.environ["ENVIRONMENT"] = "dev"
+    os.environ["RAW_BUCKET"] = "raw-bucket-dev"
+    os.environ["CURATED_BUCKET"] = "curated-bucket-dev"
+    os.environ["ARTIFACTS_BUCKET"] = "artifacts-bucket-dev"
+
+    # KeyCount=1 -> curated partition exists
+    s3 = _S3Stub(1)
+    monkeypatch.setitem(mod["boto3"].__dict__, "client", _Boto(s3).client)
+
+    event = {
+        "source_bucket": "raw-bucket-dev",
+        "source_key": "market/prices/ingestion_date=2025-09-07/file.json",
+        "domain": "market",
+        "table_name": "prices",
+        "file_type": "json",
+    }
+    resp = mod["lambda_handler"](event, None)
+    assert resp["proceed"] is False
+    assert resp["ds"] == "2025-09-07"
+    assert resp["error"]["code"] == "IDEMPOTENT_SKIP"
+
+
+def test_valid_builds_glue_args_with_schema_path(monkeypatch) -> None:
+    mod = _load_module()
+    os.environ["ENVIRONMENT"] = "dev"
+    os.environ["RAW_BUCKET"] = "raw-bucket-dev"
+    os.environ["CURATED_BUCKET"] = "curated-bucket-dev"
+    os.environ["ARTIFACTS_BUCKET"] = "artifacts-bucket-dev"
+
+    s3 = _S3Stub(0)
+    monkeypatch.setitem(mod["boto3"].__dict__, "client", _Boto(s3).client)
+
+    event = {
+        "source_bucket": "raw-bucket-dev",
+        "source_key": "market/prices/ingestion_date=2025-09-07/file.json",
+        "domain": "market",
+        "table_name": "prices",
+        "file_type": "json",
+    }
+    resp = mod["lambda_handler"](event, None)
+    assert resp["proceed"] is True
+    assert resp["ds"] == "2025-09-07"
+    schema_arg = resp["glue_args"]["--schema_fingerprint_s3_uri"]
+    assert schema_arg.endswith("market/prices/_schema/latest.json")

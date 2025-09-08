@@ -28,6 +28,7 @@ Outputs:
     "should_crawl": bool,
     "current_hash": str | null,
     "latest_hash": str | null,
+    "error": {"code": str, "message": str} | optional
   }
 """
 
@@ -60,19 +61,38 @@ def _get_json_from_s3(s3_client, bucket: str, key: str) -> Optional[Dict[str, An
 
 
 def _put_json_to_s3(s3_client, bucket: str, key: str, obj: Dict[str, Any]) -> None:
-    s3_client.put_object(Bucket=bucket, Key=key, Body=json.dumps(obj).encode("utf-8"), ContentType="application/json")
+    s3_client.put_object(
+        Bucket=bucket,
+        Key=key,
+        Body=json.dumps(obj).encode("utf-8"),
+        ContentType="application/json",
+    )
 
 
 def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
     domain = str(event.get("domain", "")).strip()
     table_name = str(event.get("table_name", "")).strip()
     if not domain or not table_name:
-        return {"schema_changed": False, "should_crawl": False, "error": "domain/table_name required"}
+        return {
+            "schema_changed": False,
+            "should_crawl": False,
+            "error": {
+                "code": "PRE_VALIDATION_FAILED",
+                "message": "domain/table_name required",
+            },
+        }
 
     curated_bucket = os.environ.get("CURATED_BUCKET", "")
     artifacts_bucket = os.environ.get("ARTIFACTS_BUCKET", "")
     if not curated_bucket or not artifacts_bucket:
-        return {"schema_changed": False, "should_crawl": False, "error": "bucket env missing"}
+        return {
+            "schema_changed": False,
+            "should_crawl": False,
+            "error": {
+                "code": "PRE_VALIDATION_FAILED",
+                "message": "bucket env missing",
+            },
+        }
 
     policy = (event.get("catalog_update") or os.environ.get("CATALOG_UPDATE_DEFAULT") or "on_schema_change").lower()
     if policy not in {"on_schema_change", "never", "force"}:
@@ -80,12 +100,22 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
 
     s3 = boto3.client("s3")
     curated_current_key = f"{domain}/{table_name}/_schema/current.json"
-    artifacts_latest_key = f"schemas/{domain}/{table_name}/latest.json"
+    # Artifacts path aligned to spec: <domain>/<table>/_schema/latest.json
+    artifacts_latest_key = f"{domain}/{table_name}/_schema/latest.json"
 
     latest = _get_json_from_s3(s3, artifacts_bucket, artifacts_latest_key)
     if latest is None:
         # No latest fingerprint produced by Glue -> nothing to do
-        return {"schema_changed": False, "should_crawl": False, "current_hash": None, "latest_hash": None}
+        return {
+            "schema_changed": False,
+            "should_crawl": False,
+            "current_hash": None,
+            "latest_hash": None,
+            "error": {
+                "code": "SCHEMA_CHECK_FAILED",
+                "message": "latest schema fingerprint not found",
+            },
+        }
 
     # Prefer explicit 'hash' field; fallback to hash of normalized structure
     latest_hash = str(latest.get("hash")) if isinstance(latest.get("hash"), str) else _stable_hash(latest)

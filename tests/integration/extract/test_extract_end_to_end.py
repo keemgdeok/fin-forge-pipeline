@@ -5,7 +5,10 @@ from typing import Any
 
 from moto import mock_aws
 import boto3
-from tests.fixtures.data_builders import build_ingestion_event, build_raw_s3_prefix
+from tests.fixtures.data_builders import (
+    build_ingestion_event,
+    build_raw_s3_prefix,
+)
 
 
 def _receive_all_sqs_messages(queue_url: str) -> dict[str, Any]:
@@ -117,7 +120,10 @@ def test_dlq_redrive_on_worker_failures(monkeypatch, make_queue, load_module) ->
     # Create main queue with redrive policy and small visibility timeout
     main_url = make_queue("extract-main")
     redrive = json.dumps({"deadLetterTargetArn": dlq_arn, "maxReceiveCount": "2"})
-    sqs.set_queue_attributes(QueueUrl=main_url, Attributes={"RedrivePolicy": redrive, "VisibilityTimeout": "0"})
+    sqs.set_queue_attributes(
+        QueueUrl=main_url,
+        Attributes={"RedrivePolicy": redrive, "VisibilityTimeout": "0"},
+    )
 
     # Put one valid ingestion message
     msg_body = json.dumps(
@@ -166,7 +172,13 @@ def test_dlq_redrive_on_worker_failures(monkeypatch, make_queue, load_module) ->
 
 @mock_aws
 def test_e2e_basic_flow(
-    monkeypatch, orchestrator_env, worker_env, yf_stub, make_queue, make_bucket, load_module
+    monkeypatch,
+    orchestrator_env,
+    worker_env,
+    yf_stub,
+    make_queue,
+    make_bucket,
+    load_module,
 ) -> None:
     """
     Given: 3개 심볼과 chunk_size=2로 오케스트레이터와 워커 환경 구성
@@ -215,7 +227,15 @@ def test_e2e_basic_flow(
 
 
 @mock_aws
-def test_e2e_gzip(monkeypatch, orchestrator_env, worker_env, yf_stub, make_queue, make_bucket, load_module) -> None:
+def test_e2e_gzip(
+    monkeypatch,
+    orchestrator_env,
+    worker_env,
+    yf_stub,
+    make_queue,
+    make_bucket,
+    load_module,
+) -> None:
     """
     Given: 단일 심볼과 gzip 활성화된 워커 환경
     When: 오케스트레이터 실행 후 워커가 처리하면
@@ -288,7 +308,13 @@ def test_e2e_partial_batch_failure(monkeypatch, worker_env, yf_stub, make_queue,
 
 @mock_aws
 def test_e2e_idempotency_skip(
-    monkeypatch, orchestrator_env, worker_env, yf_stub, make_queue, make_bucket, load_module
+    monkeypatch,
+    orchestrator_env,
+    worker_env,
+    yf_stub,
+    make_queue,
+    make_bucket,
+    load_module,
 ) -> None:
     """
     Given: MSFT prefix에 기존 객체가 존재하고 AAPL은 비어있음

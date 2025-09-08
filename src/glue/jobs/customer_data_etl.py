@@ -7,6 +7,7 @@ from awsglue.context import GlueContext
 from awsglue.job import Job
 from pyspark.context import SparkContext
 from pyspark.sql import functions as F
+from pyspark.sql import DataFrame
 
 
 def _stable_hash(obj: dict) -> str:
@@ -47,10 +48,35 @@ elif ft == "csv":
 else:
     df = spark.read.parquet(raw_path)
 
+
+def _write_quarantine_and_fail(df_in: DataFrame, reason: str) -> None:
+    """Write dataset to quarantine path and raise DQ failure."""
+    curated_path_base = f"s3://{args['curated_bucket']}/{args['curated_prefix']}"
+    quarantine_path = f"{curated_path_base}quarantine/ds={args['ds']}"
+    # Write as Parquet with same compression settings
+    spark.conf.set("spark.sql.parquet.compression.codec", args["codec"])  # zstd
+    df_in.coalesce(1).write.mode("overwrite").format("parquet").save(quarantine_path)
+    raise RuntimeError(f"DQ_FAILED: {reason}")
+
+
 # Simple DQ: non-empty dataset
 count = df.limit(1).count()
 if count == 0:
     raise RuntimeError("NO_RAW_DATA: No records found for ds")
+
+# Minimal critical DQ rules (generic, domain-agnostic)
+# - If column 'symbol' exists -> not null
+# - If column 'price' exists -> >= 0
+violations: list[str] = []
+if "symbol" in df.columns:
+    if df.filter(F.col("symbol").isNull()).limit(1).count() > 0:
+        violations.append("null symbol present")
+if "price" in df.columns:
+    if df.filter(F.col("price") < F.lit(0)).limit(1).count() > 0:
+        violations.append("negative price present")
+
+if violations:
+    _write_quarantine_and_fail(df, "; ".join(violations))
 
 # Add ds column, write to curated partitioned path in Parquet
 spark.conf.set("spark.sql.parquet.compression.codec", args["codec"])  # zstd
@@ -60,7 +86,11 @@ df_out.coalesce(1).write.mode("append").partitionBy("ds").format("parquet").save
 
 # Produce schema fingerprint from DataFrame schema
 cols = [{"name": f.name, "type": f.dataType.simpleString()} for f in df_out.schema.fields if f.name != "ds"]
-fingerprint = {"columns": cols, "codec": args["codec"], "hash": _stable_hash({"columns": cols})}
+fingerprint = {
+    "columns": cols,
+    "codec": args["codec"],
+    "hash": _stable_hash({"columns": cols}),
+}
 
 # Persist fingerprint to artifacts bucket (latest.json)
 s3 = boto3.client("s3")
@@ -71,6 +101,11 @@ if not fp_uri.startswith("s3://"):
 _bucket_key = fp_uri[5:]
 _bucket = _bucket_key.split("/", 1)[0]
 _key = _bucket_key.split("/", 1)[1]
-s3.put_object(Bucket=_bucket, Key=_key, Body=json.dumps(fingerprint).encode("utf-8"), ContentType="application/json")
+s3.put_object(
+    Bucket=_bucket,
+    Key=_key,
+    Body=json.dumps(fingerprint).encode("utf-8"),
+    ContentType="application/json",
+)
 
 job.commit()

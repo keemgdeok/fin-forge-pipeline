@@ -51,7 +51,10 @@ def test_notification_email_on_critical(monkeypatch) -> None:
         "domain": "market",
         "table_name": "prices",
         "status": "ERROR",
-        "error_details": {"error_type": "GlueError", "error_message": "job failed"},
+        "error_details": {
+            "error_type": "GlueError",
+            "error_message": "job failed",
+        },
     }
 
     resp = mod["main"](event, None)
@@ -67,6 +70,10 @@ def test_notification_missing_fields(monkeypatch) -> None:
     Then: 400 상태 코드가 반환되어야 함
     """
     mod = runpy.run_path("src/lambda/functions/notification_handler/handler.py")
-    monkeypatch.setitem(mod["main"].__globals__, "boto3", BotoStub(sns=SnsStub(), ses=SesStub()))
+    monkeypatch.setitem(
+        mod["main"].__globals__,
+        "boto3",
+        BotoStub(sns=SnsStub(), ses=SesStub()),
+    )
     resp = mod["main"]({"domain": "x"}, None)
     assert resp["statusCode"] == 400

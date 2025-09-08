@@ -78,15 +78,26 @@ class NotificationManager:
         return {"message": formatted_message, "subject": subject}
 
     def publish_sns_notification(
-        self, topic_arn: str, message: str, subject: str, message_attributes: Optional[Dict[str, Any]] = None
+        self,
+        topic_arn: str,
+        message: str,
+        subject: str,
+        message_attributes: Optional[Dict[str, Any]] = None,
     ) -> Optional[str]:
         """Publish notification to SNS topic."""
         try:
-            publish_params: Dict[str, Any] = {"TopicArn": topic_arn, "Message": message, "Subject": subject}
+            publish_params: Dict[str, Any] = {
+                "TopicArn": topic_arn,
+                "Message": message,
+                "Subject": subject,
+            }
             if message_attributes:
                 formatted_attributes = {}
                 for key, value in message_attributes.items():
-                    formatted_attributes[key] = {"DataType": "String", "StringValue": str(value)}
+                    formatted_attributes[key] = {
+                        "DataType": "String",
+                        "StringValue": str(value),
+                    }
                 publish_params["MessageAttributes"] = formatted_attributes
             response = self.sns_client.publish(**publish_params)
             message_id = response["MessageId"]
@@ -97,14 +108,21 @@ class NotificationManager:
             return None
 
     def send_email_notification(
-        self, source_email: str, destination_emails: List[str], subject: str, body: str
+        self,
+        source_email: str,
+        destination_emails: List[str],
+        subject: str,
+        body: str,
     ) -> bool:
         """Send email notification using SES (if configured)."""
         try:
             response = self.ses_client.send_email(
                 Source=source_email,
                 Destination={"ToAddresses": destination_emails},
-                Message={"Subject": {"Data": subject}, "Body": {"Text": {"Data": body}}},
+                Message={
+                    "Subject": {"Data": subject},
+                    "Body": {"Text": {"Data": body}},
+                },
             )
             logger.info(f"Sent email notification: {response['MessageId']}")
             return True
@@ -184,7 +202,10 @@ def main(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
         ):
             valid_emails = [email.strip() for email in admin_emails if email.strip()]
             email_sent = notification_manager.send_email_notification(
-                source_email, valid_emails, formatted_notification["subject"], formatted_notification["message"]
+                source_email,
+                valid_emails,
+                formatted_notification["subject"],
+                formatted_notification["message"],
             )
 
         result = {
@@ -209,8 +230,20 @@ def main(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
     except ValueError as e:
         log = logger
         log.exception("Validation error in notification handler")
-        return {"statusCode": 400, "body": {"error": str(e), "message": "Invalid notification event structure"}}
+        return {
+            "statusCode": 400,
+            "body": {
+                "error": str(e),
+                "message": "Invalid notification event structure",
+            },
+        }
     except Exception as e:
         log = logger
         log.exception("Error processing notification")
-        return {"statusCode": 500, "body": {"error": str(e), "message": "Failed to process notification"}}
+        return {
+            "statusCode": 500,
+            "body": {
+                "error": str(e),
+                "message": "Failed to process notification",
+            },
+        }

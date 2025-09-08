@@ -7,7 +7,7 @@ def test_data_validator_lazy_stepfunctions(monkeypatch) -> None:
     When: DataValidator 인스턴스를 생성하면
     Then: s3/glue만 생성되고 stepfunctions는 접근 시점에 지연 생성되어야 함
     """
-    # Load module
+    # Load module from shared layer
     mod = runpy.run_path("src/lambda/layers/common/python/shared/validation/data_validator.py")
 
     created = []

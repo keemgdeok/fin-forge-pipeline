@@ -31,7 +31,10 @@ def test_orchestrator_raises_on_sqs_client_error(monkeypatch) -> None:
 
     class _SQS:
         def send_message_batch(self, **kwargs: Any):
-            raise ClientError({"Error": {"Code": "500", "Message": "boom"}}, "SendMessageBatch")
+            raise ClientError(
+                {"Error": {"Code": "500", "Message": "boom"}},
+                "SendMessageBatch",
+            )
 
     class _Boto:
         def client(self, name: str, **kwargs: Any):
@@ -54,7 +57,9 @@ def test_orchestrator_raises_on_sqs_client_error(monkeypatch) -> None:
         mod["main"](event, None)
 
 
-def test_orchestrator_retries_partial_failure_then_succeeds(monkeypatch) -> None:
+def test_orchestrator_retries_partial_failure_then_succeeds(
+    monkeypatch,
+) -> None:
     """
     Given: 첫 배치 응답에 Failed 1건, 재시도 시 성공
     When: 오케스트레이터 main 실행
@@ -83,7 +88,10 @@ def test_orchestrator_retries_partial_failure_then_succeeds(monkeypatch) -> None
                 fail = [{"Id": entries[-1]["Id"], "Code": "500", "Message": "boom"}]
                 return {"Successful": succ, "Failed": fail}
             # 2차 호출(실패분만 재시도): 모두 성공 처리
-            return {"Successful": [{"Id": e["Id"]} for e in entries], "Failed": []}
+            return {
+                "Successful": [{"Id": e["Id"]} for e in entries],
+                "Failed": [],
+            }
 
     class _Boto:
         def __init__(self) -> None:
