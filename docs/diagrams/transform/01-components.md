@@ -27,7 +27,7 @@ graph LR
 
   %% Governance/Security notes
   N1["IAM + Glue Catalog 권한<br/>KMS 암호화(버킷/로그)"]:::note
-  N2["Athena WorkGroup 결과 버킷 암호화<br/>VPC Endpoint(S3/Glue) 권장"]:::note
+  N2["Athena WorkGroup 결과 버킷 암호화"]:::note
   N3["Quarantine 프리픽스 보존정책<br/>(30–90일, 운영자 한정 접근)"]:::note
   GOV -.-> N1
   ATH -.-> N2
