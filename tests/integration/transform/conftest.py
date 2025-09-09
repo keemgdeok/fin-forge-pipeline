@@ -1,205 +1,90 @@
-"""Practical fixtures for daily batch transform pipeline testing.
+"""
+Simplified Test Configuration for 1GB Daily Batch
 
-This module provides simplified test fixtures optimized for daily batch
-processing scenarios with 1GB or less data. Focuses on essential functionality
-without over-engineering for extreme scale scenarios.
-
-Replaces the comprehensive conftest.py with a practical approach.
+1GB 일일 배치에 특화된 간소화된 테스트 설정입니다.
+복잡도를 최소화하면서 핵심 기능만 검증합니다.
 """
 
-import os
 import pytest
-import runpy
-from datetime import datetime, timezone
-from typing import Dict, Any, List, Optional
-from unittest.mock import Mock
-
-from tests.fixtures.deterministic_data_builders import (
-    build_deterministic_transform_event,
-    build_deterministic_market_data,
-)
+import os
+from typing import Dict
+from unittest.mock import Mock, patch
 
 
 @pytest.fixture
-def daily_batch_env():
-    """Setup simplified environment for daily batch testing."""
-
-    def _setup():
-        os.environ.update(
-            {
-                "ENVIRONMENT": "test",
-                "RAW_BUCKET": "test-raw-bucket",
-                "CURATED_BUCKET": "test-curated-bucket",
-                "ARTIFACTS_BUCKET": "test-artifacts-bucket",
-                "AWS_REGION": "us-east-1",
-                "TARGET_FILE_MB": "128",
-                "GLUE_MAX_DPU": "2",
-                "MAX_PROCESSING_TIME_MINUTES": "30",
-            }
-        )
-
-    return _setup
-
-
-@pytest.fixture
-def load_module():
-    """Load Python modules dynamically for testing."""
-
-    def _load(module_path: str):
-        """Load a module by path for testing."""
-        return runpy.run_path(module_path)
-
-    return _load
-
-
-@pytest.fixture
-def practical_s3_mock():
-    """Create simplified S3 mock for daily batch scenarios."""
-
-    class PracticalS3Mock:
-        def __init__(self):
-            self.objects = {}
-            self.buckets = {"test-raw-bucket", "test-curated-bucket", "test-artifacts-bucket"}
-
-        def put_object(self, Bucket: str, Key: str, Body: bytes, **kwargs):
-            self.objects[f"{Bucket}/{Key}"] = {
-                "Body": Body,
-                "Size": len(Body) if isinstance(Body, bytes) else len(str(Body)),
-            }
-            return {"ResponseMetadata": {"HTTPStatusCode": 200}}
-
-        def get_object(self, Bucket: str, Key: str):
-            obj_key = f"{Bucket}/{Key}"
-            if obj_key not in self.objects:
-                raise Exception("NoSuchKey")
-
-            obj = self.objects[obj_key]
-            return {"Body": Mock(read=lambda: obj["Body"])}
-
-        def list_objects_v2(self, Bucket: str, Prefix: str = "", MaxKeys: int = 1000):
-            matching_keys = []
-            for key in self.objects.keys():
-                if key.startswith(f"{Bucket}/") and key.split("/", 1)[1].startswith(Prefix):
-                    matching_keys.append(key.split("/", 1)[1])
-
-            return {"KeyCount": len(matching_keys), "Contents": [{"Key": key} for key in matching_keys]}
-
-        def head_object(self, Bucket: str, Key: str):
-            obj_key = f"{Bucket}/{Key}"
-            if obj_key not in self.objects:
-                raise Exception("NoSuchKey")
-            return {"ContentLength": self.objects[obj_key]["Size"]}
-
-    return PracticalS3Mock
-
-
-@pytest.fixture
-def daily_batch_data():
-    """Generate practical test data (reduced size for fast execution)."""
-
-    def _generate(
-        batch_size: int = 10000,  # Reduced for practical testing
-        corruption_rate: float = 0.05,  # 5% data issues (realistic)
-        include_extended_fields: bool = False,
-    ) -> List[Dict[str, Any]]:
-
-        return build_deterministic_market_data(
-            count=batch_size, corruption_rate=corruption_rate, include_extended_fields=include_extended_fields
-        )
-
-    return _generate
-
-
-@pytest.fixture
-def transform_event_builder():
-    """Build realistic transform events for daily batch processing."""
-
-    def _build(
-        domain: str = "market", table_name: str = "prices", ds: Optional[str] = None, **kwargs
-    ) -> Dict[str, Any]:
-
-        if ds is None:
-            ds = datetime.now(timezone.utc).strftime("%Y-%m-%d")
-
-        return build_deterministic_transform_event(domain=domain, table_name=table_name, ds=ds, **kwargs)
-
-    return _build
-
-
-@pytest.fixture
-def daily_batch_thresholds():
-    """Simplified thresholds for daily batch processing."""
+def daily_batch_env() -> Dict[str, str]:
+    """1GB 일일 배치 처리를 위한 핵심 환경 변수"""
     return {
-        "quality_score": 0.90,  # 90% clean data expected
-        "max_processing_time": 30,  # seconds for typical batch
-        "target_file_mb": 128,  # Target file size
+        "ENVIRONMENT": "test",
+        "AWS_REGION": "ap-northeast-2",
+        "TARGET_DATE": "2025-09-09",
+        "DOMAIN": "customer-data",
+        "TABLE": "customers",
+        "RAW_BUCKET": "finge-raw-test",
+        "CURATED_BUCKET": "finge-curated-test",
+        "MAX_DPU": "2",  # 1GB에 충분한 최소 DPU
     }
 
 
 @pytest.fixture
-def common_error_codes():
-    """Common error codes for daily batch processing."""
-    return ["PRE_VALIDATION_FAILED", "IDEMPOTENT_SKIP", "NO_RAW_DATA", "DQ_FAILED"]
+def mock_aws_services():
+    """핵심 AWS 서비스 Mock (S3, Glue, Step Functions)"""
+    with patch("boto3.client") as mock_boto:
+        # 간단한 성공 시나리오 Mock
+        mock_s3 = Mock()
+        mock_s3.head_object.return_value = {"ContentLength": 1024 * 1024}  # 1MB
+
+        mock_glue = Mock()
+        mock_glue.start_job_run.return_value = {"JobRunId": "jr_123"}
+        mock_glue.get_job_run.return_value = {"JobRun": {"JobRunState": "SUCCEEDED", "ExecutionTime": 180}}
+
+        mock_sfn = Mock()
+        mock_sfn.describe_execution.return_value = {"status": "SUCCEEDED", "output": '{"ok": true, "rowCount": 5000}'}
+
+        def get_client(service_name, **kwargs):
+            if service_name == "s3":
+                return mock_s3
+            elif service_name == "glue":
+                return mock_glue
+            elif service_name == "stepfunctions":
+                return mock_sfn
+            return Mock()
+
+        mock_boto.side_effect = get_client
+        yield {"s3": mock_s3, "glue": mock_glue, "stepfunctions": mock_sfn}
 
 
 @pytest.fixture
-def validate_response():
-    """Simple response validation for daily batch."""
-
-    def _validate_success(response):
-        assert isinstance(response, dict)
-        assert response.get("ok") is not False
-
-    def _validate_error(response, expected_code=None):
-        assert "error" in response
-        assert "code" in response["error"]
-        if expected_code:
-            assert response["error"]["code"] == expected_code
-
-    return {"success": _validate_success, "error": _validate_error}
-
-
-# Simplified module-level fixtures for common daily batch scenarios
-@pytest.fixture(scope="session")
-def sample_daily_batch():
-    """Pre-generated sample test batch for reuse across tests."""
-    return build_deterministic_market_data(count=1000, corruption_rate=0.05)  # Small for reuse
-
-
-@pytest.fixture(scope="session")
-def sample_schema_fingerprint():
-    """Standard schema fingerprint for daily batch market data."""
+def sample_batch_data():
+    """1GB 배치에 적합한 현실적인 샘플 데이터"""
     return {
-        "columns": [
-            {"name": "symbol", "type": "string"},
-            {"name": "price", "type": "double"},
-            {"name": "exchange", "type": "string"},
-            {"name": "timestamp", "type": "timestamp"},
-            {"name": "volume", "type": "bigint"},
-        ],
-        "codec": "zstd",
-        "hash": "daily_batch_schema_v1",
-        "created_at": "2025-09-07T10:00:00Z",
+        "record_count": 5000,  # 1GB ≈ 5K records
+        "processing_time_limit": 300,  # 5분 제한
+        "quality_threshold": 0.95,  # 95% 품질
+        "file_size_mb": 1024,  # 1GB
+        "expected_partitions": 1,  # 단일 일일 파티션
     }
 
 
-@pytest.fixture(autouse=True)
-def cleanup_environment():
-    """Automatically cleanup environment after each test."""
-    yield
+# 간소화된 헬퍼 함수들
+def step_function_test_env():
+    """Step Functions 테스트를 위한 최소 환경"""
+    os.environ.update(
+        {
+            "STATE_MACHINE_ARN": "arn:aws:states:ap-northeast-2:123456789012:stateMachine:test",
+            "EXECUTION_ROLE_ARN": "arn:aws:iam::123456789012:role/test-role",
+        }
+    )
 
-    # Clean up 8 core environment variables only
-    core_env_vars = [
-        "ENVIRONMENT",
-        "RAW_BUCKET",
-        "CURATED_BUCKET",
-        "ARTIFACTS_BUCKET",
-        "AWS_REGION",
-        "TARGET_FILE_MB",
-        "GLUE_MAX_DPU",
-        "MAX_PROCESSING_TIME_MINUTES",
+
+def generate_test_records(count: int = 5000):
+    """간단한 테스트 레코드 생성"""
+    return [
+        {
+            "id": i + 1,
+            "name": f"Customer_{i+1}",
+            "email": f"user{i+1}@example.com",
+            "created_at": "2025-09-09T10:00:00Z",
+        }
+        for i in range(count)
     ]
-
-    for var in core_env_vars:
-        if var in os.environ:
-            del os.environ[var]
