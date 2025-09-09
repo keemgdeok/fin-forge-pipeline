@@ -7,8 +7,8 @@
 | 항목 | 값 |
 |---|---|
 | 잡 이름 | `<domain>-<table>-transform` |
-| Glue 버전 | 4.0 또는 5.0 |
-| 언어 | Python (PySpark/PyGlue) |
+| Glue 버전 | 5.0 |
+| 언어 | Python (PyGlue) |
 | 워커 타입 | G.1X |
 | DPU (최소/최대) | 2 / 2 (오토스케일 off, 고정) |
 | 타임아웃(분) | 30 |
@@ -19,9 +19,9 @@
 | 키 | 예시 | 설명 |
 |---|---|---|
 | `--ds` | `2025-09-07` | 처리 대상 파티션(UTC) |
-| `--raw_bucket` | `my-raw-bucket` | 입력 버킷 |
+| `--raw_bucket` | `raw-bucket` | 입력 버킷 |
 | `--raw_prefix` | `<domain>/<table>/` | 입력 프리픽스 |
-| `--curated_bucket` | `my-curated-bucket` | 출력 버킷 |
+| `--curated_bucket` | `curated-bucket` | 출력 버킷 |
 | `--curated_prefix` | `<domain>/<table>/` | 출력 프리픽스 |
 | `--job-bookmark-option` | `job-bookmark-enable` | 증분 읽기 활성화 |
 | `--enable-s3-parquet-optimized-committer` | `1` | 원자적 커밋 |

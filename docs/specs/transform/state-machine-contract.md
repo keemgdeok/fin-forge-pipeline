@@ -6,7 +6,7 @@
 
 | 필드 | 타입 | 필수 | 예시 | 제약/설명 |
 |---|---|:---:|---|---|
-| environment | string | Y | `dev` | `dev|stg|prod` 중 하나 |
+| environment | string | Y | `dev` | `dev\|stg\|prod` 중 하나 |
 | domain | string | Y | `customer-data` | 도메인 식별자 |
 | table | string | Y | `orders` | 데이터셋/테이블 이름 |
 | ds | string | C | `2025-09-07` | `YYYY-MM-DD` (UTC). `date_range`와 상호 배타(XOR) |
