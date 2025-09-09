@@ -117,7 +117,19 @@ class CustomerDataProcessingStack(Stack):
         )
 
     def _create_processing_workflow(self) -> sfn.StateMachine:
-        """Create Step Functions workflow for customer data processing."""
+        """Create simplified Step Functions workflow for 1GB daily batch processing.
+
+        Simplified architecture:
+        1. Preflight Lambda: ds extraction, idempotency check, Glue args
+        2. Glue ETL Job: data transformation + ALL DQ validation integrated
+        3. Glue Crawler: automatic schema detection (uses native RecrawlPolicy)
+
+        Removed complexity:
+        - Data Validator Lambda (redundant with Glue DQ)
+        - Quality Check Lambda (placeholder, redundant)
+        - Schema Check Lambda (replaced by Glue Crawler native features)
+        - Build Dates Lambda (1 daily batch doesn't need backfill)
+        """
         # Preflight task: derive ds, idempotency skip, build Glue args
         preflight_task = tasks.LambdaInvoke(
             self,
@@ -138,7 +150,7 @@ class CustomerDataProcessingStack(Stack):
         fail_state = sfn.Fail(self, "ExecutionFailed", comment="Pipeline execution failed")
         fail_chain = normalize_fail.next(fail_state)
 
-        # ETL job task
+        # ETL job task (now includes ALL data quality validation)
         etl_task = tasks.GlueStartJobRun(
             self,
             "ProcessCustomerData",
@@ -146,39 +158,14 @@ class CustomerDataProcessingStack(Stack):
             integration_pattern=sfn.IntegrationPattern.RUN_JOB,
             arguments=sfn.TaskInput.from_json_path_at("$.glue_args"),
         )
-        # Catch Glue task failures and route to normalized fail chain
+        # Catch Glue task failures (includes DQ failures) and route to normalized fail chain
         etl_task.add_catch(handler=fail_chain, result_path="$.error")
 
-        # Data quality check task
-        quality_check_task = tasks.LambdaInvoke(
-            self,
-            "QualityCheckCustomerData",
-            lambda_function=self._create_quality_check_function(),
-            output_path="$.Payload",
-        )
-        quality_check_task.add_catch(handler=fail_chain, result_path="$.error")
-
-        # Schema check task (decide whether to run crawler)
-        schema_check_task = tasks.LambdaInvoke(
-            self,
-            "SchemaCheckCustomerData",
-            lambda_function=self._create_schema_check_function(),
-            payload=sfn.TaskInput.from_object(
-                {
-                    "domain": self.config.get("ingestion_domain", "market"),
-                    "table_name": self.config.get("ingestion_table_name", "prices"),
-                    "catalog_update": self.config.get("catalog_update", "on_schema_change"),
-                }
-            ),
-            output_path="$.Payload",
-        )
-        schema_check_task.add_catch(handler=fail_chain, result_path="$.error")
-
-        # Conditional crawler start using AWS SDK integration
+        # Crawler task: automatic schema detection using native AWS features
         crawler_name = f"{self.env_name}-curated-data-crawler"
         start_crawler_task = tasks.CallAwsService(
             self,
-            "StartCrawlerIfNeeded",
+            "StartCrawler",
             service="glue",
             action="startCrawler",
             parameters={"Name": crawler_name},
@@ -194,35 +181,12 @@ class CustomerDataProcessingStack(Stack):
             comment="Customer data processing completed successfully",
         )
 
-        # Error handling via normalized fail_chain; branch-specific normalization below as needed
-
-        # Define workflow
-        # Prepare DQ failed branch for quality_check otherwise
-        dq_failed_branch = sfn.Pass(
-            self,
-            "DQFailedBranch",
-            parameters={"error": {"code": "DQ_FAILED", "message": "Quality check failed"}},
-        ).next(fail_state)
-
+        # Simplified linear workflow: Preflight -> ETL+DQ -> Crawler -> Success
         definition = preflight_task.next(
             sfn.Choice(self, "PreflightChoice")
             .when(
                 sfn.Condition.boolean_equals("$.proceed", True),
-                etl_task.next(quality_check_task).next(
-                    sfn.Choice(self, "QualityChoice")
-                    .when(
-                        sfn.Condition.boolean_equals("$.quality_passed", True),
-                        schema_check_task.next(
-                            sfn.Choice(self, "CatalogUpdateChoice")
-                            .when(
-                                sfn.Condition.boolean_equals("$.should_crawl", True),
-                                start_crawler_task.next(success_task),
-                            )
-                            .otherwise(success_task)
-                        ),
-                    )
-                    .otherwise(dq_failed_branch)
-                ),
+                etl_task.next(start_crawler_task).next(success_task),
             )
             .otherwise(
                 sfn.Choice(self, "PreflightSkipOrError")
@@ -231,124 +195,9 @@ class CustomerDataProcessingStack(Stack):
             )
         )
 
-        # Backfill (date_range) support: Build dates -> Map over ds -> reuse same processor
-        build_dates_task = tasks.LambdaInvoke(
-            self,
-            "BuildDateArray",
-            lambda_function=self._create_build_dates_function(),
-            payload=sfn.TaskInput.from_object({"date_range.$": "$.date_range"}),
-            output_path="$.Payload",
-        )
-        build_dates_task.add_catch(handler=fail_chain, result_path="$.error")
-
-        map_state = sfn.Map(
-            self,
-            "BackfillMap",
-            max_concurrency=int(self.config.get("backfill_max_concurrency", 2)),
-            items_path=sfn.JsonPath.string_at("$.dates"),
-            parameters={
-                "domain.$": "$.domain",
-                "table_name.$": "$.table_name",
-                "file_type.$": "$.file_type",
-                "ds.$": "$$.Map.Item.Value",
-            },
-        )
-
-        preflight_map_task = tasks.LambdaInvoke(
-            self,
-            "PreflightForDs",
-            lambda_function=preflight_task.lambda_function,  # reuse same function
-            output_path="$.Payload",
-        )
-        preflight_map_task.add_catch(handler=fail_chain, result_path="$.error")
-
-        etl_map_task = tasks.GlueStartJobRun(
-            self,
-            "ProcessCustomerDataDs",
-            glue_job_name=self.etl_job_name,
-            integration_pattern=sfn.IntegrationPattern.RUN_JOB,
-            arguments=sfn.TaskInput.from_json_path_at("$.glue_args"),
-        )
-        etl_map_task.add_catch(handler=fail_chain, result_path="$.error")
-
-        quality_map_task = tasks.LambdaInvoke(
-            self,
-            "QualityCheckCustomerDataDs",
-            lambda_function=quality_check_task.lambda_function,  # reuse function
-            output_path="$.Payload",
-        )
-        quality_map_task.add_catch(handler=fail_chain, result_path="$.error")
-
-        schema_map_task = tasks.LambdaInvoke(
-            self,
-            "SchemaCheckCustomerDataDs",
-            lambda_function=schema_check_task.lambda_function,  # reuse function
-            payload=sfn.TaskInput.from_object(
-                {
-                    "domain.$": "$.domain",
-                    "table_name.$": "$.table_name",
-                    "catalog_update": self.config.get("catalog_update", "on_schema_change"),
-                }
-            ),
-            output_path="$.Payload",
-        )
-        schema_map_task.add_catch(handler=fail_chain, result_path="$.error")
-
-        start_crawler_map_task = tasks.CallAwsService(
-            self,
-            "StartCrawlerIfNeededDs",
-            service="glue",
-            action="startCrawler",
-            parameters={"Name": crawler_name},
-            iam_resources=[f"arn:aws:glue:{Stack.of(self).region}:{Stack.of(self).account}:crawler/{crawler_name}"],
-            result_path=sfn.JsonPath.DISCARD,
-        )
-        start_crawler_map_task.add_catch(handler=fail_chain, result_path="$.error")
-
-        dq_failed_map_branch = sfn.Pass(
-            self,
-            "DQFailedBranchDs",
-            parameters={"error": {"code": "DQ_FAILED", "message": "Quality check failed"}},
-        ).next(fail_state)
-
-        map_item_chain = preflight_map_task.next(
-            sfn.Choice(self, "PreflightChoiceDs")
-            .when(
-                sfn.Condition.boolean_equals("$.proceed", True),
-                etl_map_task.next(quality_map_task).next(
-                    sfn.Choice(self, "QualityChoiceDs")
-                    .when(
-                        sfn.Condition.boolean_equals("$.quality_passed", True),
-                        schema_map_task.next(
-                            sfn.Choice(self, "CatalogUpdateChoiceDs")
-                            .when(
-                                sfn.Condition.boolean_equals("$.should_crawl", True),
-                                start_crawler_map_task,
-                            )
-                            .otherwise(sfn.Pass(self, "SkipCrawlerDs"))
-                        ),
-                    )
-                    .otherwise(dq_failed_map_branch)
-                ),
-            )
-            .otherwise(
-                sfn.Choice(self, "PreflightSkipOrErrorDs")
-                .when(
-                    sfn.Condition.string_equals("$.error.code", "IDEMPOTENT_SKIP"), sfn.Pass(self, "SkipIdempotentDs")
-                )
-                .otherwise(fail_chain)
-            )
-        )
-        map_state.item_processor(map_item_chain)
-
-        backfill_chain = build_dates_task.next(map_state).next(success_task)
-
-        # Choose backfill vs single-run
-        top_definition = (
-            sfn.Choice(self, "BackfillOrSingle")
-            .when(sfn.Condition.is_present("$.date_range.start"), backfill_chain)
-            .otherwise(definition)
-        )
+        # Removed backfill support: 1GB daily batch doesn't need complex date range processing
+        # If backfill is needed later, can be handled by manual re-runs with different ds values
+        top_definition = definition
 
         # Create log group for the state machine with retention from config
         sm_log_group = logs.LogGroup(
@@ -446,30 +295,7 @@ class CustomerDataProcessingStack(Stack):
 
         return rule
 
-    def _create_validation_function(self) -> lambda_.IFunction:
-        """Create data validation Lambda function wired to real handler."""
-        function = PythonFunction(
-            self,
-            "CustomerDataValidationFunction",
-            function_name=f"{self.env_name}-customer-data-validation",
-            runtime=lambda_.Runtime.PYTHON_3_12,
-            entry="src/lambda/functions/data_validator",
-            index="handler.py",
-            handler="main",
-            memory_size=self._lambda_memory(),
-            timeout=self._lambda_timeout(),
-            log_retention=self._log_retention(),
-            role=iam.Role.from_role_arn(self, "ValidationLambdaRole", self.lambda_execution_role_arn),
-            layers=[self.common_layer],
-            environment={
-                "ENVIRONMENT": self.env_name,
-                "RAW_BUCKET": self.shared_storage.raw_bucket.bucket_name,
-            },
-        )
-
-        # S3 권한은 SecurityStack의 LambdaExecutionRole에 최소권한으로 부여됨
-        # (교차 스택 grant로 인한 순환 참조를 피하기 위해 여기서는 grant를 사용하지 않음)
-        return function
+    # Removed: _create_validation_function - redundant with Glue ETL DQ validation
 
     def _create_preflight_function(self) -> lambda_.IFunction:
         """Create preflight Lambda function for ds/idempotency/args."""
@@ -495,78 +321,11 @@ class CustomerDataProcessingStack(Stack):
         )
         return function
 
-    def _create_quality_check_function(self) -> lambda_.Function:
-        """Create data quality check Lambda function."""
-        function = lambda_.Function(
-            self,
-            "CustomerDataQualityCheckFunction",
-            function_name=f"{self.env_name}-customer-data-quality-check",
-            runtime=lambda_.Runtime.PYTHON_3_12,
-            handler="handler.lambda_handler",
-            code=lambda_.Code.from_inline(
-                "def lambda_handler(event, context): return {'quality_passed': True}"
-            ),  # Placeholder
-            memory_size=self._lambda_memory(),
-            timeout=self._lambda_timeout(),
-            log_retention=self._log_retention(),
-            role=iam.Role.from_role_arn(self, "QualityCheckLambdaRole", self.lambda_execution_role_arn),
-            layers=[self.common_layer],
-            environment={
-                "ENVIRONMENT": self.env_name,
-                "CURATED_BUCKET": self.shared_storage.curated_bucket.bucket_name,
-            },
-        )
+    # Removed: _create_quality_check_function - placeholder function, DQ now in Glue ETL
 
-        # S3 권한은 SecurityStack의 LambdaExecutionRole에 최소권한으로 부여됨
-        # (교차 스택 grant로 인한 순환 참조를 피하기 위해 여기서는 grant를 사용하지 않음)
-        return function
+    # Removed: _create_schema_check_function - replaced by Glue Crawler native RecrawlPolicy
 
-    def _create_schema_check_function(self) -> lambda_.IFunction:
-        """Create schema change check Lambda function."""
-        function = PythonFunction(
-            self,
-            "CustomerDataSchemaCheckFunction",
-            function_name=f"{self.env_name}-customer-data-schema-check",
-            runtime=lambda_.Runtime.PYTHON_3_12,
-            entry="src/lambda/functions/schema_check",
-            index="handler.py",
-            handler="lambda_handler",
-            memory_size=self._lambda_memory(),
-            timeout=self._lambda_timeout(),
-            log_retention=self._log_retention(),
-            role=iam.Role.from_role_arn(self, "SchemaCheckLambdaRole", self.lambda_execution_role_arn),
-            layers=[self.common_layer],
-            environment={
-                "ENVIRONMENT": self.env_name,
-                "CURATED_BUCKET": self.shared_storage.curated_bucket.bucket_name,
-                "ARTIFACTS_BUCKET": self.shared_storage.artifacts_bucket.bucket_name,
-                "CATALOG_UPDATE_DEFAULT": str(self.config.get("catalog_update", "on_schema_change")),
-            },
-        )
-
-        return function
-
-    def _create_build_dates_function(self) -> lambda_.IFunction:
-        """Create Lambda to build date array for backfill Map."""
-        function = PythonFunction(
-            self,
-            "BuildDatesFunction",
-            function_name=f"{self.env_name}-build-dates",
-            runtime=lambda_.Runtime.PYTHON_3_12,
-            entry="src/lambda/functions/build_dates",
-            index="handler.py",
-            handler="lambda_handler",
-            memory_size=self._lambda_memory(),
-            timeout=self._lambda_timeout(),
-            log_retention=self._log_retention(),
-            role=iam.Role.from_role_arn(self, "BuildDatesLambdaRole", self.lambda_execution_role_arn),
-            layers=[self.common_layer],
-            environment={
-                "ENVIRONMENT": self.env_name,
-                "MAX_BACKFILL_DAYS": str(int(self.config.get("max_backfill_days", 31))),
-            },
-        )
-        return function
+    # Removed: _create_build_dates_function - 1GB daily batch doesn't need backfill complexity
 
     def _create_outputs(self) -> None:
         """Create CloudFormation outputs."""

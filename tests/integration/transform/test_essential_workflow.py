@@ -59,14 +59,15 @@ class TestEssentialWorkflow:
             assert result["processed_rows"] == 5000
             assert result["execution_time_seconds"] <= 300  # 5분 이내
 
-    def test_schema_change_detection(self, daily_batch_env):
-        """스키마 변경 감지 및 처리"""
-        # Given: 스키마가 변경된 데이터
+    def test_schema_change_detection_via_glue_crawler(self, daily_batch_env):
+        """Simplified: 스키마 변경은 이제 Glue Crawler가 자동으로 감지"""
+        # Given: 새로운 스키마의 데이터가 처리됨
         env = daily_batch_env
 
         with patch("boto3.client") as mock_boto:
+            mock_glue = Mock()
             mock_s3 = Mock()
-            mock_boto.return_value = mock_s3
+            mock_boto.side_effect = lambda service: mock_glue if service == "glue" else mock_s3
 
             # 기존 스키마와 다른 구조 시뮬레이션
             mock_s3.get_object.side_effect = [

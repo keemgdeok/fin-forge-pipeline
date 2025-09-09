@@ -43,7 +43,15 @@ def _fake_python_function(scope, id, **kwargs):
     )
 
 
-def test_state_machine_has_error_catches_and_skip_branch(monkeypatch) -> None:
+def test_simplified_state_machine_has_essential_error_handling(monkeypatch) -> None:
+    """Test that simplified state machine still has proper error handling.
+
+    After removing 4 Lambda functions, verify that:
+    1. Error normalization still works
+    2. Preflight skip branch still exists
+    3. Glue ETL error catching is in place
+    4. No references to removed Lambda functions
+    """
     app = App()
     cfg = _base_config()
 
@@ -65,7 +73,7 @@ def test_state_machine_has_error_catches_and_skip_branch(monkeypatch) -> None:
     template = Template.from_stack(proc)
     tpl = template.to_json()
 
-    # Normalized failure pass must exist and shape payload
+    # Essential error handling must still exist
     assert "NormalizeAndFail" in tpl
     assert '"ok": false' in tpl
     assert '"error.$": "$.error"' in tpl
@@ -73,3 +81,13 @@ def test_state_machine_has_error_catches_and_skip_branch(monkeypatch) -> None:
     # Preflight skip branch must exist
     assert "PreflightSkipOrError" in tpl
     assert '"$.error.code"' in tpl and "IDEMPOTENT_SKIP" in tpl
+
+    # Verify simplified workflow - no quality/schema check steps
+    assert "QualityCheckCustomerData" not in tpl, "Quality check Lambda should be removed"
+    assert "SchemaCheckCustomerData" not in tpl, "Schema check Lambda should be removed"
+    assert "BuildDateArray" not in tpl, "Build dates Lambda should be removed"
+
+    # Essential components should remain
+    assert "PreflightCustomerData" in tpl, "Preflight Lambda must remain"
+    assert "ProcessCustomerData" in tpl, "Glue ETL job must remain"
+    assert "StartCrawler" in tpl, "Crawler task must remain"
