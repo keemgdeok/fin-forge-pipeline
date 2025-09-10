@@ -258,7 +258,32 @@ def pytest_runtest_setup(item):
     if "slow" in item.keywords and not item.config.getoption("--runslow"):
         pytest.skip("need --runslow option to run")
 
-    # Run only transform tests if requested
-    if item.config.getoption("--transform-only"):
-        if not any(mark.name == "transform" for mark in item.iter_markers()):
-            pytest.skip("not a transform pipeline test")
+
+@pytest.fixture
+def yf_stub(monkeypatch):
+    """Mock YahooFinanceClient for integration tests."""
+
+    def _stub_yahoo_finance(symbols):
+        from datetime import datetime, timezone
+
+        def mock_fetch_prices(self, symbols, period, interval):
+            from shared.clients.market_data import PriceRecord
+
+            return [
+                PriceRecord(
+                    symbol=sym,
+                    timestamp=datetime.now(timezone.utc),
+                    open=100.0 + hash(sym) % 50,
+                    high=105.0 + hash(sym) % 50,
+                    low=95.0 + hash(sym) % 50,
+                    close=102.0 + hash(sym) % 50,
+                    volume=1000000,
+                )
+                for sym in symbols
+            ]
+
+        from shared.clients.market_data import YahooFinanceClient
+
+        monkeypatch.setattr(YahooFinanceClient, "fetch_prices", mock_fetch_prices)
+
+    return _stub_yahoo_finance
