@@ -52,6 +52,17 @@ class SecurityStack(Stack):
             f"arn:aws:s3:::{artifacts_bucket_name}/*",
         ]
 
+        # Build minimal schema prefix resources for Preflight/SchemaCheck
+        schema_object_arns: list[str] = []
+        curated_schema_object_arns: list[str] = []
+        for t in list(self.config.get("processing_triggers", [])):
+            d = str(t.get("domain", "")).strip()
+            tbl = str(t.get("table_name", "")).strip()
+            if not d or not tbl:
+                continue
+            schema_object_arns.append(f"arn:aws:s3:::{artifacts_bucket_name}/{d}/{tbl}/_schema/*")
+            curated_schema_object_arns.append(f"arn:aws:s3:::{curated_bucket_name}/{d}/{tbl}/_schema/*")
+
         glue_job_arn = f"arn:aws:glue:{self.region}:{self.account}:job/{self.env_name}-customer-data-etl"
         ingestion_queue_arn = f"arn:aws:sqs:{self.region}:{self.account}:{self.env_name}-ingestion-queue"
 
@@ -75,6 +86,18 @@ class SecurityStack(Stack):
                                 "s3:ListBucket",
                             ],
                             resources=s3_bucket_arns,
+                        ),
+                        # Minimal schema path access for artifacts/curated
+                        *(
+                            [
+                                iam.PolicyStatement(
+                                    effect=iam.Effect.ALLOW,
+                                    actions=["s3:GetObject", "s3:PutObject"],
+                                    resources=schema_object_arns + curated_schema_object_arns,
+                                )
+                            ]
+                            if (schema_object_arns or curated_schema_object_arns)
+                            else []
                         ),
                     ]
                 ),
@@ -178,7 +201,11 @@ class SecurityStack(Stack):
         """Create Step Functions execution role."""
         validation_fn_name = f"{self.env_name}-customer-data-validation"
         quality_fn_name = f"{self.env_name}-customer-data-quality-check"
+        schema_check_fn_name = f"{self.env_name}-customer-data-schema-check"
+        preflight_fn_name = f"{self.env_name}-customer-data-preflight"
+        build_dates_fn_name = f"{self.env_name}-build-dates"
         glue_job_arn = f"arn:aws:glue:{self.region}:{self.account}:job/{self.env_name}-customer-data-etl"
+        crawler_arn = f"arn:aws:glue:{self.region}:{self.account}:crawler/{self.env_name}-curated-data-crawler"
 
         return iam.Role(
             self,
@@ -194,6 +221,9 @@ class SecurityStack(Stack):
                             resources=[
                                 f"arn:aws:lambda:{self.region}:{self.account}:function/{validation_fn_name}",
                                 f"arn:aws:lambda:{self.region}:{self.account}:function/{quality_fn_name}",
+                                f"arn:aws:lambda:{self.region}:{self.account}:function/{schema_check_fn_name}",
+                                f"arn:aws:lambda:{self.region}:{self.account}:function/{preflight_fn_name}",
+                                f"arn:aws:lambda:{self.region}:{self.account}:function/{build_dates_fn_name}",
                             ],
                         ),
                     ]
@@ -208,6 +238,18 @@ class SecurityStack(Stack):
                                 "glue:BatchStopJobRun",
                             ],
                             resources=[glue_job_arn],
+                        ),
+                    ]
+                ),
+                "GlueCrawlerManagement": iam.PolicyDocument(
+                    statements=[
+                        iam.PolicyStatement(
+                            effect=iam.Effect.ALLOW,
+                            actions=[
+                                "glue:StartCrawler",
+                                "glue:GetCrawler",
+                            ],
+                            resources=[crawler_arn],
                         ),
                     ]
                 ),

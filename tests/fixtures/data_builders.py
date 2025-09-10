@@ -64,3 +64,184 @@ def build_raw_s3_prefix(
         f"{domain}/{table_name}/ingestion_date={d}/"
         f"data_source={data_source}/symbol={symbol}/interval={interval}/period={period}/"
     )
+
+
+def build_transform_event(
+    *,
+    domain: str = "market",
+    table_name: str = "prices",
+    ds: Optional[str] = None,
+    date_range: Optional[Dict[str, str]] = None,
+    source_bucket: Optional[str] = None,
+    source_key: Optional[str] = None,
+    file_type: str = "json",
+    environment: str = "dev",
+    reprocess: bool = False,
+    execution_id: Optional[str] = None,
+    catalog_update: str = "on_schema_change",
+    overrides: Optional[Dict[str, Any]] = None,
+) -> Dict[str, Any]:
+    """Build a transform pipeline input event payload.
+
+    Follows the transform state machine contract specification.
+    """
+    event: Dict[str, Any] = {
+        "environment": environment,
+        "domain": domain,
+        "table_name": table_name,
+        "file_type": file_type,
+        "reprocess": reprocess,
+        "catalog_update": catalog_update,
+    }
+
+    # Add optional fields
+    if ds:
+        event["ds"] = ds
+    if date_range:
+        event["date_range"] = date_range
+    if source_bucket:
+        event["source_bucket"] = source_bucket
+    if source_key:
+        event["source_key"] = source_key
+    if execution_id:
+        event["execution_id"] = execution_id
+
+    if overrides:
+        event.update(overrides)
+
+    return event
+
+
+def build_raw_market_data(
+    records: Optional[List[Dict[str, Any]]] = None,
+    *,
+    default_symbol: str = "AAPL",
+    default_price: float = 150.00,
+    default_exchange: str = "NASDAQ",
+    base_timestamp: Optional[datetime] = None,
+) -> List[Dict[str, Any]]:
+    """Build realistic market data records for testing.
+
+    Creates structured data that matches expected market data schema.
+    """
+    if records:
+        return records
+
+    base_ts = base_timestamp or datetime.now(timezone.utc)
+
+    return [
+        {
+            "symbol": default_symbol,
+            "price": default_price,
+            "exchange": default_exchange,
+            "timestamp": base_ts.isoformat() + "Z",
+            "volume": 1000000,
+            "bid": default_price - 0.05,
+            "ask": default_price + 0.05,
+        }
+    ]
+
+
+def build_curated_s3_key(
+    *,
+    domain: str,
+    table_name: str,
+    ds: str,
+    file_name: str = "part-0000.parquet",
+) -> str:
+    """Build curated S3 key following partitioning scheme."""
+    return f"{domain}/{table_name}/ds={ds}/{file_name}"
+
+
+def build_schema_fingerprint(
+    *,
+    columns: Optional[List[Dict[str, str]]] = None,
+    codec: str = "zstd",
+    additional_metadata: Optional[Dict[str, Any]] = None,
+) -> Dict[str, Any]:
+    """Build schema fingerprint for testing schema evolution."""
+    if columns is None:
+        columns = [
+            {"name": "symbol", "type": "string"},
+            {"name": "price", "type": "double"},
+            {"name": "exchange", "type": "string"},
+            {"name": "timestamp", "type": "timestamp"},
+        ]
+
+    fingerprint = {
+        "columns": columns,
+        "codec": codec,
+        "hash": "test_hash_" + str(hash(str(columns))),
+        "created_at": datetime.now(timezone.utc).isoformat() + "Z",
+    }
+
+    if additional_metadata:
+        fingerprint.update(additional_metadata)
+
+    return fingerprint
+
+
+def build_glue_job_args(
+    *,
+    ds: str,
+    raw_bucket: str = "test-raw-bucket",
+    raw_prefix: str = "market/prices/",
+    curated_bucket: str = "test-curated-bucket",
+    curated_prefix: str = "market/prices/",
+    artifacts_bucket: str = "test-artifacts-bucket",
+    codec: str = "zstd",
+    target_file_mb: int = 256,
+    file_type: str = "json",
+    schema_fingerprint_s3_uri: Optional[str] = None,
+    overrides: Optional[Dict[str, Any]] = None,
+) -> Dict[str, Any]:
+    """Build Glue job arguments following specification."""
+    if schema_fingerprint_s3_uri is None:
+        domain = raw_prefix.split("/")[0]
+        table = raw_prefix.split("/")[1]
+        schema_fingerprint_s3_uri = f"s3://{artifacts_bucket}/{domain}/{table}/_schema/latest.json"
+
+    args = {
+        "--ds": ds,
+        "--raw_bucket": raw_bucket,
+        "--raw_prefix": raw_prefix,
+        "--curated_bucket": curated_bucket,
+        "--curated_prefix": curated_prefix,
+        "--job-bookmark-option": "job-bookmark-enable",
+        "--enable-s3-parquet-optimized-committer": "1",
+        "--codec": codec,
+        "--target_file_mb": str(target_file_mb),
+        "--schema_fingerprint_s3_uri": schema_fingerprint_s3_uri,
+        "--file_type": file_type,
+    }
+
+    if overrides:
+        args.update(overrides)
+
+    return args
+
+
+def build_data_quality_violation(
+    *,
+    rule_name: str,
+    severity: str = "critical",
+    violating_records: Optional[List[Dict[str, Any]]] = None,
+    message: Optional[str] = None,
+    metadata: Optional[Dict[str, Any]] = None,
+) -> Dict[str, Any]:
+    """Build data quality violation for testing."""
+    violation = {
+        "rule": rule_name,
+        "severity": severity,
+        "count": len(violating_records) if violating_records else 0,
+        "message": message or f"{rule_name} violation detected",
+        "timestamp": datetime.now(timezone.utc).isoformat() + "Z",
+    }
+
+    if violating_records:
+        violation["violating_records"] = violating_records
+
+    if metadata:
+        violation["metadata"] = metadata
+
+    return violation

@@ -1,7 +1,7 @@
 import os
 import sys
 from pathlib import Path
-from typing import Any, Callable, Iterator
+from typing import Any, Callable, Iterator, Optional
 import pytest
 import boto3
 
@@ -24,7 +24,10 @@ def aws_env(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
     monkeypatch.setenv("AWS_DEFAULT_REGION", os.environ.get("AWS_DEFAULT_REGION", "us-east-1"))
     # Provide dummy credentials so botocore signing doesn't fail under moto
     monkeypatch.setenv("AWS_ACCESS_KEY_ID", os.environ.get("AWS_ACCESS_KEY_ID", "testing"))
-    monkeypatch.setenv("AWS_SECRET_ACCESS_KEY", os.environ.get("AWS_SECRET_ACCESS_KEY", "testing"))
+    monkeypatch.setenv(
+        "AWS_SECRET_ACCESS_KEY",
+        os.environ.get("AWS_SECRET_ACCESS_KEY", "testing"),
+    )
     monkeypatch.setenv("AWS_SESSION_TOKEN", os.environ.get("AWS_SESSION_TOKEN", "testing"))
 
     # Clear external symbol sources to avoid test cross-contamination
@@ -53,7 +56,13 @@ def pythonpath() -> Iterator[None]:
 def orchestrator_env(monkeypatch: pytest.MonkeyPatch) -> Callable[[str], None]:
     """Apply orchestrator-related environment variables."""
 
-    def _apply(queue_url: str, *, chunk_size: int = 2, batch_size: int = 10, environment: str = "dev") -> None:
+    def _apply(
+        queue_url: str,
+        *,
+        chunk_size: int = 2,
+        batch_size: int = 10,
+        environment: str = "dev",
+    ) -> None:
         monkeypatch.setenv("QUEUE_URL", queue_url)
         monkeypatch.setenv("CHUNK_SIZE", str(chunk_size))
         monkeypatch.setenv("SQS_SEND_BATCH_SIZE", str(batch_size))
@@ -74,63 +83,22 @@ def worker_env(monkeypatch: pytest.MonkeyPatch) -> Callable[[str], None]:
     return _apply
 
 
-@pytest.fixture
-def yf_stub(monkeypatch: pytest.MonkeyPatch) -> Callable[[list[str]], None]:
-    """Patch YahooFinanceClient with a deterministic stub returning fixed records."""
-    import importlib
-
-    def _apply(symbols: list[str]):
-        svc = importlib.import_module("shared.ingestion.service")
-
-        class _Rec:
-            def __init__(self, symbol: str):
-                from datetime import datetime, timezone
-
-                self.symbol = symbol
-                self.timestamp = datetime(2024, 1, 1, tzinfo=timezone.utc)
-                self.open = 1.0
-                self.high = 1.0
-                self.low = 1.0
-                self.close = 1.0
-                self.volume = 1.0
-
-            def as_dict(self):
-                return {
-                    "symbol": self.symbol,
-                    "timestamp": self.timestamp.isoformat(),
-                    "open": self.open,
-                    "high": self.high,
-                    "low": self.low,
-                    "close": self.close,
-                    "volume": self.volume,
-                }
-
-        class _YFStub:
-            def fetch_prices(self, _symbols, period, interval):
-                return [_Rec(s) for s in symbols]
-
-        monkeypatch.setitem(svc.__dict__, "YahooFinanceClient", lambda: _YFStub())
-
-    return _apply
+# Removed yf_stub - not used in transform tests
 
 
 @pytest.fixture
-def s3_stub(monkeypatch: pytest.MonkeyPatch) -> Callable[..., Any]:
-    """Patch boto3 in shared.ingestion.service with a lightweight S3 stub.
+def s3_stub(monkeypatch):
+    """Mock S3 client for unit tests using S3Stub class."""
 
-    Returns the stub instance which captures put_calls for assertions and
-    responds to list_objects_v2 with a configurable KeyCount.
-    """
-    import importlib
-    from tests.fixtures.clients import S3Stub, BotoStub
+    def _create_s3_stub(keycount=0, head_ok=True):
+        from tests.fixtures.clients import S3Stub, BotoStub
 
-    def _apply(*, keycount: int = 0) -> Any:
-        svc = importlib.import_module("shared.ingestion.service")
-        s3 = S3Stub(keycount=keycount)
-        monkeypatch.setitem(svc.__dict__, "boto3", BotoStub(s3=s3))
-        return s3
+        s3_mock = S3Stub(keycount=keycount, head_ok=head_ok)
+        boto_mock = BotoStub(s3=s3_mock)
+        monkeypatch.setattr("boto3.client", lambda service, **kwargs: boto_mock.client(service))
+        return s3_mock
 
-    return _apply
+    return _create_s3_stub
 
 
 @pytest.fixture
@@ -159,7 +127,9 @@ def load_module() -> Callable[[str], dict[str, Any]]:
 
 
 @pytest.fixture
-def fake_python_function(monkeypatch: pytest.MonkeyPatch) -> Callable[[Any], None]:
+def fake_python_function(
+    monkeypatch: pytest.MonkeyPatch,
+) -> Callable[[Any], None]:
     from aws_cdk import Duration
 
     def _apply(target_module: Any) -> None:
@@ -203,3 +173,157 @@ def make_bucket() -> Callable[[str], str]:
         return name
 
     return _create
+
+
+@pytest.fixture
+def transform_env(monkeypatch: pytest.MonkeyPatch) -> Callable[..., None]:
+    """Set transform pipeline environment variables.
+
+    Usage: transform_env() for defaults or transform_env(domain="market", table_name="prices").
+    """
+
+    def _apply(
+        *,
+        environment: str = "test",
+        domain: str = "market",
+        table_name: str = "prices",
+        raw_bucket: Optional[str] = None,
+        curated_bucket: Optional[str] = None,
+        artifacts_bucket: Optional[str] = None,
+        max_backfill_days: int = 31,
+    ) -> None:
+        monkeypatch.setenv("ENVIRONMENT", environment)
+        monkeypatch.setenv(
+            "RAW_BUCKET",
+            raw_bucket or f"data-pipeline-raw-{environment}-123456789012",
+        )
+        monkeypatch.setenv(
+            "CURATED_BUCKET",
+            curated_bucket or f"data-pipeline-curated-{environment}-123456789012",
+        )
+        monkeypatch.setenv(
+            "ARTIFACTS_BUCKET",
+            artifacts_bucket or f"data-pipeline-artifacts-{environment}-123456789012",
+        )
+        monkeypatch.setenv("MAX_BACKFILL_DAYS", str(max_backfill_days))
+        monkeypatch.setenv("CATALOG_UPDATE_DEFAULT", "on_schema_change")
+
+    return _apply
+
+
+# Removed individual module fixtures - use load_module() fixture instead
+
+
+def pytest_configure(config):
+    """Configure pytest with essential markers."""
+    # Essential markers only
+    config.addinivalue_line("markers", "unit: unit test")
+    config.addinivalue_line("markers", "integration: integration test")
+    config.addinivalue_line("markers", "slow: slow running test")
+    config.addinivalue_line("markers", "transform: transform pipeline test")
+
+
+def pytest_addoption(parser):
+    """Add essential command line options."""
+    parser.addoption("--runslow", action="store_true", default=False, help="run slow tests")
+    parser.addoption(
+        "--transform-only",
+        action="store_true",
+        default=False,
+        help="run only transform pipeline tests",
+    )
+
+
+def pytest_collection_modifyitems(config, items):
+    """Modify test collection to add markers and filtering."""
+    rootdir = Path(config.rootdir)
+
+    for item in items:
+        rel_path = Path(item.fspath).relative_to(rootdir)
+
+        # Add markers based on file location
+        if "unit" in rel_path.parts:
+            item.add_marker(pytest.mark.unit)
+        if "integration" in rel_path.parts:
+            item.add_marker(pytest.mark.integration)
+        if "transform" in rel_path.parts:
+            item.add_marker(pytest.mark.transform)
+        if "lambda" in rel_path.parts:
+            item.add_marker(pytest.mark.lambda_test)
+        if "glue" in rel_path.parts:
+            item.add_marker(pytest.mark.glue)
+        if "infrastructure" in rel_path.parts:
+            item.add_marker(pytest.mark.infrastructure)
+
+        # Add specific Lambda function markers
+        if "preflight" in str(rel_path):
+            item.add_marker(pytest.mark.preflight)
+        if "schema_check" in str(rel_path):
+            item.add_marker(pytest.mark.schema_check)
+        if "build_dates" in str(rel_path):
+            item.add_marker(pytest.mark.build_dates)
+
+
+def pytest_runtest_setup(item):
+    """Setup individual test runs with filtering."""
+    # Skip slow tests unless --runslow is given
+    if "slow" in item.keywords and not item.config.getoption("--runslow"):
+        pytest.skip("need --runslow option to run")
+
+
+@pytest.fixture
+def yf_stub(monkeypatch):
+    """Mock YahooFinanceClient for integration tests."""
+
+    def _stub_yahoo_finance(symbols):
+        from datetime import datetime, timezone
+        from dataclasses import dataclass
+        from typing import Optional
+
+        @dataclass
+        class MockPriceRecord:
+            symbol: str
+            timestamp: datetime
+            open: Optional[float] = None
+            high: Optional[float] = None
+            low: Optional[float] = None
+            close: Optional[float] = None
+            volume: Optional[float] = None
+
+            def as_dict(self):
+                return {
+                    "symbol": self.symbol,
+                    "timestamp": self.timestamp.isoformat(),
+                    "open": self.open,
+                    "high": self.high,
+                    "low": self.low,
+                    "close": self.close,
+                    "volume": self.volume,
+                }
+
+        def mock_fetch_prices(self, symbols, period, interval):
+            return [
+                MockPriceRecord(
+                    symbol=sym,
+                    timestamp=datetime.now(timezone.utc),
+                    open=100.0 + hash(sym) % 50,
+                    high=105.0 + hash(sym) % 50,
+                    low=95.0 + hash(sym) % 50,
+                    close=102.0 + hash(sym) % 50,
+                    volume=1000000,
+                )
+                for sym in symbols
+            ]
+
+        # Safely import and patch YahooFinanceClient
+        try:
+            from shared.clients.market_data import YahooFinanceClient
+        except ImportError:
+            import sys
+
+            sys.path.insert(0, "src/lambda/layers/common/python")
+            from shared.clients.market_data import YahooFinanceClient
+
+        monkeypatch.setattr(YahooFinanceClient, "fetch_prices", mock_fetch_prices)
+
+    return _stub_yahoo_finance

@@ -200,5 +200,8 @@ def process_event(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
         log.exception("Error in data ingestion")
         return {
             "statusCode": 500,
-            "body": {"error": "UnhandledError", "message": "Data ingestion failed"},
+            "body": {
+                "error": "UnhandledError",
+                "message": "Data ingestion failed",
+            },
         }

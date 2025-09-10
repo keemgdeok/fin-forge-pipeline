@@ -13,7 +13,9 @@ def test_notification_handler_missing_required_fields_returns_400() -> None:
     assert resp["statusCode"] == 400
 
 
-def test_notification_handler_sns_skipped_when_topic_missing(monkeypatch) -> None:
+def test_notification_handler_sns_skipped_when_topic_missing(
+    monkeypatch,
+) -> None:
     """
     Given: NOTIFICATION_TOPIC_ARN 미설정
     When: 정상 알림 처리

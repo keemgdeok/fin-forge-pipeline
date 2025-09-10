@@ -39,7 +39,9 @@ class ErrorProcessor:
             )
 
             response = self.sns_client.publish(
-                TopicArn=topic_arn, Message=json.dumps(message, indent=2), Subject=subject
+                TopicArn=topic_arn,
+                Message=json.dumps(message, indent=2),
+                Subject=subject,
             )
 
             logger.info(f"Published error notification to SNS: {response['MessageId']}")
@@ -161,11 +163,21 @@ def main(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
             metric_dimensions["TableName"] = context_info["table_name"]
 
         # Put error count metric
-        error_processor.put_custom_metric("ErrorCount", 1.0, "Count", "DataPipeline/Errors", metric_dimensions)
+        error_processor.put_custom_metric(
+            "ErrorCount",
+            1.0,
+            "Count",
+            "DataPipeline/Errors",
+            metric_dimensions,
+        )
 
         # Put severity-specific metric
         error_processor.put_custom_metric(
-            f'{error_details["severity"]}Count', 1.0, "Count", "DataPipeline/Errors", metric_dimensions
+            f'{error_details["severity"]}Count',
+            1.0,
+            "Count",
+            "DataPipeline/Errors",
+            metric_dimensions,
         )
 
         # Prepare success response
@@ -188,9 +200,21 @@ def main(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
     except ValueError as e:
         log = logger
         log.exception("Validation error in error handler")
-        return {"statusCode": 400, "body": {"error": str(e), "message": "Invalid error event structure"}}
+        return {
+            "statusCode": 400,
+            "body": {
+                "error": str(e),
+                "message": "Invalid error event structure",
+            },
+        }
 
     except Exception as e:
         log = logger
         log.exception("Error processing error event")
-        return {"statusCode": 500, "body": {"error": str(e), "message": "Failed to process error event"}}
+        return {
+            "statusCode": 500,
+            "body": {
+                "error": str(e),
+                "message": "Failed to process error event",
+            },
+        }

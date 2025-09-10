@@ -2,7 +2,9 @@ import os
 import runpy
 
 
-def test_error_handler_missing_required_fields_returns_400(monkeypatch) -> None:
+def test_error_handler_missing_required_fields_returns_400(
+    monkeypatch,
+) -> None:
     """
     Given: source/error_message 누락된 오류 이벤트
     When: 에러 핸들러를 실행하면
@@ -14,7 +16,9 @@ def test_error_handler_missing_required_fields_returns_400(monkeypatch) -> None:
     assert resp["statusCode"] == 400
 
 
-def test_error_handler_skips_sns_when_topic_not_configured(monkeypatch) -> None:
+def test_error_handler_skips_sns_when_topic_not_configured(
+    monkeypatch,
+) -> None:
     """
     Given: ERROR_TOPIC_ARN 미설정
     When: 에러 핸들러를 실행하면

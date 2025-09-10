@@ -210,6 +210,11 @@ def main(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
         published += _send_batch_with_retry(sqs, queue_url, entries, log, max_retry=1)
 
     log.info(
-        "Orchestrated symbols into SQS", extra={"environment": env, "chunks": chunks_count, "published": published}
+        "Orchestrated symbols into SQS",
+        extra={
+            "environment": env,
+            "chunks": chunks_count,
+            "published": published,
+        },
     )
     return {"published": published, "chunks": chunks_count, "environment": env}

@@ -1,7 +1,7 @@
 ```mermaid
 graph LR
   subgraph Core
-    SS["SharedStorageStack<br/>DataLakeConstruct (RAW/Curated)"]
+    SS["SharedStorageStack<br/>DataLakeConstruct (RAW)"]
     SEC["SecurityStack<br/>IAM Roles"]
   end
   subgraph Pipeline_Extract

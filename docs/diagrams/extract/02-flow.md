@@ -9,7 +9,7 @@ flowchart TD
   G --> H["Group by symbol"]
   H --> I["ListObjectsV2 with partition prefix"]
   I -->|KeyCount>0| J["Skip write (idempotent)"]
-  I -->|No objects| K["Serialize JSON/CSV (.gz optional)"]
+  I -->|No objects| K["Serialize JSON/CSV (w/.gz)"]
   K --> L["PutObject to RAW bucket"]
   J --> M["Accumulate written_keys"]
   L --> M["Accumulate written_keys"]
