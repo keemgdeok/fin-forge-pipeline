@@ -181,8 +181,8 @@ class CustomerDataProcessingStack(Stack):
             comment="Customer data processing completed successfully",
         )
 
-        # Simplified linear workflow: Preflight -> ETL+DQ -> Crawler -> Success
-        definition = preflight_task.next(
+        # Create single day processing chain for standalone mode
+        single_day_processing = (
             sfn.Choice(self, "PreflightChoice")
             .when(
                 sfn.Condition.boolean_equals("$.proceed", True),
@@ -195,8 +195,72 @@ class CustomerDataProcessingStack(Stack):
             )
         )
 
-        # Removed backfill support: 1GB daily batch doesn't need complex date range processing
-        # If backfill is needed later, can be handled by manual re-runs with different ds values
+        # Create separate failure states for backfill processing
+        backfill_normalize_fail = sfn.Pass(
+            self,
+            "BackfillNormalizeAndFail",
+            parameters={
+                "ok": False,
+                "error.$": "$.error",
+            },
+        )
+        backfill_fail_state = sfn.Fail(self, "BackfillExecutionFailed", comment="Backfill pipeline execution failed")
+        backfill_fail_chain = backfill_normalize_fail.next(backfill_fail_state)
+
+        # Create separate processing chain for backfill map iterator (avoid state reuse)
+        backfill_processing = (
+            sfn.Choice(self, "BackfillPreflightChoice")
+            .when(
+                sfn.Condition.boolean_equals("$.proceed", True),
+                tasks.GlueStartJobRun(
+                    self,
+                    "BackfillProcessCustomerData",
+                    glue_job_name=self.etl_job_name,
+                    integration_pattern=sfn.IntegrationPattern.RUN_JOB,
+                    arguments=sfn.TaskInput.from_json_path_at("$.glue_args"),
+                )
+                .add_catch(handler=backfill_fail_chain, result_path="$.error")
+                .next(
+                    tasks.CallAwsService(
+                        self,
+                        "BackfillStartCrawler",
+                        service="glue",
+                        action="startCrawler",
+                        parameters={"Name": crawler_name},
+                        iam_resources=[
+                            f"arn:aws:glue:{Stack.of(self).region}:{Stack.of(self).account}:crawler/{crawler_name}"
+                        ],
+                        result_path=sfn.JsonPath.DISCARD,
+                    ).add_catch(handler=backfill_fail_chain, result_path="$.error")
+                )
+                .next(sfn.Succeed(self, "BackfillSuccess", comment="Backfill processing completed successfully")),
+            )
+            .otherwise(
+                sfn.Choice(self, "BackfillPreflightSkipOrError")
+                .when(
+                    sfn.Condition.string_equals("$.error.code", "IDEMPOTENT_SKIP"),
+                    sfn.Succeed(self, "BackfillSkipSuccess", comment="Processing skipped (idempotent)"),
+                )
+                .otherwise(backfill_fail_chain)
+            )
+        )
+
+        # Create backfill map state for concurrent processing
+        backfill_map = sfn.Map(
+            self,
+            "BackfillMap",
+            max_concurrency=3,
+            items_path="$.dates",
+        )
+        # Use the modern itemProcessor API instead of deprecated iterator
+        backfill_map.item_processor(backfill_processing)
+
+        # Main workflow: supports both single day and backfill modes
+        definition = preflight_task.next(
+            sfn.Choice(self, "BackfillOrSingle")
+            .when(sfn.Condition.is_present("$.dates"), backfill_map)
+            .otherwise(single_day_processing)
+        )
         top_definition = definition
 
         # Create log group for the state machine with retention from config

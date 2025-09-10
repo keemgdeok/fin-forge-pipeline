@@ -59,6 +59,18 @@ def test_glue_job_defaults_and_schema_fingerprint_path(monkeypatch) -> None:
     assert props["MaxRetries"] == 1, "MaxRetries must be 1 per spec"
 
     default_args = props["DefaultArguments"]
-    assert (
-        "_schema/latest.json" in default_args["--schema_fingerprint_s3_uri"]
-    ), "Schema fingerprint path must use _schema/latest.json"
+    schema_uri = default_args["--schema_fingerprint_s3_uri"]
+
+    # Handle CloudFormation references (Fn::Join, Fn::Sub, etc.)
+    if isinstance(schema_uri, str):
+        assert "_schema/latest.json" in schema_uri, "Schema fingerprint path must use _schema/latest.json"
+    elif isinstance(schema_uri, dict):
+        # Check for Fn::Join pattern
+        if "Fn::Join" in schema_uri:
+            join_parts = schema_uri["Fn::Join"][1]  # [1] contains the parts array
+            joined_str = "".join(str(part) for part in join_parts)
+            assert "_schema/latest.json" in joined_str, "Schema fingerprint path must use _schema/latest.json"
+        else:
+            # Convert dict to string for other CloudFormation functions
+            uri_str = str(schema_uri)
+            assert "_schema/latest.json" in uri_str, "Schema fingerprint path must use _schema/latest.json"
