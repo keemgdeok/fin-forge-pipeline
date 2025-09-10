@@ -474,7 +474,7 @@ class MockBoto3Session:
 
     def __init__(self, aws_env: MockAWSEnvironment):
         self.aws_env = aws_env
-        self.clients = {}
+        self.clients: Dict[str, Any] = {}
 
     def client(self, service_name: str, **kwargs) -> Any:
         """Create a mock client for the specified service."""

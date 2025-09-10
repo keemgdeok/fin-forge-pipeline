@@ -8,7 +8,7 @@ with focus on data quality, error handling, and specification compliance.
 import pytest
 import json
 import runpy
-from typing import Dict, Any, List, Optional
+from typing import Dict, Any, List, Optional, Tuple
 from unittest.mock import Mock, patch
 
 
@@ -23,8 +23,8 @@ class _MockDataFrame:
     def __init__(self, data: List[Dict[str, Any]], schema_fields: Optional[List] = None):
         self.data = data
         self.schema_fields = schema_fields or []
-        self.write_calls = []
-        self.transform_calls = []
+        self.write_calls: List[Any] = []
+        self.transform_calls: List[Any] = []
 
     def limit(self, n: int) -> "_MockDataFrame":
         limited_data = self.data[:n] if self.data else []
@@ -35,7 +35,7 @@ class _MockDataFrame:
 
     def filter(self, condition) -> "_MockDataFrame":
         # Mock filter - for testing purposes, return empty if no violations
-        filtered_data = []
+        filtered_data: List[Dict[str, Any]] = []
         return _MockDataFrame(filtered_data, self.schema_fields)
 
     def withColumn(self, col_name: str, col_value) -> "_MockDataFrame":
@@ -67,7 +67,7 @@ class _MockDataFrameWriter:
         self.df = df
         self.mode_value = "overwrite"
         self.format_value = "parquet"
-        self.partition_by_value = None
+        self.partition_by_value: Optional[Tuple[Any, ...]] = None
 
     def mode(self, mode: str) -> "_MockDataFrameWriter":
         self.mode_value = mode
@@ -127,7 +127,7 @@ class _MockSparkSession:
     ):
         self.read_data = read_data or []
         self.schema_fields = schema_fields or []
-        self.conf_calls = []
+        self.conf_calls: List[Any] = []
         self.read = _MockDataFrameReader(self.read_data, self.schema_fields)
 
     @property
@@ -151,7 +151,7 @@ class _MockDataFrameReader:
     def __init__(self, data: List[Dict[str, Any]], schema_fields: List[Dict[str, str]]):
         self.data = data
         self.schema_fields = schema_fields
-        self.options = {}
+        self.options: Dict[str, Any] = {}
 
     def option(self, key: str, value: str) -> "_MockDataFrameReader":
         self.options[key] = value

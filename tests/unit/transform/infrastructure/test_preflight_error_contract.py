@@ -1,5 +1,6 @@
 import os
 import runpy
+from typing import Any, List
 
 
 def _load_module():
@@ -9,7 +10,7 @@ def _load_module():
 class _S3Stub:
     def __init__(self, keycount: int = 0):
         self._keycount = keycount
-        self.calls = []
+        self.calls: List[Any] = []
 
     def list_objects_v2(self, Bucket: str, Prefix: str, MaxKeys: int = 1):
         self.calls.append((Bucket, Prefix))

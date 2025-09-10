@@ -1,7 +1,7 @@
 import os
 import sys
 from pathlib import Path
-from typing import Any, Callable, Iterator
+from typing import Any, Callable, Iterator, Optional
 import pytest
 import boto3
 
@@ -175,9 +175,9 @@ def transform_env(monkeypatch: pytest.MonkeyPatch) -> Callable[..., None]:
         environment: str = "test",
         domain: str = "market",
         table_name: str = "prices",
-        raw_bucket: str = None,
-        curated_bucket: str = None,
-        artifacts_bucket: str = None,
+        raw_bucket: Optional[str] = None,
+        curated_bucket: Optional[str] = None,
+        artifacts_bucket: Optional[str] = None,
         max_backfill_days: int = 31,
     ) -> None:
         monkeypatch.setenv("ENVIRONMENT", environment)

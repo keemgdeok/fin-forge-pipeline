@@ -217,7 +217,7 @@ class DeterministicGenerator:
         if corruption_patterns is None:
             corruption_patterns = {}
 
-        dataset = []
+        dataset: List[Dict[str, Any]] = []
 
         for i in range(size):
             # Determine if this record should be corrupted
