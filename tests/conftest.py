@@ -86,7 +86,19 @@ def worker_env(monkeypatch: pytest.MonkeyPatch) -> Callable[[str], None]:
 # Removed yf_stub - not used in transform tests
 
 
-# Removed s3_stub - using direct moto mocking instead
+@pytest.fixture
+def s3_stub(monkeypatch):
+    """Mock S3 client for unit tests using S3Stub class."""
+
+    def _create_s3_stub(keycount=0, head_ok=True):
+        from tests.fixtures.clients import S3Stub, BotoStub
+
+        s3_mock = S3Stub(keycount=keycount, head_ok=head_ok)
+        boto_mock = BotoStub(s3=s3_mock)
+        monkeypatch.setattr("boto3.client", lambda service, **kwargs: boto_mock.client(service))
+        return s3_mock
+
+    return _create_s3_stub
 
 
 @pytest.fixture
@@ -265,12 +277,33 @@ def yf_stub(monkeypatch):
 
     def _stub_yahoo_finance(symbols):
         from datetime import datetime, timezone
+        from dataclasses import dataclass
+        from typing import Optional
+
+        @dataclass
+        class MockPriceRecord:
+            symbol: str
+            timestamp: datetime
+            open: Optional[float] = None
+            high: Optional[float] = None
+            low: Optional[float] = None
+            close: Optional[float] = None
+            volume: Optional[float] = None
+
+            def as_dict(self):
+                return {
+                    "symbol": self.symbol,
+                    "timestamp": self.timestamp.isoformat(),
+                    "open": self.open,
+                    "high": self.high,
+                    "low": self.low,
+                    "close": self.close,
+                    "volume": self.volume,
+                }
 
         def mock_fetch_prices(self, symbols, period, interval):
-            from shared.clients.market_data import PriceRecord
-
             return [
-                PriceRecord(
+                MockPriceRecord(
                     symbol=sym,
                     timestamp=datetime.now(timezone.utc),
                     open=100.0 + hash(sym) % 50,
@@ -282,7 +315,14 @@ def yf_stub(monkeypatch):
                 for sym in symbols
             ]
 
-        from shared.clients.market_data import YahooFinanceClient
+        # Safely import and patch YahooFinanceClient
+        try:
+            from shared.clients.market_data import YahooFinanceClient
+        except ImportError:
+            import sys
+
+            sys.path.insert(0, "src/lambda/layers/common/python")
+            from shared.clients.market_data import YahooFinanceClient
 
         monkeypatch.setattr(YahooFinanceClient, "fetch_prices", mock_fetch_prices)
 
