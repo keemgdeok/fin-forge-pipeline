@@ -109,7 +109,8 @@ class CustomerDataProcessingStack(Stack):
                 "--environment": self.env_name,
                 "--schema_fingerprint_s3_uri": schema_fp_uri,
             },
-            glue_version="4.0",
+            # Align with docs/spec: Glue 5.0
+            glue_version="5.0",
             max_retries=1,  # Spec: 1 retry
             timeout=30,  # Spec: 30 minutes
             worker_type="G.1X",

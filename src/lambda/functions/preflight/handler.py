@@ -1,14 +1,16 @@
 """Preflight Lambda for Transform pipeline.
 
-Derives partition `ds` from the raw S3 object key (expects
-`ingestion_date=YYYY-MM-DD` in key), performs idempotency check by looking for an
-existing curated partition, and returns Glue arguments for the transform job.
+Purpose
+- Derive partition `ds` from the raw S3 object key (expects
+  `ingestion_date=YYYY-MM-DD` in key) or accept direct `ds`.
+- Perform idempotency check by looking for an existing curated partition.
+- Return Glue arguments for the transform job.
 
-Error contract (spec-aligned):
+Error contract (spec-aligned)
 - PRE_VALIDATION_FAILED: Missing/invalid inputs
 - IDEMPOTENT_SKIP: Already processed (treat as successful short-circuit at SFN)
 
-Input event example (from S3->EventBridge rule):
+Input event (S3 -> EventBridge rule)
 {
   "source_bucket": "data-pipeline-raw-dev-123456789012",
   "source_key": "market/prices/ingestion_date=2025-09-07/file.json",
@@ -17,7 +19,10 @@ Input event example (from S3->EventBridge rule):
   "file_type": "json"
 }
 
-Output example:
+Notes
+- Supports both `table_name` and legacy alias `table` for compatibility with docs/tests.
+
+Output
 {
   "proceed": true,
   "reason": null,
@@ -49,12 +54,24 @@ def _curated_partition_exists(s3_client, bucket: str, prefix: str) -> bool:
         return False
 
 
+def _coalesce_table_name(event: Dict[str, Any]) -> str:
+    """Return table name from `table_name` or legacy alias `table`.
+
+    This preserves backward compatibility with earlier docs/specs using `table`.
+    """
+    raw_table_name = event.get("table_name")
+    legacy_table = event.get("table")
+    # Prefer explicit table_name when provided
+    chosen = (raw_table_name or legacy_table or "").strip()
+    return chosen
+
+
 def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
     # Inputs: support two modes per spec: direct ds or S3-trigger
     source_bucket = str(event.get("source_bucket", ""))
     source_key = str(event.get("source_key", ""))
-    domain = str(event.get("domain", ""))
-    table_name = str(event.get("table_name", ""))
+    domain = str(event.get("domain", "")).strip()
+    table_name = _coalesce_table_name(event)
     file_type = str(event.get("file_type", "json"))
     direct_ds = str(event.get("ds", ""))
 
