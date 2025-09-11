@@ -9,6 +9,19 @@ from pyspark.context import SparkContext
 from pyspark.sql import functions as F
 from pyspark.sql import DataFrame
 
+# Optional import of shared fingerprint utilities. The Glue job environment may
+# not package the Common Layer; if unavailable, fall back to local implementations.
+try:  # pragma: no cover - optional path
+    from shared.utils.schema_fingerprint import (
+        build_fingerprint as _build_fp,
+        parse_s3_uri as _parse_s3_uri,
+        put_fingerprint_s3 as _put_fp_s3,
+    )
+
+    _HAVE_SHARED_FP = True
+except Exception:  # pragma: no cover - test environments without layer
+    _HAVE_SHARED_FP = False
+
 
 def _stable_hash(obj: dict) -> str:
     s = json.dumps(obj, sort_keys=True, separators=(",", ":"))
@@ -139,11 +152,14 @@ df_out.coalesce(1).write.mode("append").partitionBy("ds").format("parquet").save
 
 # Produce schema fingerprint from DataFrame schema
 cols = [{"name": f.name, "type": f.dataType.simpleString()} for f in df_out.schema.fields if f.name != "ds"]
-fingerprint = {
-    "columns": cols,
-    "codec": args["codec"],
-    "hash": _stable_hash({"columns": cols}),
-}
+if _HAVE_SHARED_FP:
+    fingerprint = _build_fp(columns=cols, codec=args["codec"])
+else:
+    fingerprint = {
+        "columns": cols,
+        "codec": args["codec"],
+        "hash": _stable_hash({"columns": cols}),
+    }
 
 # Persist fingerprint to artifacts bucket (latest.json)
 s3 = boto3.client("s3")
@@ -151,14 +167,18 @@ fp_uri = args["schema_fingerprint_s3_uri"]
 if not fp_uri.startswith("s3://"):
     raise ValueError("schema_fingerprint_s3_uri must be s3://...")
 
-_bucket_key = fp_uri[5:]
-_bucket = _bucket_key.split("/", 1)[0]
-_key = _bucket_key.split("/", 1)[1]
-s3.put_object(
-    Bucket=_bucket,
-    Key=_key,
-    Body=json.dumps(fingerprint).encode("utf-8"),
-    ContentType="application/json",
-)
+if _HAVE_SHARED_FP:
+    _bucket, _key = _parse_s3_uri(fp_uri)
+    _put_fp_s3(s3_client=s3, bucket=_bucket, key=_key, fingerprint=fingerprint)
+else:
+    _bucket_key = fp_uri[5:]
+    _bucket = _bucket_key.split("/", 1)[0]
+    _key = _bucket_key.split("/", 1)[1]
+    s3.put_object(
+        Bucket=_bucket,
+        Key=_key,
+        Body=json.dumps(fingerprint).encode("utf-8"),
+        ContentType="application/json",
+    )
 
 job.commit()

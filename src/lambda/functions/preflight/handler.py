@@ -40,6 +40,15 @@ from typing import Any, Dict, Optional
 import boto3
 from botocore.exceptions import ClientError
 
+# Optional import of typed event models from Common Layer. Fallback to dict-based
+# parsing if the layer is not packaged for local tests.
+try:  # pragma: no cover
+    from shared.models import TransformPreflightEvent
+
+    _HAVE_SHARED_MODELS = True
+except Exception:  # pragma: no cover
+    _HAVE_SHARED_MODELS = False
+
 
 def _extract_ds_from_key(key: str) -> Optional[str]:
     m = re.search(r"ingestion_date=(\d{4}-\d{2}-\d{2})", key)
@@ -68,15 +77,33 @@ def _coalesce_table_name(event: Dict[str, Any]) -> str:
 
 def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
     # Inputs: support two modes per spec: direct ds or S3-trigger
-    source_bucket = str(event.get("source_bucket", ""))
-    source_key = str(event.get("source_key", ""))
-    domain = str(event.get("domain", "")).strip()
-    table_name = _coalesce_table_name(event)
-    file_type = str(event.get("file_type", "json"))
-    direct_ds = str(event.get("ds", ""))
+    if _HAVE_SHARED_MODELS:
+        try:
+            parsed = TransformPreflightEvent.model_validate(event)
+            source_bucket = str(parsed.source_bucket or "")
+            source_key = str(parsed.source_key or "")
+            domain = str(parsed.domain or "").strip()
+            table_name = parsed.resolved_table_name
+            file_type = parsed.file_type
+            direct_ds = str(parsed.ds or "")
+        except Exception:
+            # Fall back to permissive parsing if validation fails
+            source_bucket = str(event.get("source_bucket", ""))
+            source_key = str(event.get("source_key", ""))
+            domain = str(event.get("domain", "")).strip()
+            table_name = _coalesce_table_name(event)
+            file_type = str(event.get("file_type", "json"))
+            direct_ds = str(event.get("ds", ""))
+    else:
+        source_bucket = str(event.get("source_bucket", ""))
+        source_key = str(event.get("source_key", ""))
+        domain = str(event.get("domain", "")).strip()
+        table_name = _coalesce_table_name(event)
+        file_type = str(event.get("file_type", "json"))
+        direct_ds = str(event.get("ds", ""))
 
     if not domain or not table_name:
-        return {
+        result = {
             "proceed": False,
             "reason": "Missing required fields",
             "error": {
@@ -84,12 +111,13 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                 "message": "Missing domain/table_name",
             },
         }
+        return result
 
     if direct_ds:
         ds = direct_ds
     else:
         if not source_bucket or not source_key:
-            return {
+            result = {
                 "proceed": False,
                 "reason": "Missing required fields",
                 "error": {
@@ -97,9 +125,10 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                     "message": "Missing source_bucket/source_key for S3 trigger mode",
                 },
             }
+            return result
         extracted_ds = _extract_ds_from_key(source_key or "")
         if not extracted_ds:
-            return {
+            result = {
                 "proceed": False,
                 "reason": "ingestion_date not found in key",
                 "error": {
@@ -107,6 +136,7 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                     "message": "ingestion_date=YYYY-MM-DD not found in key",
                 },
             }
+            return result
 
         # At this point extracted_ds is guaranteed to be non-None due to the check above
         ds = extracted_ds
@@ -118,7 +148,7 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
     environment = os.environ.get("ENVIRONMENT", "dev")
 
     if not curated_bucket or not raw_bucket or not artifacts_bucket:
-        return {
+        result = {
             "proceed": False,
             "reason": "Bucket env not configured",
             "ds": ds,
@@ -127,13 +157,14 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                 "message": "Missing CURATED_BUCKET/RAW_BUCKET/ARTIFACTS_BUCKET",
             },
         }
+        return result
 
     s3 = boto3.client("s3")
 
     # Idempotency: skip if curated ds partition already exists
     curated_prefix = f"{domain}/{table_name}/ds={ds}/"
     if _curated_partition_exists(s3, curated_bucket, curated_prefix):
-        return {
+        result = {
             "proceed": False,
             "reason": "Already processed",
             "ds": ds,
@@ -142,6 +173,7 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                 "message": "Curated partition already exists",
             },
         }
+        return result
 
     # Build Glue args (merge with job defaults on StartJobRun)
     glue_args: Dict[str, str] = {
@@ -158,9 +190,10 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
         "--file_type": file_type,
     }
 
-    return {
+    result = {
         "proceed": True,
         "reason": None,
         "ds": ds,
         "glue_args": glue_args,
     }
+    return result
