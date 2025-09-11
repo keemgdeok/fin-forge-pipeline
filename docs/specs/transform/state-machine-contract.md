@@ -101,6 +101,14 @@
 - Crawler: 최대 2회, 백오프로 간격 증가.
 - 전체 실행: 표준 타입, 태스크별 `Retry`와 공통 `Catch`로 실패 페이로드 구성.
 
+## 크롤러 실행 게이팅
+
+- 정책(`catalog_update`)에 따라 Glue Crawler 실행 여부를 결정합니다.
+  - `never`: 실행 안 함
+  - `force`: 항상 실행
+  - `on_schema_change`: 스키마 지문(`_schema/latest.json`)과 이전 지문(`_schema/previous.json`)의 `hash` 비교로 변경 시에만 실행
+- Preflight 출력의 `glue_args['--schema_fingerprint_s3_uri']`를 활용하여 비교 대상 경로를 해석합니다.
+
 ## 관측(선택)
 
 - 최소 요약만 보존 가능: 성공/실패 카운트와 오류 코드 중심(PII 금지). 특정 도구 의존 없음.

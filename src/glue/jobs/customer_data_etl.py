@@ -42,8 +42,11 @@ args = getResolvedOptions(
         "target_file_mb",
         "ds",
         "file_type",
+        "expected_min_records",
+        "max_critical_error_rate",
     ],
 )
+
 
 sc = SparkContext()
 glue_context = GlueContext(sc)
@@ -161,7 +164,7 @@ else:
         "hash": _stable_hash({"columns": cols}),
     }
 
-# Persist fingerprint to artifacts bucket (latest.json)
+# Persist fingerprint to artifacts bucket (latest.json) and preserve previous.json
 s3 = boto3.client("s3")
 fp_uri = args["schema_fingerprint_s3_uri"]
 if not fp_uri.startswith("s3://"):
@@ -169,11 +172,25 @@ if not fp_uri.startswith("s3://"):
 
 if _HAVE_SHARED_FP:
     _bucket, _key = _parse_s3_uri(fp_uri)
-    _put_fp_s3(s3_client=s3, bucket=_bucket, key=_key, fingerprint=fingerprint)
 else:
     _bucket_key = fp_uri[5:]
     _bucket = _bucket_key.split("/", 1)[0]
     _key = _bucket_key.split("/", 1)[1]
+
+# Try to preserve previous fingerprint if exists
+try:
+    prev_obj = s3.get_object(Bucket=_bucket, Key=_key)
+    prev_body = prev_obj["Body"].read()
+    prev_key = _key.rsplit("/", 1)[0] + "/previous.json"
+    s3.put_object(Bucket=_bucket, Key=prev_key, Body=prev_body, ContentType="application/json")
+except Exception:
+    # No previous fingerprint available; skip preservation
+    pass
+
+# Write latest fingerprint
+if _HAVE_SHARED_FP:
+    _put_fp_s3(s3_client=s3, bucket=_bucket, key=_key, fingerprint=fingerprint)
+else:
     s3.put_object(
         Bucket=_bucket,
         Key=_key,

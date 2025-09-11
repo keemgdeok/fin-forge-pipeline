@@ -162,6 +162,15 @@ class CustomerDataProcessingStack(Stack):
         # Catch Glue task failures (includes DQ failures) and route to normalized fail chain
         etl_task.add_catch(handler=fail_chain, result_path="$.error")
 
+        # Decide whether to run crawler based on policy + schema change
+        decide_crawler_task = tasks.LambdaInvoke(
+            self,
+            "DecideCrawler",
+            lambda_function=self._create_schema_change_decider_function(),
+            payload=sfn.TaskInput.from_json_path_at("$"),
+            output_path="$.Payload",
+        )
+
         # Crawler task: automatic schema detection using native AWS features
         crawler_name = f"{self.env_name}-curated-data-crawler"
         start_crawler_task = tasks.CallAwsService(
@@ -183,11 +192,18 @@ class CustomerDataProcessingStack(Stack):
         )
 
         # Create single day processing chain for standalone mode
+        # Single day processing with crawler gating
         single_day_processing = (
             sfn.Choice(self, "PreflightChoice")
             .when(
                 sfn.Condition.boolean_equals("$.proceed", True),
-                etl_task.next(start_crawler_task).next(success_task),
+                etl_task.next(decide_crawler_task).next(
+                    sfn.Choice(self, "ShouldRunCrawler")
+                    .when(
+                        sfn.Condition.boolean_equals("$.shouldRunCrawler", True), start_crawler_task.next(success_task)
+                    )
+                    .otherwise(success_task)
+                ),
             )
             .otherwise(
                 sfn.Choice(self, "PreflightSkipOrError")
@@ -222,17 +238,31 @@ class CustomerDataProcessingStack(Stack):
                 )
                 .add_catch(handler=backfill_fail_chain, result_path="$.error")
                 .next(
-                    tasks.CallAwsService(
+                    tasks.LambdaInvoke(
                         self,
-                        "BackfillStartCrawler",
-                        service="glue",
-                        action="startCrawler",
-                        parameters={"Name": crawler_name},
-                        iam_resources=[
-                            f"arn:aws:glue:{Stack.of(self).region}:{Stack.of(self).account}:crawler/{crawler_name}"
-                        ],
-                        result_path=sfn.JsonPath.DISCARD,
+                        "BackfillDecideCrawler",
+                        lambda_function=self._create_schema_change_decider_function(),
+                        payload=sfn.TaskInput.from_json_path_at("$"),
+                        output_path="$.Payload",
                     ).add_catch(handler=backfill_fail_chain, result_path="$.error")
+                )
+                .next(
+                    sfn.Choice(self, "BackfillShouldRunCrawler")
+                    .when(
+                        sfn.Condition.boolean_equals("$.shouldRunCrawler", True),
+                        tasks.CallAwsService(
+                            self,
+                            "BackfillStartCrawler",
+                            service="glue",
+                            action="startCrawler",
+                            parameters={"Name": crawler_name},
+                            iam_resources=[
+                                f"arn:aws:glue:{Stack.of(self).region}:{Stack.of(self).account}:crawler/{crawler_name}"
+                            ],
+                            result_path=sfn.JsonPath.DISCARD,
+                        ).add_catch(handler=backfill_fail_chain, result_path="$.error"),
+                    )
+                    .otherwise(sfn.Pass(self, "BackfillSkipCrawler"))
                 )
                 .next(sfn.Succeed(self, "BackfillSuccess", comment="Backfill processing completed successfully")),
             )
@@ -382,6 +412,27 @@ class CustomerDataProcessingStack(Stack):
                 "RAW_BUCKET": self.shared_storage.raw_bucket.bucket_name,
                 "CURATED_BUCKET": self.shared_storage.curated_bucket.bucket_name,
                 "ARTIFACTS_BUCKET": self.shared_storage.artifacts_bucket.bucket_name,
+            },
+        )
+        return function
+
+    def _create_schema_change_decider_function(self) -> lambda_.IFunction:
+        """Create Lambda to decide if crawler should run based on schema change policy."""
+        function = PythonFunction(
+            self,
+            "SchemaChangeDecider",
+            function_name=f"{self.env_name}-schema-change-decider",
+            runtime=lambda_.Runtime.PYTHON_3_12,
+            entry="src/lambda/functions/schema_change_decider",
+            index="handler.py",
+            handler="lambda_handler",
+            memory_size=256,
+            timeout=Duration.seconds(30),
+            log_retention=self._log_retention(),
+            role=iam.Role.from_role_arn(self, "SchemaDeciderLambdaRole", self.lambda_execution_role_arn),
+            layers=[self.common_layer],
+            environment={
+                "CATALOG_UPDATE_DEFAULT": str(self.config.get("catalog_update_default", "on_schema_change")),
             },
         )
         return function

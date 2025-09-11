@@ -113,6 +113,85 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
         }
         return result
 
+    # Handle backfill date range: build per-date items with per-item glue_args
+    date_range = None
+    if _HAVE_SHARED_MODELS:
+        try:
+            parsed = TransformPreflightEvent.model_validate(event)
+            date_range = parsed.date_range
+        except Exception:
+            date_range = event.get("date_range")
+    else:
+        date_range = event.get("date_range")
+
+    if isinstance(date_range, dict) and date_range.get("start") and date_range.get("end"):
+        catalog_update = str(event.get("catalog_update", "")).strip() or None
+        start = str(date_range["start"]).strip()
+        end = str(date_range["end"]).strip()
+        max_days = int(os.environ.get("MAX_BACKFILL_DAYS", "31"))
+
+        # Build date list inclusive, clamped to max_days
+        from datetime import datetime, timedelta
+
+        def _to_date(s: str) -> Any:
+            return datetime.strptime(s, "%Y-%m-%d")
+
+        d0 = _to_date(start)
+        d1 = _to_date(end)
+        if d1 < d0:
+            d0, d1 = d1, d0
+        total_days = (d1 - d0).days + 1
+        if total_days > max_days:
+            d1 = d0 + timedelta(days=max_days - 1)
+            total_days = max_days
+
+        s3 = boto3.client("s3")
+        items: list[Dict[str, Any]] = []
+        for i in range(total_days):
+            ds_i = (d0 + timedelta(days=i)).strftime("%Y-%m-%d")
+            curated_prefix = f"{domain}/{table_name}/ds={ds_i}/"
+            exists = _curated_partition_exists(
+                s3,
+                os.environ.get("CURATED_BUCKET", ""),
+                curated_prefix,
+            )
+
+            artifacts_bucket_env = os.environ.get("ARTIFACTS_BUCKET", "")
+            schema_fp_uri_i = f"s3://{artifacts_bucket_env}/{domain}/{table_name}/_schema/latest.json"
+
+            glue_args_i: Dict[str, str] = {
+                "--environment": os.environ.get("ENVIRONMENT", "dev"),
+                "--raw_bucket": os.environ.get("RAW_BUCKET", ""),
+                "--raw_prefix": f"{domain}/{table_name}/",
+                "--curated_bucket": os.environ.get("CURATED_BUCKET", ""),
+                "--curated_prefix": f"{domain}/{table_name}/",
+                "--schema_fingerprint_s3_uri": schema_fp_uri_i,
+                "--codec": "zstd",
+                "--target_file_mb": "256",
+                "--expected_min_records": os.environ.get("EXPECTED_MIN_RECORDS", "100"),
+                "--max_critical_error_rate": os.environ.get("MAX_CRITICAL_ERROR_RATE", "5.0"),
+                "--ds": ds_i,
+                "--file_type": file_type,
+            }
+
+            if exists:
+                items.append(
+                    {
+                        "proceed": False,
+                        "reason": "Already processed",
+                        "ds": ds_i,
+                        "error": {"code": "IDEMPOTENT_SKIP", "message": "Curated partition already exists"},
+                        **({"catalog_update": catalog_update} if catalog_update else {}),
+                    }
+                )
+            else:
+                item: Dict[str, Any] = {"proceed": True, "ds": ds_i, "glue_args": glue_args_i}
+                if catalog_update:
+                    item["catalog_update"] = catalog_update
+                items.append(item)
+
+        return {"dates": items}
+
     if direct_ds:
         ds = direct_ds
     else:
@@ -176,6 +255,7 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
         return result
 
     # Build Glue args (merge with job defaults on StartJobRun)
+    schema_fp_uri = f"s3://{artifacts_bucket}/{domain}/{table_name}/_schema/latest.json"
     glue_args: Dict[str, str] = {
         "--environment": environment,
         "--raw_bucket": raw_bucket,
@@ -183,9 +263,11 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
         "--curated_bucket": curated_bucket,
         "--curated_prefix": f"{domain}/{table_name}/",
         # Artifacts path aligned to spec: <domain>/<table>/_schema/latest.json
-        "--schema_fingerprint_s3_uri": f"s3://{artifacts_bucket}/{domain}/{table_name}/_schema/latest.json",
+        "--schema_fingerprint_s3_uri": schema_fp_uri,
         "--codec": "zstd",
         "--target_file_mb": "256",
+        "--expected_min_records": os.environ.get("EXPECTED_MIN_RECORDS", "100"),
+        "--max_critical_error_rate": os.environ.get("MAX_CRITICAL_ERROR_RATE", "5.0"),
         "--ds": ds,
         "--file_type": file_type,
     }
@@ -196,4 +278,7 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
         "ds": ds,
         "glue_args": glue_args,
     }
+    catalog_update = str(event.get("catalog_update", "")).strip()
+    if catalog_update:
+        result["catalog_update"] = catalog_update
     return result
