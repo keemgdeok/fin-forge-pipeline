@@ -1,34 +1,36 @@
-# Load Optimization Guidelines
+# Load Optimization Guidelines (Pull Model)
 
-## SQS & Lambda 최적화 설정
+## SQS & Loader 최적화 설정
 
-### **SQS 배치 설정**
-- **배치 크기**: 5-10개 메시지 (최적)
-- **Visibility Timeout**: Lambda timeout × 6 
+### **SQS 설정**
+- **MaxNumberOfMessages**: 5–10 (배치 폴링)
+- **WaitTimeSeconds**: 20 (롱 폴링로 빈폴 비용 최소화)
+- **VisibilityTimeout**: per‑message timeout × 6 (권장: 1800초)
 - **maxReceiveCount**: 3 (DLQ 이동 전)
 
-### **Lambda 동시성 설정**  
-- **예약 동시성**: 5-10 (안정적 처리)
-- **메모리**: 512MB-1GB (Parquet 처리용)
-- **타임아웃**: 5분 (DW 연결 고려)
+### **Loader 동시성/리소스**
+- **Worker 수**: 5–20 (큐 백로그와 CH 리소스에 맞춰 조절)
+- **Per‑message Timeout**: 30–300초 (데이터 크기/도메인별 상이)
+- **Prefetch/버퍼링**: 폴링→처리 파이프라인 비동기 구성 권장
+- **ACK 정책**: 성공 시 즉시 Delete, 실패 시 가시성 연장 또는 미삭제
 
-## Data Warehouse INSERT 최적화
+## ClickHouse s3() 기반 INSERT 최적화
 
-### **배치 크기 전략**
-- **< 1MB 데이터**: Single INSERT (지연시간 최소화)
-- **> 1MB 데이터**: Batch INSERT (1K-5K rows)
-- **압축 활용**: Parquet → 메모리 효율성 극대화
+### **입력 파일 전략**
+- **단일 파티션**: `.../ds=YYYY-MM-DD/*.parquet` 와일드카드로 일괄 적재
+- **대용량**: 파티션별 파일 크기 128–512MB 권장(Gluespec와 일치)
+- **클러스터 병렬화**: (선택) `Distributed` 테이블로 샤드 병렬 적재
 
-### **연결 관리**
-- **Connection Pooling**: DW 연결 재사용
-- **재시도 정책**: Exponential Backoff (2s, 4s, 8s)
-- **타임아웃**: 30초 (DW 응답 대기)
+### **연결/쿼리 관리**
+- **Backoff**: 2s→4s→8s (일시 오류 재시도 최대 3회)
+- **Timeout**: `QUERY_TIMEOUT` 30초 기준, 데이터 크기에 따라 상향
+- **메모리**: Parquet 해제/매핑 비용 고려, 프로세스 메모리 모니터링
 
 ## 성능 모니터링 지표
 
-### **처리량 목표**
-- **시간당 처리**: 10K-50K rows
-- **지연시간**: S3 Object Created → DW INSERT < 5분
+### **처리량/지연 목표**
+- **시간당 처리**: 10K–50K rows 등 업무 요구 기준
+- **엔드투엔드 지연**: S3 Object Created → CH INSERT < 5분
 - **오류율**: < 1% (DLQ 포함)
 
-참조: 03-sequence.md (전체 플로우), 06-monitoring.md (상세 메트릭)
+참조: 03-sequence.md (전체 플로우), 06-monitoring-metrics.md (상세 메트릭)

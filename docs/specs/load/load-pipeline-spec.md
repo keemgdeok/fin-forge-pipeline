@@ -1,19 +1,37 @@
-# Load Pipeline Specification
+# Load Pipeline Specification (Pull Architecture)
 
-Load 파이프라인의 이벤트 기반 데이터 로딩 시스템 명세입니다. S3 Object Created 이벤트부터 ClickHouse 로딩까지의 전체 플로우를 정의합니다.
+본 문서는 Load 파이프라인의 Pull 방식(On‑premise ClickHouse → AWS S3) 아키텍처를 정의합니다. Curated S3 Object Created 이벤트를 기반으로 SQS에 작업을 게시하고, 온프레미스의 ClickHouse 로더 에이전트가 메시지를 폴링하여 S3에서 데이터를 ‘가져와’ ClickHouse에 적재합니다. DLQ로 실패를 격리합니다.
 
 ## Pipeline Architecture
 
-### Event Flow
+### Event Flow (S3 → SQS → On‑prem Loader)
 
-| Stage | Component | Input | Output | Processing Time |
+| Stage | Component | Input | Output | Target Latency |
 |-------|-----------|-------|--------|----------------|
 | **Trigger** | S3 Event Notification | Object Created | EventBridge Event | < 100ms |
 | **Filter** | EventBridge Rule | S3 Event | Filtered Event | < 200ms |
 | **Transform** | Input Transformer | Event JSON | SQS Message | < 100ms |
-| **Queue** | SQS Main Queue | SQS Message | Lambda Trigger | < 300ms |
-| **Process** | Load Lambda | SQS Batch | ClickHouse Insert | < 30s |
-| **Cleanup** | SQS Response | Lambda Response | Message Deletion | < 100ms |
+| **Queue** | SQS Main Queue | SQS Message | Loader Long Poll | < 300ms |
+| **Process** | On‑prem CH Loader | SQS Message | ClickHouse INSERT (via `s3()` in SELECT) | < 30s |
+| **Cleanup** | SQS Delete | Loader ACK | Message Deletion | < 100ms |
+
+설명:
+- On‑prem CH Loader(에이전트)는 SQS Long Poll(최대 20초)로 메시지를 가져오고, 각 메시지의 S3 객체를 ClickHouse `s3` 테이블 함수를 사용해 직접 읽어 `INSERT INTO <table> SELECT * FROM s3(...)` 형태로 적재합니다.
+- 부분 실패는 메시지 단위로 처리합니다. 성공한 메시지는 즉시 Delete, 실패한 메시지는 가시성 타임아웃 경과 후 재전달되며, `maxReceiveCount` 초과 시 DLQ로 이동합니다.
+
+### Pull 방식 개요 및 장단점
+
+장점:
+- **강력한 보안**: 온프레미스에서 AWS로의 아웃바운드만 필요(인바운드 포트 개방 불필요).
+- **단순 네트워크 구성**: 퍼블릭 S3/SQS 엔드포인트로 접근만 허용하면 동작.
+- **성능/안정성**: ClickHouse의 S3 병렬 읽기 최적화로 대용량 처리에 유리.
+- **운영 단순성**: AWS 쪽은 IAM과 큐/버킷 정책 관리, 적재 로직은 CH가 담당.
+
+유의사항(Trade‑offs):
+- **크리덴셜 관리**: 온프레미스에 IAM 사용자/역할 자격증명 안전 저장 필요(회전/감사 포함).
+- **가시성/모니터링**: Lambda 내장 지표 대신 에이전트/CH 지표를 별도 수집/전송 필요.
+- **부분 실패 제어**: Lambda의 `batchItemFailures` 대신 메시지 단위 ACK/가시성 제어로 구현.
+- **접근제어 세분화**: S3 프리픽스, SQS 큐 단위 최소권한을 엄격히 적용.
 
 ### Domain Configuration
 
@@ -37,7 +55,7 @@ Load 파이프라인의 이벤트 기반 데이터 로딩 시스템 명세입니
 | **key** | suffix | `".parquet"` | Parquet files only |
 | **size** | numeric > | `1024` | Non-empty files |
 
-### Message Transformation
+### Message Transformation (EventBridge → SQS)
 
 | Output Field | Input Path | Data Type | Required | Example |
 |--------------|------------|-----------|----------|---------|
@@ -95,18 +113,18 @@ Load 파이프라인의 이벤트 기반 데이터 로딩 시스템 명세입니
 
 ## Performance
 
-### Scaling Configuration
+### Scaling Configuration (On‑prem Loader centric)
 
 | Component | Setting | Value | Scaling Trigger |
 |-----------|---------|-------|----------------|
-| **Lambda Concurrency** | Reserved | 50 | Queue depth > 20 |
-| **SQS Batch Size** | Messages | 5-10 | Based on file size |
-| **Visibility Timeout** | Duration | 1800s | 6x Lambda timeout |
-| **Processing Timeout** | Lambda | 300s | 5 minutes max |
+| **Loader Concurrency** | Worker threads | 5–20 | Queue depth > 20 |
+| **SQS Batch Size** | `MaxNumberOfMessages` | 5–10 | File size/domain priority |
+| **Visibility Timeout** | Duration | 1800s | ≥ 6× per‑message timeout |
+| **Per‑message Timeout** | Loader | 300s | 5 minutes max |
 
 ### Capacity Planning
 
-| Domain | Peak Load | Avg File Size | Batch Size | Lambda Memory |
+| Domain | Peak Load | Avg File Size | Batch Size | Loader Memory |
 |--------|:---------:|:-------------:|:----------:|:-------------:|
 | **market** | 1000 msg/hr | 5MB | 5 | 768MB |
 | **customer** | 500 msg/hr | 10MB | 3 | 1024MB |
@@ -115,15 +133,18 @@ Load 파이프라인의 이벤트 기반 데이터 로딩 시스템 명세입니
 
 ## Security
 
-### IAM Requirements
+### IAM Requirements (Least privilege)
 
 | Component | Required Permissions | Resource Pattern |
 |-----------|---------------------|------------------|
 | **EventBridge Rule** | `events:PutEvents` | `arn:aws:events:<region>:<account>:event-bus/default` |
 | **SQS Target** | `sqs:SendMessage` | `arn:aws:sqs:<region>:<account>:<env>-<domain>-load-queue` |
-| **Lambda Function** | `sqs:ReceiveMessage`, `sqs:DeleteMessage` | SQS Queue ARN |
-| **S3 Access** | `s3:GetObject` | `arn:aws:s3:::<curated-bucket>/<domain>/*` |
-| **ClickHouse Access** | Network access to DW cluster | VPC Security Group |
+| **On‑prem Loader (IAM User/Role)** | `sqs:ReceiveMessage`, `sqs:DeleteMessage`, `sqs:ChangeMessageVisibility` | 해당 SQS Queue ARN |
+| **On‑prem Loader (S3)** | `s3:GetObject` | `arn:aws:s3:::<curated-bucket>/<domain>/*` |
+
+네트워킹:
+- 온프레미스 → AWS 아웃바운드만 필요(S3/SQS 퍼블릭 엔드포인트 접근). 인바운드 포트 개방 불필요.
+- 가능하면 VPC 엔드포인트/프라이빗 링크 대신, 온프레미스 egress 정책과 퍼블릭 AWS 엔드포인트 허용 리스트를 관리합니다.
 
 ### Data Protection
 
@@ -131,8 +152,8 @@ Load 파이프라인의 이벤트 기반 데이터 로딩 시스템 명세입니
 |----------------|----------------|---------------|
 | **Encryption in Transit** | TLS 1.2+ | All API calls |
 | **Encryption at Rest** | SSE-S3/KMS | S3 objects, SQS messages |
-| **Network Isolation** | VPC | Lambda in private subnets |
-| **Access Control** | IAM Roles | Least privilege principle |
+| **Network Isolation** | On‑prem outbound only | Allowlist S3/SQS endpoints |
+| **Access Control** | IAM User/Role | Least privilege principle |
 
 ## TDD Test Coverage
 
@@ -142,7 +163,7 @@ Load 파이프라인의 이벤트 기반 데이터 로딩 시스템 명세입니
 |---------------|:----------:|----------|
 | **Event Processing** | 5 | Pattern matching, transformation, validation |
 | **Error Handling** | 4 | Retry logic, DLQ routing, timeout handling |
-| **Integration Flow** | 3 | S3→EventBridge→SQS→Lambda end-to-end |
+| **Integration Flow** | 3 | S3→EventBridge→SQS→On‑prem Loader end‑to‑end |
 | **Performance** | 2 | Load handling, resource management |
 | **Security** | 1 | IAM permissions, data encryption |
 

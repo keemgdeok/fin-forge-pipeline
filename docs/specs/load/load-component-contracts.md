@@ -1,6 +1,6 @@
-# Load Component Contracts
+# Load Component Contracts (Pull Model)
 
-Load 파이프라인 컴포넌트들의 I/O 계약 및 구성 명세입니다. SQS, Lambda, ClickHouse 간의 데이터 계약과 연결 설정을 정의합니다.
+Load 파이프라인의 Pull 아키텍처 구성요소 계약입니다. SQS, 온프레미스 ClickHouse 로더 에이전트(이하 "Loader"), ClickHouse 간 데이터 계약과 연결 설정을 정의합니다.
 
 ## SQS Message Contracts
 
@@ -15,6 +15,7 @@ Load 파이프라인 컴포넌트들의 I/O 계약 및 구성 명세입니다. S
 | **partition** | string | ✅ | ds=YYYY-MM-DD | `ds=2025-09-10` |
 | **file_size** | integer | ❌ | > 0 | `1048576` |
 | **correlation_id** | string | ✅ | UUID v4 | `550e8400-e29b-41d4-a716-446655440000` |
+| **presigned_url** | string | ❌ | HTTPS URL | `https://...X-Amz-Signature=...` |
 
 ### Message Attributes
 
@@ -25,55 +26,67 @@ Load 파이프라인 컴포넌트들의 I/O 계약 및 구성 명세입니다. S
 | **TableName** | String | Table filter | `prices` |
 | **Priority** | Number | Processing order | `1` (High), `2` (Medium), `3` (Low) |
 
+비고:
+- 보안 강화를 위해 S3 접근에 프리사인드 URL(`presigned_url`)을 선택적으로 포함할 수 있습니다. 포함 시 Loader는 URL을 우선 사용하고, 미포함 시 IAM 자격증명으로 접근합니다.
+
 ### Queue Configuration
 
 | Setting | Main Queue | Dead Letter Queue | Description |
 |---------|:----------:|:----------------:|-------------|
 | **Name Pattern** | `<env>-<domain>-load-queue` | `<env>-<domain>-load-dlq` | Environment and domain scoped |
-| **Visibility Timeout** | 1800s | 300s | 6x and 1x Lambda timeout |
+| **Visibility Timeout** | 1800s | 300s | 6× and 1× per‑message timeout |
 | **Message Retention** | 14 days | 14 days | Maximum retention |
 | **Max Receive Count** | 3 | Unlimited | Retry limit before DLQ |
 
-## Lambda Function Contracts
+## Loader Agent Contracts (On‑prem)
 
-### Input Contract
+### Input Contract (SQS API)
 
 | Parameter | Source | Type | Validation |
 |-----------|--------|------|------------|
-| **Records** | SQS Event | Array[SQSRecord] | 1-10 records per batch |
-| **SQSRecord.body** | Message body | JSON string | Valid JSON schema |
-| **SQSRecord.messageAttributes** | SQS attributes | Map[string, any] | Optional attributes |
-| **SQSRecord.receiptHandle** | SQS handle | string | Required for deletion |
+| **Messages** | `ReceiveMessage` | Array[SQSMessage] | 1–10 per call (long poll) |
+| **Message.Body** | Message body | JSON string | Valid JSON schema |
+| **Message.Attributes** | SQS attributes | Map[string, any] | Optional |
+| **ReceiptHandle** | SQS handle | string | Required for deletion |
 
-### Output Contract
+### Processing & Acknowledgement
 
-| Response Field | Type | Required | Purpose |
-|----------------|------|:--------:|---------|
-| **batchItemFailures** | Array[FailureRecord] | ✅ | Partial batch failure support |
-| **FailureRecord.itemIdentifier** | string | ✅ | Message ID for retry |
+| Operation | API | Behavior | Notes |
+|-----------|-----|---------|-------|
+| ACK success | `DeleteMessage/Batch` | Delete processed messages | 개별/배치 삭제 지원 |
+| Defer retry | `ChangeMessageVisibility` | Extend visibility timeout | 일시 오류 시 백오프 |
+| Fail (no ACK) | — | Let visibility expire | `receiveCount` 증가 후 재전달 |
 
-### Error Response Codes
+### Error Codes (Agent semantics)
 
-| Code | HTTP Status | Description | Retry Action | DLQ Action |
-|------|:-----------:|-------------|:------------:|:----------:|
-| **PARSE_ERROR** | 400 | Invalid JSON in message body | ❌ | ✅ |
-| **VALIDATION_ERROR** | 400 | Schema validation failure | ❌ | ✅ |
-| **FILE_NOT_FOUND** | 404 | S3 object not accessible | ✅ | After 3 attempts |
-| **CONNECTION_ERROR** | 503 | Database connection failure | ✅ | After 3 attempts |
-| **TIMEOUT_ERROR** | 504 | Processing timeout | ✅ | After 2 attempts |
+| Code | Description | Retry Action | DLQ Action |
+|------|-------------|-------------|-----------|
+| **PARSE_ERROR** | Invalid JSON in message body | No retry | Move after maxReceiveCount |
+| **VALIDATION_ERROR** | Schema validation failure | No retry | Move after maxReceiveCount |
+| **FILE_NOT_FOUND** | S3 object not accessible | Retry 3× (backoff) | Move after exhaustion |
+| **CONNECTION_ERROR** | ClickHouse connection failure | Retry 3× (backoff) | Move after exhaustion |
+| **TIMEOUT_ERROR** | Query timeout | Retry 2× (backoff) | Move after exhaustion |
 
-### Environment Variables
+### Loader Configuration (Environment/Config)
 
 | Variable | Format | Required | Example | Description |
 |----------|--------|:--------:|---------|-------------|
-| **CLICKHOUSE_HOST** | hostname:port | ✅ | `clickhouse.example.com:9000` | Database endpoint |
+| **AWS_REGION** | string | ✅ | `ap-northeast-2` | AWS SDK region |
+| **SQS_QUEUE_URL** | url | ✅ | `https://sqs.../env-domain-load-queue` | Target queue |
+| **SQS_WAIT_TIME_SECONDS** | integer | ✅ | `20` | Long poll wait time |
+| **SQS_MAX_MESSAGES** | integer | ✅ | `10` | Max messages per poll |
+| **SQS_VISIBILITY_TIMEOUT** | integer | ✅ | `1800` | Seconds (≥ 6× query timeout) |
+| **AWS_ACCESS_KEY_ID** | string | C | `AKIA...` | If using IAM user |
+| **AWS_SECRET_ACCESS_KEY** | string | C | `****` | If using IAM user |
+| **CLICKHOUSE_HOST** | host:port | ✅ | `localhost:9000` | Local/nearby CH endpoint |
 | **CLICKHOUSE_DATABASE** | string | ✅ | `data_warehouse` | Target database |
-| **CLICKHOUSE_USER** | string | ✅ | `load_user` | Database username |
-| **MAX_CONNECTIONS** | integer | ❌ | `8` | Connection pool size |
-| **QUERY_TIMEOUT** | integer | ❌ | `30` | Query timeout (seconds) |
+| **CLICKHOUSE_USER** | string | ✅ | `loader_user` | Database username |
+| **CLICKHOUSE_PASSWORD** | string | C | `****` | If required |
+| **QUERY_TIMEOUT** | integer | ✅ | `30` | Seconds per insert |
+| **WORKER_CONCURRENCY** | integer | ✅ | `8` | Parallel workers/threads |
 | **LOG_LEVEL** | enum | ❌ | `INFO` | Logging verbosity |
 
-## ClickHouse Integration
+## ClickHouse Integration (S3 Pull)
 
 ### Connection Parameters
 
@@ -100,13 +113,17 @@ Load 파이프라인 컴포넌트들의 I/O 계약 및 구성 명세입니다. S
 | **correlation_id** | String | ❌ | - | Tracking UUID |
 | **processed_at** | DateTime | ❌ | now() | Processing timestamp |
 
-### Insert Operations
+### Insert Operations (via `s3` table function)
 
-| Operation | SQL Pattern | Batch Size | Performance Target |
-|-----------|-------------|:----------:|:-----------------:|
-| **Single Insert** | `INSERT INTO <table> VALUES (...)` | 1 record | < 100ms |
-| **Batch Insert** | `INSERT INTO <table> VALUES (...), (...)` | 5-10 records | < 500ms |
-| **Bulk Insert** | `INSERT INTO <table> SELECT * FROM s3(...)` | File-based | < 30s |
+| Operation | SQL Pattern | Input | Performance Target |
+|-----------|-------------|:-----:|:-----------------:|
+| **Single file** | `INSERT INTO <table> SELECT * FROM s3('<https-url>', '<AKIA>', '<SECRET>', 'Parquet')` | 1 file | < 10s |
+| **Multi‑file (wildcard)** | `INSERT INTO <table> SELECT * FROM s3('<https-prefix>/*.parquet', '<AKIA>', '<SECRET>', 'Parquet')` | N files | < 30s |
+| **Partition range** | `INSERT ... SELECT * FROM s3('.../ds=<YYYY-MM-DD>/*.parquet', ...)` | Partition | < 30s |
+
+비고:
+- 퍼블릭 S3 엔드포인트(HTTPS) 사용. 필요 시 사설 경로/프록시 구성.
+- 권장 CH 설정(예): 적절한 병렬성, Parquet 스키마 자동 매핑 옵션.
 
 ### Error Handling
 
@@ -120,11 +137,11 @@ Load 파이프라인 컴포넌트들의 I/O 계약 및 구성 명세입니다. S
 
 ## Security Contracts
 
-### IAM Role Permissions
+### IAM Role Permissions (Least privilege)
 
 | Service | Actions | Resource Pattern | Condition |
 |---------|---------|------------------|-----------|
-| **SQS** | `ReceiveMessage`, `DeleteMessage` | `arn:aws:sqs:<region>:<account>:<env>-*-load-queue` | None |
+| **SQS** | `ReceiveMessage`, `DeleteMessage`, `ChangeMessageVisibility` | `arn:aws:sqs:<region>:<account>:<env>-*-load-queue` | None |
 | **S3** | `GetObject` | `arn:aws:s3:::<curated-bucket>/<domain>/*` | None |
 | **Secrets Manager** | `GetSecretValue` | `arn:aws:secretsmanager:<region>:<account>:secret:<env>/clickhouse/*` | None |
 | **CloudWatch** | `PutMetricData` | `*` | Namespace: `Load/Pipeline` |
@@ -133,9 +150,9 @@ Load 파이프라인 컴포넌트들의 I/O 계약 및 구성 명세입니다. S
 
 | Component | Network Access | Security Group | Port |
 |-----------|----------------|----------------|:----:|
-| **Lambda Function** | Private subnets | `sg-lambda-load` | Outbound only |
-| **ClickHouse** | Private network | `sg-clickhouse` | 9000, 9440 |
-| **NAT Gateway** | Public subnet | Default | 80, 443 |
+| **On‑prem Loader** | Outbound to AWS | Allowlist | 443 (HTTPS) |
+| **ClickHouse** | Local/Datacenter | Internal policy | 9000, 9440 |
+| **Internet/NAT** | Datacenter egress | Corp policy | 80, 443 |
 
 ### Data Encryption
 
@@ -161,10 +178,10 @@ Load 파이프라인 컴포넌트들의 I/O 계약 및 구성 명세입니다. S
 
 | Resource | Limit | Monitoring | Scaling Action |
 |----------|:-----:|------------|----------------|
-| **Lambda Memory** | 1024MB | CloudWatch | Increase if >85% |
-| **Lambda Timeout** | 300s | CloudWatch | Optimize or increase |
-| **SQS Queue Depth** | 100 messages | CloudWatch | Scale Lambda concurrency |
-| **ClickHouse Connections** | 8 per Lambda | Application logs | Increase pool size |
+| **Worker Threads** | 32 | Agent metrics | Increase if backlog ↑ |
+| **Per‑message Timeout** | 300s | Agent metrics | Tune per dataset |
+| **SQS Queue Depth** | 100 messages | CloudWatch | Increase workers |
+| **ClickHouse Connections** | 8 per agent | Agent logs | Increase cautiously |
 
 ## Validation Contracts
 
@@ -194,8 +211,8 @@ Load 파이프라인 컴포넌트들의 I/O 계약 및 구성 명세입니다. S
 
 | Scenario | Components | Input | Expected Output | Validation |
 |----------|------------|-------|----------------|------------|
-| **Happy Path** | SQS→Lambda→ClickHouse | Valid message | Successful insert | Data in DW |
-| **Parse Error** | SQS→Lambda | Invalid JSON | Error response | Message in DLQ |
-| **Connection Error** | Lambda→ClickHouse | Valid data | Retry then DLQ | Connection recovery |
+| **Happy Path** | SQS→On‑prem Loader→ClickHouse | Valid message | Successful insert | Data in DW |
+| **Parse Error** | SQS→Loader | Invalid JSON | Not deleted | Message in DLQ |
+| **Connection Error** | Loader→ClickHouse | Valid data | Retry then DLQ | Connection recovery |
 | **Large File** | Full pipeline | 100MB+ file | Successful processing | Memory management |
-| **Batch Processing** | SQS batch | 10 messages | Partial success handling | Error isolation |
+| **Batch Processing** | SQS batch | 10 messages | Per‑message ACK | Error isolation |
