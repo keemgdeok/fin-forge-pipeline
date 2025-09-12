@@ -15,7 +15,7 @@ from unittest.mock import Mock
 
 
 @dataclass
-class TestS3Object:
+class S3ObjectFixture:
     """Test representation of an S3 object."""
 
     bucket: str
@@ -26,7 +26,7 @@ class TestS3Object:
 
 
 @dataclass
-class TestPartition:
+class PartitionFixture:
     """Test representation of a data partition."""
 
     domain: str
@@ -54,19 +54,19 @@ class MockAWSEnvironment:
         self.raw_bucket = f"data-pipeline-raw-{environment}-123456789012"
         self.curated_bucket = f"data-pipeline-curated-{environment}-123456789012"
         self.artifacts_bucket = f"data-pipeline-artifacts-{environment}-123456789012"
-        self.s3_objects: Dict[str, TestS3Object] = {}
+        self.s3_objects: Dict[str, S3ObjectFixture] = {}
 
-    def add_s3_object(self, obj: TestS3Object) -> None:
+    def add_s3_object(self, obj: S3ObjectFixture) -> None:
         """Add an S3 object to the mock environment."""
         key = f"{obj.bucket}/{obj.key}"
         self.s3_objects[key] = obj
 
-    def get_s3_object(self, bucket: str, key: str) -> Optional[TestS3Object]:
+    def get_s3_object(self, bucket: str, key: str) -> Optional[S3ObjectFixture]:
         """Get an S3 object from the mock environment."""
         lookup_key = f"{bucket}/{key}"
         return self.s3_objects.get(lookup_key)
 
-    def list_s3_objects(self, bucket: str, prefix: str) -> List[TestS3Object]:
+    def list_s3_objects(self, bucket: str, prefix: str) -> List[S3ObjectFixture]:
         """List S3 objects matching a prefix."""
         results = []
         for obj_key, obj in self.s3_objects.items():
@@ -74,7 +74,7 @@ class MockAWSEnvironment:
                 results.append(obj)
         return results
 
-    def has_partition(self, partition: TestPartition, bucket_type: str = "curated") -> bool:
+    def has_partition(self, partition: PartitionFixture, bucket_type: str = "curated") -> bool:
         """Check if a partition exists in the specified bucket."""
         bucket = getattr(self, f"{bucket_type}_bucket")
         prefix = getattr(partition, f"{bucket_type}_prefix")
@@ -82,7 +82,7 @@ class MockAWSEnvironment:
 
     def create_raw_partition(
         self,
-        partition: TestPartition,
+        partition: PartitionFixture,
         data: Optional[List[Dict[str, Any]]] = None,
     ) -> None:
         """Create a raw partition with sample data."""
@@ -105,7 +105,7 @@ class MockAWSEnvironment:
             content = json.dumps(data)
 
         self.add_s3_object(
-            TestS3Object(
+            S3ObjectFixture(
                 bucket=self.raw_bucket,
                 key=s3_key,
                 content=content,
@@ -113,11 +113,11 @@ class MockAWSEnvironment:
             )
         )
 
-    def create_curated_partition(self, partition: TestPartition) -> None:
+    def create_curated_partition(self, partition: PartitionFixture) -> None:
         """Create a curated partition to simulate existing data."""
         s3_key = f"{partition.curated_prefix}part-00000.parquet"
         self.add_s3_object(
-            TestS3Object(
+            S3ObjectFixture(
                 bucket=self.curated_bucket,
                 key=s3_key,
                 content=b"mock_parquet_data",
@@ -125,14 +125,14 @@ class MockAWSEnvironment:
             )
         )
 
-    def create_schema_fingerprint(self, partition: TestPartition, schema: Optional[Dict[str, Any]] = None) -> None:
+    def create_schema_fingerprint(self, partition: PartitionFixture, schema: Optional[Dict[str, Any]] = None) -> None:
         """Create a schema fingerprint for a partition."""
         if schema is None:
             schema = generate_sample_schema()
 
         artifacts_key = f"{partition.domain}/{partition.table_name}/_schema/latest.json"
         self.add_s3_object(
-            TestS3Object(
+            S3ObjectFixture(
                 bucket=self.artifacts_bucket,
                 key=artifacts_key,
                 content=schema,
@@ -140,14 +140,14 @@ class MockAWSEnvironment:
             )
         )
 
-    def create_current_schema(self, partition: TestPartition, schema: Optional[Dict[str, Any]] = None) -> None:
+    def create_current_schema(self, partition: PartitionFixture, schema: Optional[Dict[str, Any]] = None) -> None:
         """Create a current schema file for a partition."""
         if schema is None:
             schema = generate_sample_schema()
 
         curated_key = f"{partition.domain}/{partition.table_name}/_schema/current.json"
         self.add_s3_object(
-            TestS3Object(
+            S3ObjectFixture(
                 bucket=self.curated_bucket,
                 key=curated_key,
                 content=schema,
@@ -241,7 +241,7 @@ class MockS3Client:
                 pass  # Keep as bytes if not JSON
 
         self.aws_env.add_s3_object(
-            TestS3Object(
+            S3ObjectFixture(
                 bucket=Bucket,
                 key=Key,
                 content=content,
@@ -320,9 +320,9 @@ def mock_aws_environment() -> MockAWSEnvironment:
 
 
 @pytest.fixture
-def sample_partition() -> TestPartition:
+def sample_partition() -> PartitionFixture:
     """Provide a standard test partition."""
-    return TestPartition(
+    return PartitionFixture(
         domain="market",
         table_name="prices",
         ds="2025-09-07",
@@ -332,7 +332,9 @@ def sample_partition() -> TestPartition:
 
 
 @pytest.fixture
-def market_data_partition(mock_aws_environment: MockAWSEnvironment, sample_partition: TestPartition) -> TestPartition:
+def market_data_partition(
+    mock_aws_environment: MockAWSEnvironment, sample_partition: PartitionFixture
+) -> PartitionFixture:
     """Provide a partition with sample market data."""
     mock_aws_environment.create_raw_partition(sample_partition)
     return sample_partition
@@ -388,7 +390,7 @@ def assert_success_contract(response: Dict[str, Any], expected_fields: List[str]
 
 def assert_glue_args_valid(
     glue_args: Dict[str, str],
-    partition: TestPartition,
+    partition: PartitionFixture,
     aws_env: MockAWSEnvironment,
 ) -> None:
     """Assert that Glue arguments follow the specification."""
@@ -436,7 +438,7 @@ def create_mock_lambda_context(function_name: str = "test-function", request_id:
     return context
 
 
-def create_step_functions_event(partition: TestPartition, event_type: str = "direct") -> Dict[str, Any]:
+def create_step_functions_event(partition: PartitionFixture, event_type: str = "direct") -> Dict[str, Any]:
     """Create a Step Functions input event for testing."""
     if event_type == "direct":
         return {

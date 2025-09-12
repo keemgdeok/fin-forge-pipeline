@@ -136,3 +136,30 @@ def test_valid_builds_glue_args_with_schema_path(monkeypatch) -> None:
     assert resp["ds"] == "2025-09-07"
     schema_arg = resp["glue_args"]["--schema_fingerprint_s3_uri"]
     assert schema_arg.endswith("market/prices/_schema/latest.json")
+
+
+def test_valid_includes_threshold_args(monkeypatch) -> None:
+    mod = _load_module()
+    os.environ["ENVIRONMENT"] = "dev"
+    os.environ["RAW_BUCKET"] = "raw-bucket-dev"
+    os.environ["CURATED_BUCKET"] = "curated-bucket-dev"
+    os.environ["ARTIFACTS_BUCKET"] = "artifacts-bucket-dev"
+    # Inject non-default thresholds
+    os.environ["EXPECTED_MIN_RECORDS"] = "123"
+    os.environ["MAX_CRITICAL_ERROR_RATE"] = "7.5"
+
+    s3 = _S3Stub(0)
+    monkeypatch.setitem(mod["boto3"].__dict__, "client", _Boto(s3).client)
+
+    event = {
+        "source_bucket": "raw-bucket-dev",
+        "source_key": "market/prices/ingestion_date=2025-09-07/file.json",
+        "domain": "market",
+        "table_name": "prices",
+        "file_type": "json",
+    }
+    resp = mod["lambda_handler"](event, None)
+    assert resp["proceed"] is True
+    args = resp["glue_args"]
+    assert args["--expected_min_records"] == "123"
+    assert args["--max_critical_error_rate"] == "7.5"

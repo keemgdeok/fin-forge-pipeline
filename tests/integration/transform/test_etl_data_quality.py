@@ -86,6 +86,7 @@ class TestETLDataQuality:
         try:
             from pyspark.sql import SparkSession
             from pyspark.sql.functions import col
+            from pyspark.sql.types import StructType, StructField, StringType, DoubleType
         except ImportError:
             pytest.skip("PySpark not available")
 
@@ -94,7 +95,14 @@ class TestETLDataQuality:
         try:
             # Given: 품질 위반 데이터
             bad_data = [{"symbol": None, "price": 100.0}]
-            df = spark.createDataFrame(bad_data)
+            # 단일 행에 None이 포함되면 스키마 추론이 불가능할 수 있어 명시적 스키마를 제공
+            schema = StructType(
+                [
+                    StructField("symbol", StringType(), True),
+                    StructField("price", DoubleType(), True),
+                ]
+            )
+            df = spark.createDataFrame(bad_data, schema=schema)
 
             # When: DQ 체크 및 quarantine 로직 실행
             symbol_nulls = df.filter(col("symbol").isNull())

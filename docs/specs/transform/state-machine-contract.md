@@ -8,7 +8,7 @@
 |---|---|:---:|---|---|
 | environment | string | Y | `dev` | `dev\|stg\|prod` 중 하나 |
 | domain | string | Y | `customer-data` | 도메인 식별자 |
-| table | string | Y | `orders` | 데이터셋/테이블 이름 |
+| table_name | string | Y | `orders` | 데이터셋/테이블 이름 (`table` 별칭 허용) |
 | ds | string | C | `2025-09-07` | `YYYY-MM-DD` (UTC). `date_range`와 상호 배타(XOR) |
 | date_range.start | string | C | `2025-09-01` | `YYYY-MM-DD` (UTC) |
 | date_range.end | string | C | `2025-09-07` | `YYYY-MM-DD` (UTC), `start ≤ end` |
@@ -22,6 +22,7 @@
 - 두 가지 입력 모드를 지원합니다.
   - 직접 모드: `ds` 또는 `date_range` 제공(XOR).
   - S3 트리거 모드: `source_bucket`/`source_key` 제공 → Preflight에서 `ds`를 도출.
+- 호환성: `table_name`을 기본으로 사용하되, 레거시 입력 `table`도 허용합니다(내부적으로 `table_name`으로 합쳐 처리).
 - 백필(Map) 사용 시 `date_range` 길이는 운영 정책 범위 내에서 제한(권장: ≤ 31일).
 
 ### Preflight 출력(요약)
@@ -41,7 +42,7 @@
 | ok | boolean | `true` | 전체 실행 성공 여부 |
 | correlationId | string | `customer-data:orders:2025-09-07` | `domain:table:ds` 또는 생성된 실행 키 |
 | domain | string | `customer-data` | 입력 반사 |
-| table | string | `orders` | 입력 반사 |
+| table_name | string | `orders` | 입력 반사 |
 | partitions | array<string> | `["ds=2025-09-07"]` | 성공적으로 처리된 파티션 목록 |
 | stats.rowCount | number | `123456` | 출력 레코드 수(합계) |
 | stats.bytesWritten | number | `987654321` | Curated 총 바이트 |
@@ -99,6 +100,14 @@
 - Schema check: 1회(일시 오류만)
 - Crawler: 최대 2회, 백오프로 간격 증가.
 - 전체 실행: 표준 타입, 태스크별 `Retry`와 공통 `Catch`로 실패 페이로드 구성.
+
+## 크롤러 실행 게이팅
+
+- 정책(`catalog_update`)에 따라 Glue Crawler 실행 여부를 결정합니다.
+  - `never`: 실행 안 함
+  - `force`: 항상 실행
+  - `on_schema_change`: 스키마 지문(`_schema/latest.json`)과 이전 지문(`_schema/previous.json`)의 `hash` 비교로 변경 시에만 실행
+- Preflight 출력의 `glue_args['--schema_fingerprint_s3_uri']`를 활용하여 비교 대상 경로를 해석합니다.
 
 ## 관측(선택)
 

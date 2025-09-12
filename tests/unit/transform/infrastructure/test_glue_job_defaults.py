@@ -57,9 +57,16 @@ def test_glue_job_defaults_and_schema_fingerprint_path(monkeypatch) -> None:
     props = job["Properties"]
     assert props["Timeout"] == 30, "Timeout must be 30 minutes per spec"
     assert props["MaxRetries"] == 1, "MaxRetries must be 1 per spec"
+    assert props["GlueVersion"] == "5.0", "Glue version must be 5.0"
+    assert props["WorkerType"] == "G.1X", "Worker type must be G.1X"
+    # NumberOfWorkers should equal config glue_max_capacity, defaulting to 2 when not provided
+    expected_workers = int(cfg.get("glue_max_capacity", 2))
+    assert props["NumberOfWorkers"] == expected_workers, "Workers must equal glue_max_capacity"
 
     default_args = props["DefaultArguments"]
     schema_uri = default_args["--schema_fingerprint_s3_uri"]
+    assert default_args.get("--enable-s3-parquet-optimized-committer") == "1"
+    assert default_args.get("--job-bookmark-option") == "job-bookmark-enable"
 
     # Handle CloudFormation references (Fn::Join, Fn::Sub, etc.)
     if isinstance(schema_uri, str):
@@ -74,3 +81,37 @@ def test_glue_job_defaults_and_schema_fingerprint_path(monkeypatch) -> None:
             # Convert dict to string for other CloudFormation functions
             uri_str = str(schema_uri)
             assert "_schema/latest.json" in uri_str, "Schema fingerprint path must use _schema/latest.json"
+
+    # Command python version
+    cmd = props["Command"]
+    if isinstance(cmd, dict):
+        assert cmd.get("PythonVersion") == "3", "Glue Job must use PythonVersion 3"
+
+
+def test_glue_job_includes_shared_package_via_extra_py_files(monkeypatch) -> None:
+    app = App()
+    cfg = _base_config()
+
+    # Patch PythonFunction to avoid bundling errors
+    monkeypatch.setattr(ps, "PythonFunction", _fake_python_function, raising=False)
+
+    shared = SharedStorageStack(app, "SharedStorageGlueExtras", environment="dev", config=cfg)
+    proc = ps.CustomerDataProcessingStack(
+        app,
+        "ProcStackGlueExtras",
+        environment="dev",
+        config=cfg,
+        shared_storage_stack=shared,
+        lambda_execution_role_arn="arn:aws:iam::111122223333:role/lambda",
+        glue_execution_role_arn="arn:aws:iam::111122223333:role/glue",
+        step_functions_execution_role_arn="arn:aws:iam::111122223333:role/sfn",
+    )
+
+    template = Template.from_stack(proc)
+    jobs = template.find_resources("AWS::Glue::Job")
+    assert jobs, "Glue Job must exist"
+    job = next(iter(jobs.values()))
+
+    props = job["Properties"]
+    default_args = props["DefaultArguments"]
+    assert "--extra-py-files" in default_args, "Glue job must include extra py files for shared package"
