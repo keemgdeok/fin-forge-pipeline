@@ -3,6 +3,7 @@
 Pipeline-as-a-Product CDK App
 Serverless Data Platform following best practices for modular, scalable architecture.
 """
+
 import aws_cdk as cdk
 
 # Core Infrastructure

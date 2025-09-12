@@ -15,7 +15,7 @@
 **트리거:** `main`, `develop` 푸시 또는 PR
 
 **병렬 매트릭스 실행:**
-- `format` - Black + Ruff 스타일 체크
+- `format` - Ruff Formatter + Ruff Lint 스타일 체크
 - `test` - pytest 단위 테스트
 - `infra` - CDK 인프라 검증  
 - `security` - 보안 스캔 (조건부)
@@ -69,7 +69,7 @@
 
 **포맷팅 에러:**
 ```bash
-black src/ infrastructure/ tests/
+ruff format src/ infrastructure/ tests/
 git add -A && git commit -m "fix: format code"
 ```
 

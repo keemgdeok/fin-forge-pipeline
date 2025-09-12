@@ -273,7 +273,10 @@ class TestEndToEndPipeline:
         curated_key = "customer/orders/ds=2025-09-07/data.parquet"
         parquet_buffer = BytesIO()
         df_transformed.to_parquet(
-            parquet_buffer, engine="pyarrow", compression="zstd", index=False  # As specified in glue job spec
+            parquet_buffer,
+            engine="pyarrow",
+            compression="zstd",
+            index=False,  # As specified in glue job spec
         )
 
         s3_client.put_object(

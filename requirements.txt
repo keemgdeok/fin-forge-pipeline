@@ -7,7 +7,6 @@ aws-cdk.aws-lambda-python-alpha>=2.100.0a0
 pytest>=7.0.0
 pytest-cov>=4.0.0
 pytest-timeout>=2.1.0
-black>=23.0.0
 mypy>=1.0.0
 ruff>=0.6.9
 boto3>=1.26.0

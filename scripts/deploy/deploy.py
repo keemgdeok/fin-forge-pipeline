@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """Deployment script for the data pipeline CDK application."""
+
 import argparse
 import subprocess
 import sys

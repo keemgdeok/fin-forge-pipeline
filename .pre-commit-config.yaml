@@ -3,15 +3,12 @@
 # Run on all files once: pre-commit run --all-files
 
 repos:
-  - repo: https://github.com/psf/black
-    rev: 25.1.0
-    hooks:
-      - id: black
-        # 설정은 pyproject.toml에서 읽습니다.
-
   - repo: https://github.com/astral-sh/ruff-pre-commit
     rev: v0.6.9
     hooks:
+      - id: ruff-format
+        name: ruff-format
+        # 설정은 pyproject.toml에서 읽습니다.
       - id: ruff
         args: ["--fix", "--exit-non-zero-on-fix"]
         # 설정은 pyproject.toml에서 읽습니다.
