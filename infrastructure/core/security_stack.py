@@ -149,6 +149,17 @@ class SecurityStack(Stack):
                             effect=iam.Effect.ALLOW,
                             actions=["ses:SendEmail", "ses:SendRawEmail"],
                             resources=["*"],
+                            conditions={
+                                "StringEquals": {
+                                    # Limit to current region requests at minimum
+                                    "aws:RequestedRegion": self.region,
+                                    **(
+                                        {"ses:FromAddress": str(self.config.get("notification_source_email"))}
+                                        if self.config.get("notification_source_email")
+                                        else {}
+                                    ),
+                                }
+                            },
                         )
                     ]
                 ),
@@ -199,11 +210,8 @@ class SecurityStack(Stack):
 
     def _create_step_functions_execution_role(self) -> iam.Role:
         """Create Step Functions execution role."""
-        validation_fn_name = f"{self.env_name}-customer-data-validation"
-        quality_fn_name = f"{self.env_name}-customer-data-quality-check"
-        schema_check_fn_name = f"{self.env_name}-customer-data-schema-check"
         preflight_fn_name = f"{self.env_name}-customer-data-preflight"
-        build_dates_fn_name = f"{self.env_name}-build-dates"
+        schema_decider_fn_name = f"{self.env_name}-schema-change-decider"
         glue_job_arn = f"arn:aws:glue:{self.region}:{self.account}:job/{self.env_name}-customer-data-etl"
         crawler_arn = f"arn:aws:glue:{self.region}:{self.account}:crawler/{self.env_name}-curated-data-crawler"
 
@@ -219,11 +227,8 @@ class SecurityStack(Stack):
                             effect=iam.Effect.ALLOW,
                             actions=["lambda:InvokeFunction"],
                             resources=[
-                                f"arn:aws:lambda:{self.region}:{self.account}:function/{validation_fn_name}",
-                                f"arn:aws:lambda:{self.region}:{self.account}:function/{quality_fn_name}",
-                                f"arn:aws:lambda:{self.region}:{self.account}:function/{schema_check_fn_name}",
                                 f"arn:aws:lambda:{self.region}:{self.account}:function/{preflight_fn_name}",
-                                f"arn:aws:lambda:{self.region}:{self.account}:function/{build_dates_fn_name}",
+                                f"arn:aws:lambda:{self.region}:{self.account}:function/{schema_decider_fn_name}",
                             ],
                         ),
                     ]

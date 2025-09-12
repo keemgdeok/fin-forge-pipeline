@@ -74,12 +74,12 @@ class CustomerDataProcessingStack(Stack):
         glue_exec_role_ref = iam.Role.from_role_arn(self, "GlueExecRoleRefForScript", self.glue_execution_role_arn)
         glue_script_asset.grant_read(glue_exec_role_ref)
 
-        # Provide shared Python package ("shared" module) to Glue via --extra-py-files
-        # Important: point at the "shared" package root so it is top-level in the zip
+        # Provide shared Python packages ("shared" module) to Glue via --extra-py-files
+        # Point at the Layer's python root so the zip includes `shared/` at top-level
         shared_py_asset = s3_assets.Asset(
             self,
             "SharedPythonPackageAsset",
-            path="src/lambda/layers/common/python/shared",
+            path="src/lambda/layers/common/python",
         )
         shared_py_asset.grant_read(glue_exec_role_ref)
 
