@@ -323,6 +323,7 @@ class SecurityStack(Stack):
                     "token.actions.githubusercontent.com:sub": [
                         f"repo:{repo_owner}/{repo_name}:ref:refs/heads/main",
                         f"repo:{repo_owner}/{repo_name}:ref:refs/heads/develop",
+                        f"repo:{repo_owner}/{repo_name}:environment:staging",
                         f"repo:{repo_owner}/{repo_name}:environment:prod",
                         f"repo:{repo_owner}/{repo_name}:environment:dev",
                     ]

@@ -173,11 +173,14 @@ class CustomerDataProcessingStack(Stack):
         # Catch Glue task failures (includes DQ failures) and route to normalized fail chain
         etl_task.add_catch(handler=fail_chain, result_path="$.error")
 
+        # Create schema-change decider Lambda once and reuse across branches
+        decider_fn = self._create_schema_change_decider_function()
+
         # Decide whether to run crawler based on policy + schema change
         decide_crawler_task = tasks.LambdaInvoke(
             self,
             "DecideCrawler",
-            lambda_function=self._create_schema_change_decider_function(),
+            lambda_function=decider_fn,
             payload=sfn.TaskInput.from_json_path_at("$"),
             output_path="$.Payload",
         )
@@ -252,7 +255,7 @@ class CustomerDataProcessingStack(Stack):
                     tasks.LambdaInvoke(
                         self,
                         "BackfillDecideCrawler",
-                        lambda_function=self._create_schema_change_decider_function(),
+                        lambda_function=decider_fn,
                         payload=sfn.TaskInput.from_json_path_at("$"),
                         output_path="$.Payload",
                     ).add_catch(handler=backfill_fail_chain, result_path="$.error")
@@ -271,11 +274,14 @@ class CustomerDataProcessingStack(Stack):
                                 f"arn:aws:glue:{Stack.of(self).region}:{Stack.of(self).account}:crawler/{crawler_name}"
                             ],
                             result_path=sfn.JsonPath.DISCARD,
-                        ).add_catch(handler=backfill_fail_chain, result_path="$.error"),
+                        )
+                        .add_catch(handler=backfill_fail_chain, result_path="$.error")
+                        .next(
+                            sfn.Succeed(self, "BackfillSuccess", comment="Backfill processing completed successfully")
+                        ),
                     )
-                    .otherwise(sfn.Pass(self, "BackfillSkipCrawler"))
-                )
-                .next(sfn.Succeed(self, "BackfillSuccess", comment="Backfill processing completed successfully")),
+                    .otherwise(sfn.Succeed(self, "BackfillSkipCrawler", comment="Crawler skipped for backfill"))
+                ),
             )
             .otherwise(
                 sfn.Choice(self, "BackfillPreflightSkipOrError")

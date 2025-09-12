@@ -31,7 +31,7 @@ staging_config = {
     "worker_memory": 512,
     "enable_gzip": True,
     "max_retries": 5,
-    "enable_processing_orchestration": False,
+    "enable_processing_orchestration": True,
     # Catalog update policy for crawler: on_schema_change|never|force
     "catalog_update": "on_schema_change",
     "processing_triggers": [
