@@ -3,18 +3,14 @@
 # Run on all files once: pre-commit run --all-files
 
 repos:
-  - repo: https://github.com/psf/black
-    rev: 25.1.0
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.6.9
     hooks:
-      - id: black
+      - id: ruff-format
+        name: ruff-format
         # 설정은 pyproject.toml에서 읽습니다.
-
-  - repo: https://github.com/pycqa/flake8
-    rev: 7.3.0
-    hooks:
-      - id: flake8
-        language_version: python3.12
-        args: ["--max-line-length=120", "--extend-ignore=E203,W503"]
+      - id: ruff
+        args: ["--fix", "--exit-non-zero-on-fix"]
         # 설정은 pyproject.toml에서 읽습니다.
 
   - repo: https://github.com/pre-commit/mirrors-mypy

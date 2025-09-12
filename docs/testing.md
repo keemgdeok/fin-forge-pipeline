@@ -7,7 +7,7 @@
   - `pre-commit run --all-files` (처음 1회 `pre-commit install` 필요)
   - 인프라 변경 시: `npx cdk synth --context environment=dev`로 합성 확인
   - 테스트가 있다면: `pytest -q`
-- 커밋 후: 일반 커밋은 훅이 자동 실행됩니다. Black이 파일을 수정하면 재-`git add` 후 커밋하세요.
+- 커밋 후: 일반 커밋은 훅이 자동 실행됩니다. Ruff Formatter 또는 Ruff가 파일을 수정하면 재-`git add` 후 커밋하세요.
 
 ## CI 규칙(자동 검사)
 - 워크플로: `.github/workflows/pr-check.yml`
@@ -18,7 +18,7 @@
 변경 유형별 동작
 - Python 파일 변경 시
   - 설치: `pip install -r requirements.txt`
-  - 포맷/린트: `black --line-length 120 --check`, `flake8 --max-line-length 120 --extend-ignore E203,W503`
+  - 포맷/린트: `ruff format --check`, `ruff check`
   - 타입체크: `mypy --ignore-missing-imports`
   - 테스트: `tests/` 존재할 때 `pytest` 빠른 실행
 - 인프라(`infrastructure/`) 변경 시
@@ -35,8 +35,8 @@
   - `python -m venv .venv && source .venv/bin/activate`
   - `pip install -r requirements.txt`
 - 품질 점검(체크 전용)
-  - `black --line-length 120 --check --diff .`
-  - `flake8 --max-line-length 120 --extend-ignore E203,W503 .`
+  - `ruff format --check .`
+  - `ruff check .`
   - `mypy --ignore-missing-imports .`
   - `pre-commit run --all-files`
 - 인프라 합성
@@ -47,8 +47,8 @@
 ## pre-commit 훅(권장)
 - 설정 파일: `.pre-commit-config.yaml`
 - 포함 훅
-  - Black: `--line-length 120` (자동 포맷)
-  - Flake8: `--max-line-length 120 --extend-ignore E203,W503`
+  - Ruff Formatter: 자동 포맷(`ruff format`)
+  - Ruff: 린트/자동수정(`ruff check --fix`)
   - mypy: `--ignore-missing-imports`
 - 사용법
   - 설치: `pip install pre-commit`
@@ -57,14 +57,14 @@
   - 커밋 시 자동 실행: `git commit` 시 변경 파일만 검사/포맷
 
 ## 실패 대응 팁
-- Black가 파일을 수정해 실패할 때: 수정된 파일을 `git add` 후 다시 실행/커밋
-- Flake8 E501(라인 길이) 관련: 기준 120자, 필요한 경우 줄바꿈 또는 문자열 분리
+- 포맷 실패: Ruff Formatter가 파일을 수정하면 `git add` 후 다시 실행/커밋
+- Ruff E501(라인 길이) 관련: 기준 120자, 필요한 경우 줄바꿈 또는 문자열 분리
 - mypy 오류: 함수 시그니처 타입힌트 보완, `Optional` 널 가드, `from_role_arn` 등 명시 타입 사용
 - CDK synth 실패: Node 20 사용, CDK CLI 최신, `definition_body` API 사용, 컨텍스트/환경 변수 확인
 
 ## 기타 규칙
-- 라인 길이: 120자(Black/Flake8 공통)
-- 무시 규칙: E203, W503 (Black과 호환)
+- 라인 길이: 120자(Ruff 공통)
+- 무시 규칙: E203 (Black과 호환). Ruff는 W503 규칙을 사용하지 않습니다.
 - .gitignore 권장: `cdk.out/`, `node_modules/`는 커밋 금지, `package-lock.json`은 커밋 유지
 
 문의/개선 제안은 PR 또는 이슈로 남겨주세요.✨

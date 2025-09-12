@@ -7,10 +7,8 @@ aws-cdk.aws-lambda-python-alpha>=2.100.0a0
 pytest>=7.0.0
 pytest-cov>=4.0.0
 pytest-timeout>=2.1.0
-black>=23.0.0
-flake8>=6.0.0
-flake8-pyproject>=1.2.0  # Enable flake8 to read pyproject.toml
 mypy>=1.0.0
+ruff>=0.6.9
 boto3>=1.26.0
 moto>=4.2.0
 pre-commit

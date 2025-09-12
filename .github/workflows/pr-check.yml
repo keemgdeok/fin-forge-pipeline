@@ -66,12 +66,15 @@ jobs:
         if: steps.changed-files.outputs.any_changed == 'true' && contains(steps.changed-files.outputs.all_changed_files, 'infrastructure/') && hashFiles('**/package-lock.json') == ''
         run: npm install -g aws-cdk@latest
       
-      - name: Lint Python (py changed)
+      - name: Lint/Format Python (py changed)
         if: steps.changed-files.outputs.any_changed == 'true' && contains(steps.changed-files.outputs.all_changed_files, '.py')
         run: |
-          echo "🐍 Linting changed Python files..."
-          echo "${{ steps.changed-files.outputs.all_changed_files }}" | tr ' ' '\n' | grep -E "\.py$" | xargs -r black --check --diff --line-length 120
-          echo "${{ steps.changed-files.outputs.all_changed_files }}" | tr ' ' '\n' | grep -E "\.py$" | xargs -r flake8 --max-line-length=120 --extend-ignore=E203,W503
+          echo "🐍 Linting/formatting changed Python files..."
+          CHANGED=$(echo "${{ steps.changed-files.outputs.all_changed_files }}" | tr ' ' '\n' | grep -E "\.py$" || true)
+          if [ -n "$CHANGED" ]; then
+            echo "$CHANGED" | xargs -r ruff format --check --force-exclude
+            echo "$CHANGED" | xargs -r ruff check --force-exclude --output-format=github
+          fi
 
       - name: Type check (mypy, py changed)
         if: steps.changed-files.outputs.any_changed == 'true' && contains(steps.changed-files.outputs.all_changed_files, '.py')

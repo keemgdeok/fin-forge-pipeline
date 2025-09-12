@@ -74,7 +74,7 @@ class NotificationManager:
             "STARTED": "🟡",
         }.get(status, "❓")
 
-        subject = f"{status_emoji} Pipeline {status} - " f"{domain}/{table_name} ({environment})"
+        subject = f"{status_emoji} Pipeline {status} - {domain}/{table_name} ({environment})"
         return {"message": formatted_message, "subject": subject}
 
     def publish_sns_notification(

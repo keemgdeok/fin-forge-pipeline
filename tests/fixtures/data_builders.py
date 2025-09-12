@@ -1,10 +1,10 @@
-from __future__ import annotations
-
 """Reusable, typed builders for test data.
 
 Keep builders small and explicit. Prefer simple dicts with clear defaults
 so that tests remain readable and intention-revealing.
 """
+
+from __future__ import annotations
 
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional

@@ -67,7 +67,9 @@ logs/
 htmlcov/
 .pytest_cache/
 
+# Ruff cache
+.ruff_cache/
+
 #coding
 CLAUDE.md
 AGENTS.md
-

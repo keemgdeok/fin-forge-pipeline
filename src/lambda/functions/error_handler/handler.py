@@ -173,7 +173,7 @@ def main(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
 
         # Put severity-specific metric
         error_processor.put_custom_metric(
-            f'{error_details["severity"]}Count',
+            f"{error_details['severity']}Count",
             1.0,
             "Count",
             "DataPipeline/Errors",

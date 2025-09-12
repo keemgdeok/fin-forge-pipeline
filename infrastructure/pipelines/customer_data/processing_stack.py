@@ -110,7 +110,7 @@ class CustomerDataProcessingStack(Stack):
                 "--enable-s3-parquet-optimized-committer": "1",
                 "--codec": "zstd",
                 "--target_file_mb": "256",
-                "--TempDir": (f"s3://{self.shared_storage.artifacts_bucket.bucket_name}" "/temp/"),
+                "--TempDir": (f"s3://{self.shared_storage.artifacts_bucket.bucket_name}/temp/"),
                 # Make the shared Python package available at runtime (provides shared.dq.engine)
                 "--extra-py-files": shared_py_asset.s3_object_url,
                 "--raw_bucket": self.shared_storage.raw_bucket.bucket_name,

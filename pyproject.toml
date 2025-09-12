@@ -2,21 +2,29 @@
 requires = ["setuptools>=61"]
 build-backend = "setuptools.build_meta"
 
-[tool.black]
-line-length = 120
-target-version = ["py312"]
-# Lambda Layer vendored site-packages 제외(불필요한 포매팅 방지)
-extend-exclude = "(^src/lambda/layers/[^/]+/python/.*$)"
+## Black removed in favor of Ruff Formatter
 
-[tool.flake8]
-max-line-length = 120
-extend-ignore = ["E203", "W503"]
-# glob 패턴 기반 exclude
+[tool.ruff]
+line-length = 120
+target-version = "py312"
+src = ["src"]
 exclude = [
-  "src/lambda/layers/*/python/*",
   "cdk.out",
   "node_modules",
+  "src/lambda/layers/*/python/*",
 ]
+
+[tool.ruff.lint]
+# Start with Flake8 parity: pycodestyle/pyflakes only
+select = ["E", "F"]
+# Note: Ruff doesn't implement W503; remove it from ignores.
+ignore = ["E203"]
+fixable = ["ALL"]
+
+# isort-style settings reserved for later enabling of import sorting
+[tool.ruff.lint.isort]
+combine-as-imports = true
+force-sort-within-sections = true
 
 [tool.mypy]
 python_version = "3.12"
