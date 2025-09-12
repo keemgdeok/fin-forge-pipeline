@@ -11,7 +11,7 @@ on:
       environment:
         description: 'Environment to deploy to'
         type: choice
-        options: [dev, prod]
+        options: [dev, staging, prod]
         default: dev
 
 permissions:
@@ -19,19 +19,19 @@ permissions:
   id-token: write
 
 concurrency:
-  group: deploy-${{ github.workflow }}-${{ github.event.inputs.environment || (github.ref == 'refs/heads/main' && 'prod' || 'dev') }}
+  group: deploy-${{ github.workflow }}-${{ github.event.inputs.environment || (github.ref == 'refs/heads/main' && 'prod' || (github.ref == 'refs/heads/develop' && 'staging' || 'dev')) }}
   cancel-in-progress: true
 
 env:
   PYTHON_VERSION: '3.12'
   NODE_VERSION: '20'
-  AWS_REGION: us-east-1
+  AWS_REGION: ap-northeast-2
 
 jobs:
   deploy:
     runs-on: ubuntu-latest
     timeout-minutes: 15
-    environment: ${{ github.event.inputs.environment || (github.ref == 'refs/heads/main' && 'prod' || 'dev') }}
+    environment: ${{ github.event.inputs.environment || (github.ref == 'refs/heads/main' && 'prod' || (github.ref == 'refs/heads/develop' && 'staging' || 'dev')) }}
     
     steps:
       - name: Checkout code
@@ -78,7 +78,7 @@ jobs:
       
       - name: Full validation
         env:
-          TARGET_ENV: ${{ github.event.inputs.environment || (github.ref == 'refs/heads/main' && 'prod' || 'dev') }}
+          TARGET_ENV: ${{ github.event.inputs.environment || (github.ref == 'refs/heads/main' && 'prod' || (github.ref == 'refs/heads/develop' && 'staging' || 'dev')) }}
         run: |
           echo "🔍 Running full validation for $TARGET_ENV..."
           
@@ -111,7 +111,7 @@ jobs:
       
       - name: Deploy infrastructure
         env:
-          TARGET_ENV: ${{ github.event.inputs.environment || (github.ref == 'refs/heads/main' && 'prod' || 'dev') }}
+          TARGET_ENV: ${{ github.event.inputs.environment || (github.ref == 'refs/heads/main' && 'prod' || (github.ref == 'refs/heads/develop' && 'staging' || 'dev')) }}
         run: |
           echo "🚀 Deploying to $TARGET_ENV environment..."
           
