@@ -6,7 +6,7 @@ Transform 도메인 통합 테스트를 위한 공통 fixtures와 설정을 제�
 
 import pytest
 import os
-from typing import Dict
+from typing import Dict, Any
 from moto import mock_aws
 
 
@@ -42,7 +42,7 @@ def integration_test_buckets() -> Dict[str, str]:
 
 
 @pytest.fixture
-def sample_transform_config() -> Dict[str, any]:
+def sample_transform_config() -> Dict[str, Any]:
     """Sample transform configuration for testing"""
     return {
         "domain": "market",
