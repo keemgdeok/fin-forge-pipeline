@@ -16,7 +16,10 @@ import pytest
 import boto3
 import json
 import time
-from moto import mock_glue, mock_s3, mock_iam
+from moto import mock_aws
+
+# Glue backend in moto requires pyparsing; skip if unavailable
+pytest.importorskip("pyparsing")
 
 
 @pytest.fixture
@@ -53,9 +56,7 @@ def test_buckets():
 class TestGlueCrawlerIntegration:
     """Glue Crawler 통합 테스트 클래스"""
 
-    @mock_glue
-    @mock_s3
-    @mock_iam
+    @mock_aws
     def test_crawler_creates_table_for_new_data(self, aws_credentials, crawler_test_config, test_buckets):
         """
         Given: Curated S3에 새로운 Parquet 데이터가 있고 테이블이 존재하지 않으면
@@ -177,8 +178,7 @@ class TestGlueCrawlerIntegration:
         assert crawler["RecrawlPolicy"]["RecrawlBehavior"] == "CRAWL_NEW_FOLDERS_ONLY"
         assert "**/quarantine/**" in crawler["Targets"]["S3Targets"][0]["Exclusions"]
 
-    @mock_glue
-    @mock_s3
+    @mock_aws
     def test_crawler_detects_schema_changes(self, aws_credentials, crawler_test_config, test_buckets):
         """
         Given: 기존 테이블이 있고 새로운 컬럼이 추가된 데이터가 있으면
@@ -296,8 +296,7 @@ class TestGlueCrawlerIntegration:
         assert "exchange" in column_names, "Should include new 'exchange' column"
         assert "currency" in column_names, "Should include new 'currency' column"
 
-    @mock_glue
-    @mock_s3
+    @mock_aws
     def test_crawler_partition_discovery(self, aws_credentials, crawler_test_config, test_buckets):
         """
         Given: 여러 파티션의 데이터가 S3에 있으면
@@ -406,7 +405,7 @@ class TestGlueCrawlerIntegration:
         for expected_date in partitions:
             assert expected_date in discovered_dates, f"Should discover partition {expected_date}"
 
-    @mock_glue
+    @mock_aws
     def test_crawler_should_not_run_without_schema_change(self, aws_credentials, crawler_test_config, test_buckets):
         """
         Given: 스키마가 변경되지 않은 상태에서
@@ -440,8 +439,7 @@ class TestGlueCrawlerIntegration:
 
         assert crawler_should_run, "Crawler should run when schema has changed"
 
-    @mock_glue
-    @mock_s3
+    @mock_aws
     def test_crawler_excludes_quarantine_data(self, aws_credentials, crawler_test_config, test_buckets):
         """
         Given: Curated 버킷에 정상 데이터와 quarantine 데이터가 모두 있으면
@@ -514,7 +512,7 @@ class TestGlueCrawlerIntegration:
         # In a real scenario, only normal data would be cataloged
         # (This is enforced by the exclusion patterns)
 
-    @mock_glue
+    @mock_aws
     def test_crawler_error_handling(self, aws_credentials, crawler_test_config):
         """
         Given: 크롤러 실행 중 오류가 발생하면
@@ -558,8 +556,7 @@ class TestGlueCrawlerIntegration:
         # In real implementation, this would send SNS notifications
         assert error_handled is True, "Error handling should be implemented for crawler failures"
 
-    @mock_glue
-    @mock_s3
+    @mock_aws
     def test_crawler_performance_optimization(self, aws_credentials, crawler_test_config, test_buckets):
         """
         Given: 대량의 파티션과 파일이 있는 상황에서

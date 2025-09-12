@@ -10,7 +10,7 @@ from importlib import import_module
 
 import boto3
 import pytest
-from moto import mock_s3
+from moto import mock_aws
 
 
 @pytest.fixture(autouse=True)
@@ -28,7 +28,7 @@ def _event(bucket: str, key: str, policy: str | None = None) -> Dict:
     return e
 
 
-@mock_s3
+@mock_aws
 def test_policy_never_returns_false(monkeypatch: pytest.MonkeyPatch) -> None:
     lambda_handler = import_module("src.lambda.functions.schema_change_decider.handler").lambda_handler
 
@@ -42,7 +42,7 @@ def test_policy_never_returns_false(monkeypatch: pytest.MonkeyPatch) -> None:
     assert out == {"shouldRunCrawler": False}
 
 
-@mock_s3
+@mock_aws
 def test_policy_force_returns_true(monkeypatch: pytest.MonkeyPatch) -> None:
     lambda_handler = import_module("src.lambda.functions.schema_change_decider.handler").lambda_handler
 
@@ -56,7 +56,7 @@ def test_policy_force_returns_true(monkeypatch: pytest.MonkeyPatch) -> None:
     assert out == {"shouldRunCrawler": True}
 
 
-@mock_s3
+@mock_aws
 def test_on_schema_change_no_latest_returns_true(monkeypatch: pytest.MonkeyPatch) -> None:
     lambda_handler = import_module("src.lambda.functions.schema_change_decider.handler").lambda_handler
 
@@ -70,7 +70,7 @@ def test_on_schema_change_no_latest_returns_true(monkeypatch: pytest.MonkeyPatch
     assert out == {"shouldRunCrawler": True}
 
 
-@mock_s3
+@mock_aws
 def test_on_schema_change_equal_hash_returns_false(monkeypatch: pytest.MonkeyPatch) -> None:
     lambda_handler = import_module("src.lambda.functions.schema_change_decider.handler").lambda_handler
 
@@ -91,7 +91,7 @@ def test_on_schema_change_equal_hash_returns_false(monkeypatch: pytest.MonkeyPat
     assert out == {"shouldRunCrawler": False}
 
 
-@mock_s3
+@mock_aws
 def test_on_schema_change_diff_hash_returns_true(monkeypatch: pytest.MonkeyPatch) -> None:
     lambda_handler = import_module("src.lambda.functions.schema_change_decider.handler").lambda_handler
 

@@ -19,9 +19,16 @@ import boto3
 import json
 import hashlib
 from unittest.mock import patch
-from moto import mock_s3, mock_glue
-import pandas as pd
+from moto import mock_aws
 from io import BytesIO
+
+try:
+    import pandas as pd
+    import pyarrow as _pyarrow  # noqa: F401
+except Exception:  # pragma: no cover - optional test deps
+    pd = None  # type: ignore
+
+pytestmark = pytest.mark.skipif(pd is None, reason="pandas/pyarrow not available")
 
 
 @pytest.fixture
@@ -112,8 +119,7 @@ def _stable_hash(obj: dict) -> str:
 class TestEndToEndPipeline:
     """End-to-End 파이프라인 검증 테스트 클래스"""
 
-    @mock_s3
-    @mock_glue
+    @mock_aws
     def test_json_to_parquet_transformation_pipeline(self, aws_credentials, pipeline_buckets, sample_market_data):
         """
         Given: Raw S3에 JSON 형태의 마켓 데이터가 있으면
@@ -225,7 +231,7 @@ class TestEndToEndPipeline:
         assert "hash" in stored_fingerprint, "Fingerprint should contain hash"
         assert len(stored_fingerprint["columns"]) == 7, "Should have 7 columns including ds"
 
-    @mock_s3
+    @mock_aws
     def test_csv_to_parquet_transformation_pipeline(self, aws_credentials, pipeline_buckets, sample_customer_data):
         """
         Given: Raw S3에 CSV 형태의 고객 데이터가 있으면
@@ -300,7 +306,7 @@ class TestEndToEndPipeline:
         expected_quantity = sum(item["quantity"] for item in sample_customer_data)
         assert total_quantity == expected_quantity, "Total quantity should be preserved"
 
-    @mock_s3
+    @mock_aws
     def test_multi_partition_processing_pipeline(self, aws_credentials, pipeline_buckets, sample_market_data):
         """
         Given: 여러 파티션(날짜)의 데이터가 Raw에 있으면
@@ -377,7 +383,7 @@ class TestEndToEndPipeline:
         for i in range(1, len(prices)):
             assert prices[i] > prices[i - 1], f"Prices should increase each day: day {i}"
 
-    @mock_s3
+    @mock_aws
     def test_data_quality_enforcement_in_pipeline(self, aws_credentials, pipeline_buckets):
         """
         Given: 데이터 품질 규칙을 위반하는 데이터가 있으면
@@ -486,7 +492,7 @@ class TestEndToEndPipeline:
             assert all(clean_df["symbol"].notna()), "All symbols should be non-null"
             assert all(clean_df["price"] >= 0), "All prices should be non-negative"
 
-    @mock_s3
+    @mock_aws
     def test_schema_evolution_pipeline(self, aws_credentials, pipeline_buckets, sample_market_data):
         """
         Given: 스키마가 변경된 새로운 데이터가 들어오면

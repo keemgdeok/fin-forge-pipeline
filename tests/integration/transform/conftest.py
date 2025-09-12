@@ -7,7 +7,7 @@ Transform 도메인 통합 테스트를 위한 공통 fixtures와 설정을 제�
 import pytest
 import os
 from typing import Dict
-from moto import mock_s3, mock_stepfunctions, mock_lambda, mock_glue, mock_iam, mock_events, mock_logs
+from moto import mock_aws
 
 
 @pytest.fixture(scope="session")
@@ -56,8 +56,8 @@ def sample_transform_config() -> Dict[str, any]:
 
 @pytest.fixture(scope="function")
 def mock_aws_services():
-    """Mock all AWS services used in transform tests"""
-    with mock_s3(), mock_stepfunctions(), mock_lambda(), mock_glue(), mock_iam(), mock_events(), mock_logs():
+    """Mock all AWS services used in transform tests (moto >= 5)."""
+    with mock_aws():
         yield
 
 

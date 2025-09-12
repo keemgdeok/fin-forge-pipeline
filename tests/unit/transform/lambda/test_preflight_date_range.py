@@ -9,7 +9,7 @@ from importlib import import_module
 
 import boto3
 import pytest
-from moto import mock_s3
+from moto import mock_aws
 
 
 @pytest.fixture(autouse=True)
@@ -29,7 +29,7 @@ def _set_pipeline_env(monkeypatch: pytest.MonkeyPatch, *, raw: str, curated: str
     monkeypatch.setenv("MAX_CRITICAL_ERROR_RATE", "5.0")
 
 
-@mock_s3
+@mock_aws
 def test_date_range_expands_items_with_idempotency_and_glue_args(monkeypatch: pytest.MonkeyPatch) -> None:
     lambda_handler = import_module("src.lambda.functions.preflight.handler").lambda_handler
 
@@ -84,7 +84,7 @@ def test_date_range_expands_items_with_idempotency_and_glue_args(monkeypatch: py
     assert d2["catalog_update"] == "on_schema_change"
 
 
-@mock_s3
+@mock_aws
 def test_date_range_respects_max_backfill_days(monkeypatch: pytest.MonkeyPatch) -> None:
     lambda_handler = import_module("src.lambda.functions.preflight.handler").lambda_handler
 
