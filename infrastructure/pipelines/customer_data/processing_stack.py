@@ -74,6 +74,15 @@ class CustomerDataProcessingStack(Stack):
         glue_exec_role_ref = iam.Role.from_role_arn(self, "GlueExecRoleRefForScript", self.glue_execution_role_arn)
         glue_script_asset.grant_read(glue_exec_role_ref)
 
+        # Provide shared Python package ("shared" module) to Glue via --extra-py-files
+        # Important: point at the "shared" package root so it is top-level in the zip
+        shared_py_asset = s3_assets.Asset(
+            self,
+            "SharedPythonPackageAsset",
+            path="src/lambda/layers/common/python/shared",
+        )
+        shared_py_asset.grant_read(glue_exec_role_ref)
+
         domain: str = str(self.config.get("ingestion_domain", "market"))
         table_name: str = str(self.config.get("ingestion_table_name", "prices"))
 
@@ -102,6 +111,8 @@ class CustomerDataProcessingStack(Stack):
                 "--codec": "zstd",
                 "--target_file_mb": "256",
                 "--TempDir": (f"s3://{self.shared_storage.artifacts_bucket.bucket_name}" "/temp/"),
+                # Make the shared Python package available at runtime (provides shared.dq.engine)
+                "--extra-py-files": shared_py_asset.s3_object_url,
                 "--raw_bucket": self.shared_storage.raw_bucket.bucket_name,
                 "--raw_prefix": raw_prefix,
                 "--curated_bucket": self.shared_storage.curated_bucket.bucket_name,

@@ -32,6 +32,8 @@ branch = true
 omit = [
   # Optional external provider client; behavior validated via higher-level tests
   "src/lambda/layers/common/python/shared/clients/market_data.py",
+  # Glue ETL jobs run in AWS Glue runtime; exclude from local coverage
+  "src/glue/jobs/*",
 ]
 
 [tool.coverage.report]

@@ -22,6 +22,15 @@ try:  # pragma: no cover - optional path
 except Exception:  # pragma: no cover - test environments without layer
     _HAVE_SHARED_FP = False
 
+# Optional import of shared DQ engine (runtime-agnostic). The Glue job will
+# prefer using the engine when available; otherwise it falls back to inline DQ.
+try:  # pragma: no cover - optional path
+    from shared.dq.engine import DQMetrics, DQConfig, evaluate as dq_evaluate
+
+    _HAVE_DQ_ENGINE = True
+except Exception:  # pragma: no cover - test environments without layer
+    _HAVE_DQ_ENGINE = False
+
 
 def _stable_hash(obj: dict) -> str:
     s = json.dumps(obj, sort_keys=True, separators=(",", ":"))
@@ -54,6 +63,12 @@ spark = glue_context.spark_session
 job = Job(glue_context)
 job.init(args["JOB_NAME"], args)
 
+"""Glue Job: Customer Data ETL with Data Quality validation.
+
+Reads raw partition for ds, validates via shared DQ engine when present, then
+persists curated data and schema fingerprint artifacts.
+"""
+
 # Read raw partition for ds
 raw_path = f"s3://{args['raw_bucket']}/{args['raw_prefix']}ingestion_date={args['ds']}/"
 ft = args["file_type"].lower()
@@ -75,77 +90,119 @@ def _write_quarantine_and_fail(df_in: DataFrame, reason: str) -> None:
     raise RuntimeError(f"DQ_FAILED: {reason}")
 
 
-# ==== COMPREHENSIVE DATA QUALITY VALIDATION ====
-# Now includes ALL DQ logic previously handled by separate Lambda functions
-# Optimized for 1GB daily batch processing
-
-print(f"Starting DQ validation for {args['ds']} - total records to validate: {df.count()}")
+"""==== COMPREHENSIVE DATA QUALITY VALIDATION ===="""
+df = df.cache()
 
 # Critical DQ Rule 1: Non-empty dataset
 record_count = df.count()
 if record_count == 0:
     raise RuntimeError("NO_RAW_DATA: No records found for ds")
+print(f"Starting DQ validation for {args['ds']} - total records: {record_count}")
 
-print(f"✓ Dataset non-empty: {record_count} records")
+# Collect metrics (single-pass style where possible)
+null_symbol_count = 0
+negative_price_count = 0
+duplicate_groups = 0
+invalid_numeric_type_issues = 0
 
-# Critical DQ Rule 2: Domain-specific field validation
-violations: list[str] = []
-critical_violations = 0
-warning_violations = 0
-
-# Generic business rules (adapt based on your domain)
+# Compute multiple counts in a single aggregation action where possible
+agg_exprs = []
 if "symbol" in df.columns:
-    null_symbol_count = df.filter(F.col("symbol").isNull()).count()
+    agg_exprs.append(F.sum(F.when(F.col("symbol").isNull(), F.lit(1)).otherwise(F.lit(0))).alias("__null_symbol_count"))
+if "price" in df.columns:
+    agg_exprs.append(
+        F.sum(F.when(F.col("price") < F.lit(0), F.lit(1)).otherwise(F.lit(0))).alias("__negative_price_count")
+    )
+if agg_exprs:
+    agg_row = df.agg(*agg_exprs).collect()[0]
+    if "__null_symbol_count" in agg_row.asDict():
+        null_symbol_count = int(agg_row["__null_symbol_count"])  # type: ignore[index]
+    if "__negative_price_count" in agg_row.asDict():
+        negative_price_count = int(agg_row["__negative_price_count"])  # type: ignore[index]
+
+key_col = None
+if "id" in df.columns:
+    key_col = "id"
+elif "symbol" in df.columns:
+    key_col = "symbol"
+
+if key_col:
+    duplicate_groups = df.groupBy(key_col).count().filter(F.col("count") > 1).count()
+
+for field in df.schema.fields:
+    if field.name in ["price", "amount", "value"] and "decimal" not in field.dataType.simpleString().lower():
+        invalid_numeric_type_issues += 1
+
+expected_min_records = int(args.get("expected_min_records", "100"))
+max_critical_error_rate = float(args.get("max_critical_error_rate", "5.0"))
+
+if _HAVE_DQ_ENGINE:
+    cfg = DQConfig(
+        expected_min_records=expected_min_records,
+        max_critical_error_rate=max_critical_error_rate,
+    )
+    metrics = DQMetrics(
+        record_count=record_count,
+        null_symbol_count=null_symbol_count,
+        negative_price_count=negative_price_count,
+        duplicate_key_groups=duplicate_groups,
+        invalid_numeric_type_issues=invalid_numeric_type_issues,
+    )
+    result = dq_evaluate(metrics, cfg)
+    print(
+        "DQ Summary: "
+        f"Critical={result.critical_violations}, "
+        f"Warnings={result.warning_violations}, "
+        f"CER={result.critical_error_rate:.2f}%"
+    )
+    if result.action == "quarantine":
+        _write_quarantine_and_fail(df, "; ".join(result.messages))
+    else:
+        if result.messages:
+            print("; ".join(result.messages))
+        print("Proceeding with curated write")
+else:
+    # Inline fallback if engine layer is not available
+    violations: list[str] = []
+    critical_violations = 0
+    warning_violations = 0
+
     if null_symbol_count > 0:
         critical_violations += null_symbol_count
         violations.append(f"null symbol present ({null_symbol_count} records)")
 
-if "price" in df.columns:
-    negative_price_count = df.filter(F.col("price") < F.lit(0)).count()
     if negative_price_count > 0:
         critical_violations += negative_price_count
         violations.append(f"negative price present ({negative_price_count} records)")
 
-# Critical DQ Rule 3: Duplicate detection (for 1GB data, full scan is acceptable)
-if "id" in df.columns or "symbol" in df.columns:
-    key_col = "id" if "id" in df.columns else "symbol"
-    duplicate_count = df.groupBy(key_col).count().filter(F.col("count") > 1).count()
-    if duplicate_count > 0:
-        warning_violations += duplicate_count
-        violations.append(f"duplicate {key_col} detected ({duplicate_count} groups)")
+    if duplicate_groups > 0:
+        warning_violations += duplicate_groups
+        col_name = key_col or "key"
+        violations.append(f"duplicate {col_name} detected ({duplicate_groups} groups)")
 
-# Critical DQ Rule 4: Data completeness check (for 1GB batch)
-expected_min_records = int(args.get("expected_min_records", "100"))  # Configurable
-if record_count < expected_min_records:
-    violations.append(f"low record count: {record_count} < {expected_min_records}")
-    warning_violations += 1
-
-# Critical DQ Rule 5: Schema consistency (basic type validation)
-for field in df.schema.fields:
-    if field.name in ["price", "amount", "value"] and "decimal" not in field.dataType.simpleString().lower():
-        violations.append(f"invalid numeric type for {field.name}: {field.dataType.simpleString()}")
+    if record_count < expected_min_records:
+        violations.append(f"low record count: {record_count} < {expected_min_records}")
         warning_violations += 1
 
-print(f"DQ Summary: Critical={critical_violations}, Warnings={warning_violations}, Total Records={record_count}")
+    if invalid_numeric_type_issues > 0:
+        violations.append(f"invalid numeric type issues: {invalid_numeric_type_issues}")
+        warning_violations += invalid_numeric_type_issues
 
-# DQ Decision Logic (1GB batch optimized thresholds)
-critical_error_rate = (critical_violations / record_count) * 100 if record_count > 0 else 0
-max_critical_error_rate = float(args.get("max_critical_error_rate", "5.0"))  # 5% threshold
-
-if violations:
-    violation_summary = "; ".join(violations)
-    print(f"DQ Issues Found: {violation_summary}")
-    print(f"Critical Error Rate: {critical_error_rate:.2f}% (threshold: {max_critical_error_rate}%)")
-
-    # For 1GB daily batch: fail only if critical error rate exceeds threshold
-    if critical_error_rate > max_critical_error_rate:
-        _write_quarantine_and_fail(
-            df, f"Critical error rate {critical_error_rate:.2f}% > {max_critical_error_rate}%: {violation_summary}"
-        )
+    print(f"DQ Summary: Critical={critical_violations}, Warnings={warning_violations}, Total Records={record_count}")
+    critical_error_rate = (critical_violations / record_count) * 100 if record_count > 0 else 0
+    if violations:
+        violation_summary = "; ".join(violations)
+        print(f"DQ Issues Found: {violation_summary}")
+        print(f"Critical Error Rate: {critical_error_rate:.2f}% (threshold: {max_critical_error_rate}%)")
+        if critical_error_rate > max_critical_error_rate:
+            _write_quarantine_and_fail(
+                df,
+                f"Critical error rate {critical_error_rate:.2f}% > {max_critical_error_rate}%: {violation_summary}",
+            )
+        else:
+            print("⚠️  DQ issues within acceptable threshold, proceeding with warnings")
     else:
-        print("⚠️  DQ issues within acceptable threshold, proceeding with warnings")
-else:
-    print("✅ All DQ validations passed successfully")
+        print("✅ All DQ validations passed successfully")
 
 # Add ds column, write to curated partitioned path in Parquet
 spark.conf.set("spark.sql.parquet.compression.codec", args["codec"])  # zstd

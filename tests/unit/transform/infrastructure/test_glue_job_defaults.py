@@ -74,3 +74,32 @@ def test_glue_job_defaults_and_schema_fingerprint_path(monkeypatch) -> None:
             # Convert dict to string for other CloudFormation functions
             uri_str = str(schema_uri)
             assert "_schema/latest.json" in uri_str, "Schema fingerprint path must use _schema/latest.json"
+
+
+def test_glue_job_includes_shared_package_via_extra_py_files(monkeypatch) -> None:
+    app = App()
+    cfg = _base_config()
+
+    # Patch PythonFunction to avoid bundling errors
+    monkeypatch.setattr(ps, "PythonFunction", _fake_python_function, raising=False)
+
+    shared = SharedStorageStack(app, "SharedStorageGlueExtras", environment="dev", config=cfg)
+    proc = ps.CustomerDataProcessingStack(
+        app,
+        "ProcStackGlueExtras",
+        environment="dev",
+        config=cfg,
+        shared_storage_stack=shared,
+        lambda_execution_role_arn="arn:aws:iam::111122223333:role/lambda",
+        glue_execution_role_arn="arn:aws:iam::111122223333:role/glue",
+        step_functions_execution_role_arn="arn:aws:iam::111122223333:role/sfn",
+    )
+
+    template = Template.from_stack(proc)
+    jobs = template.find_resources("AWS::Glue::Job")
+    assert jobs, "Glue Job must exist"
+    job = next(iter(jobs.values()))
+
+    props = job["Properties"]
+    default_args = props["DefaultArguments"]
+    assert "--extra-py-files" in default_args, "Glue job must include extra py files for shared package"
