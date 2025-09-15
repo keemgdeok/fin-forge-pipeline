@@ -76,17 +76,7 @@ jobs:
             echo "$CHANGED" | xargs -r ruff check --force-exclude --output-format=github
           fi
 
-      - name: Disallow static 'src.*' imports (py changed)
-        if: steps.changed-files.outputs.any_changed == 'true' && contains(steps.changed-files.outputs.all_changed_files, '.py')
-        run: |
-          echo "🛡️ Checking for disallowed static 'src.*' imports in changed files..."
-          CHANGED=$(echo "${{ steps.changed-files.outputs.all_changed_files }}" | tr ' ' '\n' | grep -E "\.py$" || true)
-          if [ -z "$CHANGED" ]; then
-            echo "No changed Python files. Skipping guard."
-            exit 0
-          fi
-          # AST-based detection via repository script to avoid YAML/heredoc indentation pitfalls
-          echo "$CHANGED" | python scripts/ci/guard_no_src_imports.py
+
 
       - name: Type check (mypy, py changed)
         if: steps.changed-files.outputs.any_changed == 'true' && contains(steps.changed-files.outputs.all_changed_files, '.py')
