@@ -121,7 +121,16 @@ jobs:
           echo "mypy module args: ${MOD_ARGS[*]}"
           echo "mypy file args: ${FILE_ARGS[*]}"
           # Use config from pyproject.toml; rely on mypy_path=["src"] and explicit_package_bases
-          mypy "${MOD_ARGS[@]}" "${FILE_ARGS[@]}" --ignore-missing-imports
+          # mypy does not allow mixing -m/--package with file paths in one call.
+          # Run modules and files in separate invocations.
+          if [ ${#MOD_ARGS[@]} -gt 0 ]; then
+            echo "Running mypy on modules..."
+            mypy "${MOD_ARGS[@]}" --ignore-missing-imports
+          fi
+          if [ ${#FILE_ARGS[@]} -gt 0 ]; then
+            echo "Running mypy on file paths..."
+            mypy "${FILE_ARGS[@]}" --ignore-missing-imports
+          fi
           
       - name: CDK synth (local cdk, has lockfile)
         if: steps.changed-files.outputs.any_changed == 'true' && contains(steps.changed-files.outputs.all_changed_files, 'infrastructure/') && hashFiles('**/package-lock.json') != ''
