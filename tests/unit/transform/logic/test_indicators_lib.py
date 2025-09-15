@@ -18,13 +18,7 @@ for _p in (str(_root), str(_root / "src")):
 
 import numpy as np  # noqa: E402
 import pandas as pd  # noqa: E402
-
-try:  # noqa: E402
-    # Preferred when 'src' is on sys.path (namespace package under src)
-    from glue.lib.indicators import compute_indicators_pandas  # type: ignore
-except ModuleNotFoundError:  # noqa: E402
-    # Fallback: import via explicit src-qualified package
-    from src.glue.lib.indicators import compute_indicators_pandas  # type: ignore
+from glue.lib.indicators import compute_indicators_pandas  # type: ignore  # noqa: E402
 
 
 def _make_series(n: int = 40) -> pd.DataFrame:

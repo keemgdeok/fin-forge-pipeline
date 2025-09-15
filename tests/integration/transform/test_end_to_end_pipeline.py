@@ -139,7 +139,7 @@ class TestEndToEndPipeline:
         s3_client.put_object(Bucket=pipeline_buckets["raw"], Key=raw_key, Body=raw_data, ContentType="application/json")
 
         # Simulate ETL processing (실제 Glue job 로직)
-        with patch("src.glue.jobs.customer_data_etl"):
+        with patch("glue.jobs.customer_data_etl"):
             # Mock ETL execution results
             transformed_data = []
             for record in sample_market_data:
