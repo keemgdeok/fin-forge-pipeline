@@ -88,13 +88,31 @@ jobs:
 
           MOD_ARGS=()
           FILE_ARGS=()
+          # Helper to append a module once (dedupe)
+          add_mod() {
+            local m="$1"
+            for i in "${!MOD_ARGS[@]}"; do
+              if [[ "${MOD_ARGS[$i]}" == "-m" && "${MOD_ARGS[$((i+1))]}" == "$m" ]]; then
+                return 0
+              fi
+            done
+            MOD_ARGS+=("-m" "$m")
+          }
           while IFS= read -r f; do
             if [[ "$f" == src/* ]]; then
-              # Convert src/path/to/module.py -> module path glue.lib... for mypy -m
+              # Convert src/path/to/module.py -> module path (e.g., glue.lib...)
               mod=${f#src/}
-              mod=${mod%.py}
+              if [[ "$mod" == */__init__.py ]]; then
+                mod=${mod%/__init__.py}
+              else
+                mod=${mod%.py}
+              fi
+              # Skip if empty (defensive)
+              if [[ -z "$mod" ]]; then
+                continue
+              fi
               mod=${mod//\//.}
-              MOD_ARGS+=("-m" "$mod")
+              add_mod "$mod"
             else
               FILE_ARGS+=("$f")
             fi
