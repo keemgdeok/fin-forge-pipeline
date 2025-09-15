@@ -52,6 +52,17 @@ args = getResolvedOptions(
     ],
 )
 
+
+def _get_opt_arg(name: str, default: str) -> str:
+    """Parse optional CLI arg from sys.argv like Glue would pass ("--name value")."""
+    flag = f"--{name}"
+    if flag in sys.argv:
+        i = sys.argv.index(flag)
+        if i + 1 < len(sys.argv):
+            return sys.argv[i + 1]
+    return default
+
+
 sc = SparkContext()
 glue_context = GlueContext(sc)
 spark = glue_context.spark_session
@@ -73,8 +84,22 @@ lookback_days = int(args.get("lookback_days", "252"))
 ds_dt = datetime.strptime(ds_str, "%Y-%m-%d").date()
 start_dt = ds_dt - timedelta(days=max(lookback_days - 1, 0))
 
+
+def _build_path(scheme: str, bucket: str, prefix: str) -> str:
+    if scheme == "file":
+        # Ensure file URI has exactly 3 slashes before absolute path
+        if bucket.startswith("/"):
+            base = f"file://{bucket}"
+        else:
+            base = f"file:///{bucket}"
+        return f"{base.rstrip('/')}/{prefix.lstrip('/')}"
+    return f"{scheme}://{bucket}/{prefix}"
+
+
+uri_scheme = _get_opt_arg("uri_scheme", "s3")
+
 # Read curated prices (partitioned by ds)
-prices_path = f"s3://{args['prices_curated_bucket']}/{args['prices_prefix']}"
+prices_path = _build_path(uri_scheme, args["prices_curated_bucket"], args["prices_prefix"])
 prices_df = (
     spark.read.format("parquet")
     .load(prices_path)
@@ -222,7 +247,7 @@ ind_out = (
 )
 
 # Write curated indicators
-out_path = f"s3://{args['output_bucket']}/{args['output_prefix']}"
+out_path = _build_path(uri_scheme, args["output_bucket"], args["output_prefix"])
 ind_out.coalesce(1).write.mode("append").partitionBy("ds").format("parquet").save(out_path)
 
 # Build schema fingerprint (exclude ds)

@@ -9,7 +9,7 @@ from __future__ import annotations
 import numpy as np
 import pandas as pd
 
-from glue.lib.indicators import compute_indicators_pandas
+from src.glue.lib.indicators import compute_indicators_pandas
 
 
 def _make_series(n: int = 40) -> pd.DataFrame:
