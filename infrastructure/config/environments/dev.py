@@ -22,6 +22,9 @@ dev_config = {
     "ingestion_file_format": "json",
     "ingestion_domain": "market",
     "ingestion_table_name": "prices",
+    # Indicators
+    "indicators_table_name": "indicators",
+    "indicators_lookback_days": 252,
     # Fan-out (Extract) defaults
     "orchestrator_chunk_size": 10,
     "sqs_send_batch_size": 10,
@@ -42,6 +45,12 @@ dev_config = {
             "table_name": "prices",
             "file_type": "json",
             "suffixes": [".json", ".csv"],
+        },
+        {
+            "domain": "market",
+            "table_name": "indicators",
+            "file_type": "parquet",
+            "suffixes": [".parquet"],
         },
         {
             "domain": "sales",

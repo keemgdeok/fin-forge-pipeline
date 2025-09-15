@@ -124,11 +124,15 @@ class DataCatalogStack(Stack):
                 s3_targets.append(
                     glue.CfnCrawler.S3TargetProperty(
                         path=f"s3://{self.shared_storage.curated_bucket.bucket_name}/{d}/{tbl}/",
+                        exclusions=["**/quarantine/**", "**/quarantine/*"],
                     )
                 )
         else:
             s3_targets.append(
-                glue.CfnCrawler.S3TargetProperty(path=f"s3://{self.shared_storage.curated_bucket.bucket_name}/")
+                glue.CfnCrawler.S3TargetProperty(
+                    path=f"s3://{self.shared_storage.curated_bucket.bucket_name}/",
+                    exclusions=["**/quarantine/**", "**/quarantine/*"],
+                )
             )
 
         crawlers["curated_data"] = glue.CfnCrawler(
