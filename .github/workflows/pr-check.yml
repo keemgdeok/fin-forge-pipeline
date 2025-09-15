@@ -80,7 +80,30 @@ jobs:
         if: steps.changed-files.outputs.any_changed == 'true' && contains(steps.changed-files.outputs.all_changed_files, '.py')
         run: |
           echo "🔎 Type checking changed Python files..."
-          echo "${{ steps.changed-files.outputs.all_changed_files }}" | tr ' ' '\n' | grep -E "\.py$" | xargs -r mypy --ignore-missing-imports
+          CHANGED=$(echo "${{ steps.changed-files.outputs.all_changed_files }}" | tr ' ' '\n' | grep -E "\.py$" || true)
+          if [ -z "$CHANGED" ]; then
+            echo "No changed Python files. Skipping mypy."
+            exit 0
+          fi
+
+          MOD_ARGS=()
+          FILE_ARGS=()
+          while IFS= read -r f; do
+            if [[ "$f" == src/* ]]; then
+              # Convert src/path/to/module.py -> module path glue.lib... for mypy -m
+              mod=${f#src/}
+              mod=${mod%.py}
+              mod=${mod//\//.}
+              MOD_ARGS+=("-m" "$mod")
+            else
+              FILE_ARGS+=("$f")
+            fi
+          done <<< "$CHANGED"
+
+          echo "mypy module args: ${MOD_ARGS[*]}"
+          echo "mypy file args: ${FILE_ARGS[*]}"
+          # Use config from pyproject.toml; rely on mypy_path=["src"] and explicit_package_bases
+          mypy "${MOD_ARGS[@]}" "${FILE_ARGS[@]}" --ignore-missing-imports
           
       - name: CDK synth (local cdk, has lockfile)
         if: steps.changed-files.outputs.any_changed == 'true' && contains(steps.changed-files.outputs.all_changed_files, 'infrastructure/') && hashFiles('**/package-lock.json') != ''
