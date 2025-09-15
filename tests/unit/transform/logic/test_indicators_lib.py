@@ -9,7 +9,10 @@ from __future__ import annotations
 import numpy as np
 import pandas as pd
 
-from src.glue.lib.indicators import compute_indicators_pandas
+try:
+    from src.glue.lib.indicators import compute_indicators_pandas
+except ModuleNotFoundError:  # CI/env compatibility fallback
+    from glue.lib.indicators import compute_indicators_pandas
 
 
 def _make_series(n: int = 40) -> pd.DataFrame:
