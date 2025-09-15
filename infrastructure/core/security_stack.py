@@ -314,7 +314,7 @@ class SecurityStack(Stack):
         """
         # Scope to your repository: owner/repo
         repo_owner = "keemgdeok"
-        repo_name = "finge"
+        repo_name = "fin-forge-pipeline"
 
         principal = iam.OpenIdConnectPrincipal(
             self.github_oidc_provider,
