@@ -22,6 +22,9 @@ dev_config = {
     "ingestion_file_format": "json",
     "ingestion_domain": "market",
     "ingestion_table_name": "prices",
+    # Indicators
+    "indicators_table_name": "indicators",
+    "indicators_lookback_days": 252,
     # Fan-out (Extract) defaults
     "orchestrator_chunk_size": 10,
     "sqs_send_batch_size": 10,
@@ -31,7 +34,7 @@ dev_config = {
     "worker_memory": 512,
     "enable_gzip": False,
     "max_retries": 5,
-    "enable_processing_orchestration": False,
+    "enable_processing_orchestration": True,
     # Catalog update policy for crawler: on_schema_change|never|force
     "catalog_update": "on_schema_change",
     # Processing triggers (S3->EventBridge->SFN). Supports multiple domain/table pairs.
@@ -42,6 +45,12 @@ dev_config = {
             "table_name": "prices",
             "file_type": "json",
             "suffixes": [".json", ".csv"],
+        },
+        {
+            "domain": "market",
+            "table_name": "indicators",
+            "file_type": "parquet",
+            "suffixes": [".parquet"],
         },
         {
             "domain": "sales",

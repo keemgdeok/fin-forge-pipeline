@@ -76,11 +76,63 @@ jobs:
             echo "$CHANGED" | xargs -r ruff check --force-exclude --output-format=github
           fi
 
+
+
       - name: Type check (mypy, py changed)
         if: steps.changed-files.outputs.any_changed == 'true' && contains(steps.changed-files.outputs.all_changed_files, '.py')
         run: |
           echo "🔎 Type checking changed Python files..."
-          echo "${{ steps.changed-files.outputs.all_changed_files }}" | tr ' ' '\n' | grep -E "\.py$" | xargs -r mypy --ignore-missing-imports
+          CHANGED=$(echo "${{ steps.changed-files.outputs.all_changed_files }}" | tr ' ' '\n' | grep -E "\.py$" || true)
+          if [ -z "$CHANGED" ]; then
+            echo "No changed Python files. Skipping mypy."
+            exit 0
+          fi
+
+          MOD_ARGS=()
+          FILE_ARGS=()
+          # Helper to append a module once (dedupe)
+          add_mod() {
+            local m="$1"
+            for i in "${!MOD_ARGS[@]}"; do
+              if [[ "${MOD_ARGS[$i]}" == "-m" && "${MOD_ARGS[$((i+1))]}" == "$m" ]]; then
+                return 0
+              fi
+            done
+            MOD_ARGS+=("-m" "$m")
+          }
+          while IFS= read -r f; do
+            if [[ "$f" == src/* ]]; then
+              # Convert src/path/to/module.py -> module path (e.g., glue.lib...)
+              mod=${f#src/}
+              if [[ "$mod" == */__init__.py ]]; then
+                mod=${mod%/__init__.py}
+              else
+                mod=${mod%.py}
+              fi
+              # Skip if empty (defensive)
+              if [[ -z "$mod" ]]; then
+                continue
+              fi
+              mod=${mod//\//.}
+              add_mod "$mod"
+            else
+              FILE_ARGS+=("$f")
+            fi
+          done <<< "$CHANGED"
+
+          echo "mypy module args: ${MOD_ARGS[*]}"
+          echo "mypy file args: ${FILE_ARGS[*]}"
+          # Use config from pyproject.toml; rely on mypy_path=["src"] and explicit_package_bases
+          # mypy does not allow mixing -m/--package with file paths in one call.
+          # Run modules and files in separate invocations.
+          if [ ${#MOD_ARGS[@]} -gt 0 ]; then
+            echo "Running mypy on modules..."
+            mypy "${MOD_ARGS[@]}"
+          fi
+          if [ ${#FILE_ARGS[@]} -gt 0 ]; then
+            echo "Running mypy on file paths..."
+            mypy "${FILE_ARGS[@]}"
+          fi
           
       - name: CDK synth (local cdk, has lockfile)
         if: steps.changed-files.outputs.any_changed == 'true' && contains(steps.changed-files.outputs.all_changed_files, 'infrastructure/') && hashFiles('**/package-lock.json') != ''

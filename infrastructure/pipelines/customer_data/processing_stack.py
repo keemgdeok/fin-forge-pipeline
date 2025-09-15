@@ -51,6 +51,9 @@ class CustomerDataProcessingStack(Stack):
         # Glue ETL job for customer data transformation
         self.etl_job = self._create_etl_job()
 
+        # Glue ETL job for indicators computation (Curated prices -> Curated indicators)
+        self.indicators_job = self._create_indicators_job()
+
         # Feature toggle: processing orchestration (SFN + EB Rule)
         self.enable_processing: bool = bool(self.config.get("enable_processing_orchestration", False))
 
@@ -128,6 +131,82 @@ class CustomerDataProcessingStack(Stack):
             number_of_workers=int(self.config.get("glue_max_capacity", 2)),
         )
 
+    def _create_indicators_job(self) -> glue.CfnJob:
+        """Create Glue ETL job for market indicators computation from curated prices."""
+        # Package Glue script as a CDK asset and reference its S3 location
+        indicators_script_asset = s3_assets.Asset(
+            self,
+            "IndicatorsTransformScriptAsset",
+            path="src/glue/jobs/market_indicators_etl.py",
+        )
+        glue_exec_role_ref = iam.Role.from_role_arn(self, "GlueExecRoleRefForIndicators", self.glue_execution_role_arn)
+        indicators_script_asset.grant_read(glue_exec_role_ref)
+
+        # Provide shared Python package and indicators lib to Glue via --extra-py-files
+        shared_py_asset = s3_assets.Asset(
+            self,
+            "SharedPythonPackageAssetForIndicators",
+            path="src/lambda/layers/common/python",
+        )
+        shared_py_asset.grant_read(glue_exec_role_ref)
+
+        indicators_lib_asset = s3_assets.Asset(
+            self,
+            "IndicatorsLibAsset",
+            path="src",
+        )
+        indicators_lib_asset.grant_read(glue_exec_role_ref)
+
+        domain: str = str(self.config.get("ingestion_domain", "market"))
+        prices_table: str = str(self.config.get("ingestion_table_name", "prices"))
+        indicators_table: str = str(self.config.get("indicators_table_name", "indicators"))
+
+        prices_prefix = f"{domain}/{prices_table}/"
+        indicators_prefix = f"{domain}/{indicators_table}/"
+
+        schema_fp_uri = (
+            f"s3://{self.shared_storage.artifacts_bucket.bucket_name}/{domain}/{indicators_table}/_schema/latest.json"
+        )
+
+        # Deterministic name for the indicators job
+        self.indicators_job_name: str = f"{self.env_name}-market-indicators-etl"
+
+        return glue.CfnJob(
+            self,
+            "IndicatorsETLJob",
+            name=self.indicators_job_name,
+            role=self.glue_execution_role_arn,
+            command=glue.CfnJob.JobCommandProperty(
+                name="glueetl",
+                script_location=indicators_script_asset.s3_object_url,
+                python_version="3",
+            ),
+            default_arguments={
+                "--job-language": "python",
+                "--job-bookmark-option": "job-bookmark-enable",
+                "--enable-s3-parquet-optimized-committer": "1",
+                "--codec": "zstd",
+                "--target_file_mb": "256",
+                "--TempDir": (f"s3://{self.shared_storage.artifacts_bucket.bucket_name}/temp/"),
+                "--extra-py-files": f"{shared_py_asset.s3_object_url},{indicators_lib_asset.s3_object_url}",
+                # Inputs/outputs
+                "--environment": self.env_name,
+                "--prices_curated_bucket": self.shared_storage.curated_bucket.bucket_name,
+                "--prices_prefix": prices_prefix,
+                "--output_bucket": self.shared_storage.curated_bucket.bucket_name,
+                "--output_prefix": indicators_prefix,
+                "--schema_fingerprint_s3_uri": schema_fp_uri,
+                # Window size
+                "--lookback_days": str(int(self.config.get("indicators_lookback_days", 252))),
+                # ds, codec, target_file_mb are provided per-run via arguments
+            },
+            glue_version="5.0",
+            max_retries=1,
+            timeout=30,
+            worker_type="G.1X",
+            number_of_workers=int(self.config.get("glue_max_capacity", 2)),
+        )
+
     def _create_processing_workflow(self) -> sfn.StateMachine:
         """Create simplified Step Functions workflow for 1GB daily batch processing.
 
@@ -162,26 +241,69 @@ class CustomerDataProcessingStack(Stack):
         fail_state = sfn.Fail(self, "ExecutionFailed", comment="Pipeline execution failed")
         fail_chain = normalize_fail.next(fail_state)
 
-        # ETL job task (now includes ALL data quality validation)
+        # Prices ETL job task (includes ALL data quality validation)
         etl_task = tasks.GlueStartJobRun(
             self,
             "ProcessCustomerData",
             glue_job_name=self.etl_job_name,
             integration_pattern=sfn.IntegrationPattern.RUN_JOB,
             arguments=sfn.TaskInput.from_json_path_at("$.glue_args"),
+            result_path="$.prices_etl",
         )
         # Catch Glue task failures (includes DQ failures) and route to normalized fail chain
         etl_task.add_catch(handler=fail_chain, result_path="$.error")
 
+        # Build indicators Glue args from Preflight context and stack constants
+        domain: str = str(self.config.get("ingestion_domain", "market"))
+        prices_table: str = str(self.config.get("ingestion_table_name", "prices"))
+        indicators_table: str = str(self.config.get("indicators_table_name", "indicators"))
+        indicators_fp = (
+            f"s3://{self.shared_storage.artifacts_bucket.bucket_name}/{domain}/{indicators_table}/_schema/latest.json"
+        )
+
+        build_indicators_args = sfn.Pass(
+            self,
+            "BuildIndicatorsArgs",
+            parameters={
+                "--environment": self.env_name,
+                "--prices_curated_bucket": self.shared_storage.curated_bucket.bucket_name,
+                "--prices_prefix": f"{domain}/{prices_table}/",
+                "--output_bucket": self.shared_storage.curated_bucket.bucket_name,
+                "--output_prefix": f"{domain}/{indicators_table}/",
+                "--schema_fingerprint_s3_uri": indicators_fp,
+                "--codec": "zstd",
+                "--target_file_mb": "256",
+                "--lookback_days": str(int(self.config.get("indicators_lookback_days", 252))),
+                "--ds.$": "$.ds",
+            },
+            result_path="$.indicators_glue_args",
+        )
+
+        # Indicators ETL job task
+        indicators_task = tasks.GlueStartJobRun(
+            self,
+            "ComputeIndicators",
+            glue_job_name=self.indicators_job_name,
+            integration_pattern=sfn.IntegrationPattern.RUN_JOB,
+            arguments=sfn.TaskInput.from_json_path_at("$.indicators_glue_args"),
+            result_path="$.indicators_etl",
+        )
+        indicators_task.add_catch(handler=fail_chain, result_path="$.error")
+
         # Create schema-change decider Lambda once and reuse across branches
         decider_fn = self._create_schema_change_decider_function()
 
-        # Decide whether to run crawler based on policy + schema change
+        # Decide whether to run crawler based on policy + schema change (for indicators)
         decide_crawler_task = tasks.LambdaInvoke(
             self,
             "DecideCrawler",
             lambda_function=decider_fn,
-            payload=sfn.TaskInput.from_json_path_at("$"),
+            payload=sfn.TaskInput.from_object(
+                {
+                    "glue_args.$": "$.indicators_glue_args",
+                    "catalog_update.$": "$.catalog_update",
+                }
+            ),
             output_path="$.Payload",
         )
 
@@ -206,12 +328,15 @@ class CustomerDataProcessingStack(Stack):
         )
 
         # Create single day processing chain for standalone mode
-        # Single day processing with crawler gating
+        # Single day processing: Prices -> Build Args -> Indicators -> Decide -> (Crawler?) -> Success
         single_day_processing = (
             sfn.Choice(self, "PreflightChoice")
             .when(
                 sfn.Condition.boolean_equals("$.proceed", True),
-                etl_task.next(decide_crawler_task).next(
+                etl_task.next(build_indicators_args)
+                .next(indicators_task)
+                .next(decide_crawler_task)
+                .next(
                     sfn.Choice(self, "ShouldRunCrawler")
                     .when(
                         sfn.Condition.boolean_equals("$.shouldRunCrawler", True), start_crawler_task.next(success_task)
@@ -249,14 +374,49 @@ class CustomerDataProcessingStack(Stack):
                     glue_job_name=self.etl_job_name,
                     integration_pattern=sfn.IntegrationPattern.RUN_JOB,
                     arguments=sfn.TaskInput.from_json_path_at("$.glue_args"),
+                    result_path="$.prices_etl",
                 )
                 .add_catch(handler=backfill_fail_chain, result_path="$.error")
+                .next(
+                    sfn.Pass(
+                        self,
+                        "BackfillBuildIndicatorsArgs",
+                        parameters={
+                            "--environment": self.env_name,
+                            "--prices_curated_bucket": self.shared_storage.curated_bucket.bucket_name,
+                            "--prices_prefix": f"{domain}/{prices_table}/",
+                            "--output_bucket": self.shared_storage.curated_bucket.bucket_name,
+                            "--output_prefix": f"{domain}/{indicators_table}/",
+                            "--schema_fingerprint_s3_uri": indicators_fp,
+                            "--codec": "zstd",
+                            "--target_file_mb": "256",
+                            "--lookback_days": str(int(self.config.get("indicators_lookback_days", 252))),
+                            "--ds.$": "$.ds",
+                        },
+                        result_path="$.indicators_glue_args",
+                    )
+                )
+                .next(
+                    tasks.GlueStartJobRun(
+                        self,
+                        "BackfillComputeIndicators",
+                        glue_job_name=self.indicators_job_name,
+                        integration_pattern=sfn.IntegrationPattern.RUN_JOB,
+                        arguments=sfn.TaskInput.from_json_path_at("$.indicators_glue_args"),
+                        result_path="$.indicators_etl",
+                    ).add_catch(handler=backfill_fail_chain, result_path="$.error")
+                )
                 .next(
                     tasks.LambdaInvoke(
                         self,
                         "BackfillDecideCrawler",
                         lambda_function=decider_fn,
-                        payload=sfn.TaskInput.from_json_path_at("$"),
+                        payload=sfn.TaskInput.from_object(
+                            {
+                                "glue_args.$": "$.indicators_glue_args",
+                                "catalog_update.$": "$.catalog_update",
+                            }
+                        ),
                         output_path="$.Payload",
                     ).add_catch(handler=backfill_fail_chain, result_path="$.error")
                 )

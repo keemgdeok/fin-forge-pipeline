@@ -115,6 +115,17 @@ class DataCatalogStack(Stack):
         # Build S3 targets scoped to configured domain/table pairs (fallback to bucket root)
         triggers: list[dict] = list(self.config.get("processing_triggers", []))
         s3_targets: list[glue.CfnCrawler.S3TargetProperty] = []
+        # Common exclusions to avoid crawling transient/auxiliary files
+        common_exclusions = [
+            "**/quarantine/**",
+            "**/quarantine/*",
+            "**/_temporary/**",
+            "**/_temporary/*",
+            "**/_SUCCESS",
+            "**/_committed_*",
+            "**/_started_*",
+        ]
+
         if triggers:
             for t in triggers:
                 d = str(t.get("domain", "")).strip()
@@ -124,11 +135,15 @@ class DataCatalogStack(Stack):
                 s3_targets.append(
                     glue.CfnCrawler.S3TargetProperty(
                         path=f"s3://{self.shared_storage.curated_bucket.bucket_name}/{d}/{tbl}/",
+                        exclusions=common_exclusions,
                     )
                 )
         else:
             s3_targets.append(
-                glue.CfnCrawler.S3TargetProperty(path=f"s3://{self.shared_storage.curated_bucket.bucket_name}/")
+                glue.CfnCrawler.S3TargetProperty(
+                    path=f"s3://{self.shared_storage.curated_bucket.bucket_name}/",
+                    exclusions=common_exclusions,
+                )
             )
 
         crawlers["curated_data"] = glue.CfnCrawler(
