@@ -6,14 +6,25 @@ and windowing behavior. Uses Pandas directly (no Spark required).
 
 from __future__ import annotations
 
-import numpy as np
-import pandas as pd
+import sys
+from pathlib import Path
 
-try:
-    # Preferred when tests add 'src' to sys.path
-    from glue.lib.indicators import compute_indicators_pandas
-except ModuleNotFoundError:  # CI/env compatibility fallback
-    from src.glue.lib.indicators import compute_indicators_pandas
+# Ensure project root and 'src' are importable in environments where conftest path
+# hooks may not run before module import (e.g., some CI collectors).
+_root = Path(__file__).resolve().parents[4]
+for _p in (str(_root), str(_root / "src")):
+    if _p not in sys.path:
+        sys.path.insert(0, _p)
+
+import numpy as np  # noqa: E402
+import pandas as pd  # noqa: E402
+
+try:  # noqa: E402
+    # Preferred when 'src' is on sys.path (namespace package under src)
+    from glue.lib.indicators import compute_indicators_pandas  # type: ignore
+except ModuleNotFoundError:  # noqa: E402
+    # Fallback: import via explicit src-qualified package
+    from src.glue.lib.indicators import compute_indicators_pandas  # type: ignore
 
 
 def _make_series(n: int = 40) -> pd.DataFrame:
