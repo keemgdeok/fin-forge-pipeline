@@ -10,9 +10,10 @@ import numpy as np
 import pandas as pd
 
 try:
-    from src.glue.lib.indicators import compute_indicators_pandas
-except ModuleNotFoundError:  # CI/env compatibility fallback
+    # Preferred when tests add 'src' to sys.path
     from glue.lib.indicators import compute_indicators_pandas
+except ModuleNotFoundError:  # CI/env compatibility fallback
+    from src.glue.lib.indicators import compute_indicators_pandas
 
 
 def _make_series(n: int = 40) -> pd.DataFrame:

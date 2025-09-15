@@ -7,10 +7,13 @@ import boto3
 
 # Ensure 'shared' layer is importable at collection time (module import stage)
 _repo_root = Path(__file__).resolve().parents[1]
-# Ensure project root is on sys.path so 'src.<...>' imports resolve
+# Ensure project root and 'src' are on sys.path for flexible imports
 _repo_root_str = str(_repo_root)
+_src_path_str = str(_repo_root / "src")
 if _repo_root_str not in sys.path:
     sys.path.insert(0, _repo_root_str)
+if _src_path_str not in sys.path:
+    sys.path.insert(0, _src_path_str)
 _shared_path = _repo_root / "src" / "lambda" / "layers" / "common" / "python"
 _shared_str = str(_shared_path)
 if _shared_str not in sys.path:
