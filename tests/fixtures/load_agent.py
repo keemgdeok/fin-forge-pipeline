@@ -23,6 +23,7 @@ class LoaderConfig:
     wait_time_seconds: int = 1  # kept small for tests
     max_messages: int = 10
     visibility_timeout: int = 30
+    retry_visibility_timeout: int = 5
     backoff_seconds: List[int] = None  # type: ignore[assignment]
 
     def __post_init__(self) -> None:  # type: ignore[override]
@@ -52,22 +53,34 @@ class FakeLoaderAgent:
         messages: List[Dict[str, Any]] = resp.get("Messages", [])
         results: List[Dict[str, Any]] = []
 
+        visibility_changes: List[int] = []
+
         for m in messages:
             body_raw = m.get("Body", "{}")
-            body: Dict[str, Any] = json.loads(body_raw) if isinstance(body_raw, str) else body_raw  # type: ignore[assignment]
-            action = process(body)
+            try:
+                body: Dict[str, Any] = json.loads(body_raw) if isinstance(body_raw, str) else body_raw  # type: ignore[assignment]
+            except (TypeError, json.JSONDecodeError) as exc:  # type: ignore[attr-defined]
+                results.append({"action": "PARSE_ERROR", "error": str(exc), "raw": body_raw})
+                continue
+
+            try:
+                action = process(body)
+            except Exception as exc:  # noqa: BLE001 - mimic loader resilience
+                results.append({"action": "EXCEPTION", "error": str(exc), "message": body})
+                continue
             if action == "SUCCESS":
                 self.client.delete_message(QueueUrl=self.config.queue_url, ReceiptHandle=m["ReceiptHandle"])  # type: ignore[index]
                 results.append({"action": action, "message": body})
             elif action == "RETRY":
-                # Reduce visibility to 0 to speed re-delivery in tests
+                timeout = max(self.config.retry_visibility_timeout, 0)
                 self.client.change_message_visibility(
                     QueueUrl=self.config.queue_url,
                     ReceiptHandle=m["ReceiptHandle"],  # type: ignore[index]
-                    VisibilityTimeout=0,
+                    VisibilityTimeout=timeout,
                 )
+                visibility_changes.append(timeout)
                 results.append({"action": action, "message": body})
             else:  # FAIL (no ACK)
                 results.append({"action": action, "message": body})
 
-        return {"count": len(results), "results": results}
+        return {"count": len(results), "results": results, "visibility_changes": visibility_changes}

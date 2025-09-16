@@ -5,6 +5,12 @@ from typing import Any, Callable, Iterator, Optional
 import pytest
 import boto3
 
+
+pytest_plugins = [
+    "tests.fixtures.load_env",
+    "tests.fixtures.load_agent",
+]
+
 # Ensure 'shared' layer is importable at collection time (module import stage)
 _repo_root = Path(__file__).resolve().parents[1]
 # Ensure project root and 'src' are on sys.path for flexible imports
