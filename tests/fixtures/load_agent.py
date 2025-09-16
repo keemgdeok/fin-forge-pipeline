@@ -9,12 +9,20 @@ from __future__ import annotations
 import json
 import os
 from dataclasses import dataclass
-from typing import Any, Callable, Dict, List, Optional
+from typing import Any, Callable, Dict, List, Optional, Type
 
 import boto3
 
 
 ProcessFn = Callable[[Dict[str, Any]], str]
+
+
+class LoaderError(Exception):
+    """Represents a loader failure with a well-defined error code."""
+
+    def __init__(self, code: str, message: str | None = None) -> None:
+        super().__init__(message or code)
+        self.code = code
 
 
 @dataclass
@@ -30,6 +38,16 @@ class LoaderConfig:
         if self.backoff_seconds is None:
             # Spec examples: 2s, 4s, 8s (kept small for tests)
             object.__setattr__(self, "backoff_seconds", [1, 2, 4])
+
+
+_EXCEPTION_CODE_MAP: Dict[Type[BaseException], str] = {
+    FileNotFoundError: "FILE_NOT_FOUND",
+    TimeoutError: "TIMEOUT_ERROR",
+    ConnectionError: "CONNECTION_ERROR",
+    PermissionError: "PERMISSION_ERROR",
+    MemoryError: "MEMORY_ERROR",
+    ValueError: "VALIDATION_ERROR",
+}
 
 
 class FakeLoaderAgent:
@@ -60,13 +78,27 @@ class FakeLoaderAgent:
             try:
                 body: Dict[str, Any] = json.loads(body_raw) if isinstance(body_raw, str) else body_raw  # type: ignore[assignment]
             except (TypeError, json.JSONDecodeError) as exc:  # type: ignore[attr-defined]
-                results.append({"action": "PARSE_ERROR", "error": str(exc), "raw": body_raw})
+                results.append(
+                    {
+                        "action": "PARSE_ERROR",
+                        "error_code": "PARSE_ERROR",
+                        "error": str(exc),
+                        "raw": body_raw,
+                    }
+                )
                 continue
 
             try:
                 action = process(body)
             except Exception as exc:  # noqa: BLE001 - mimic loader resilience
-                results.append({"action": "EXCEPTION", "error": str(exc), "message": body})
+                results.append(
+                    {
+                        "action": "EXCEPTION",
+                        "error_code": _resolve_exception_code(exc),
+                        "error": str(exc),
+                        "message": body,
+                    }
+                )
                 continue
             if action == "SUCCESS":
                 self.client.delete_message(QueueUrl=self.config.queue_url, ReceiptHandle=m["ReceiptHandle"])  # type: ignore[index]
@@ -84,3 +116,12 @@ class FakeLoaderAgent:
                 results.append({"action": action, "message": body})
 
         return {"count": len(results), "results": results, "visibility_changes": visibility_changes}
+
+
+def _resolve_exception_code(exc: BaseException) -> str:
+    if isinstance(exc, LoaderError):
+        return exc.code
+    for exc_type, code in _EXCEPTION_CODE_MAP.items():
+        if isinstance(exc, exc_type):
+            return code
+    return "UNKNOWN_ERROR"

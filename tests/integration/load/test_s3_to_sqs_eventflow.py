@@ -6,7 +6,7 @@ from typing import Any, Dict, List
 import pytest
 from moto import mock_aws
 
-from tests.fixtures.load_agent import FakeLoaderAgent, LoaderConfig
+from tests.fixtures.load_agent import FakeLoaderAgent, LoaderConfig, LoaderError
 
 
 pytestmark = [pytest.mark.integration, pytest.mark.load]
@@ -20,11 +20,11 @@ def _drain_main_queue(
     max_attempts: int = 4,
     visibility_timeout: int = 0,
 ) -> List[Dict[str, Any]]:
-    """Receive a message up to ``max_attempts`` times to trigger DLQ redrive.
+    """Receive repeatedly until moto's ApproximateReceiveCount triggers DLQ redrive.
 
-    Moto의 SQS 구현은 ``ReceiveMessage``가 호출될 때마다 ApproximateReceiveCount를 증가시키므로
-    maxReceiveCount + 1 번 폴링하면 메시지가 DLQ로 이동한다. 이 헬퍼는 테스트에서 해당 시퀀스를
-    반복 구현하지 않도록 캡슐화한다.
+    Moto는 ``ReceiveMessage`` 호출 시 ApproximateReceiveCount를 하나씩 증가시키고, 큐 설정값을 넘으면
+    메시지를 DLQ로 옮긴다. 테스트마다 동일한 폴링/가시성 연장 코드를 반복하지 않도록 이 헬퍼로
+    시퀀스를 캡슐화했다.
     """
 
     for _ in range(max_attempts):
@@ -178,9 +178,52 @@ def test_parse_error_moves_to_dlq(make_load_queues) -> None:
         parse_actions.extend([r for r in result["results"] if r["action"] == "PARSE_ERROR"])
 
     assert parse_actions, "parse failures should be recorded"
+    assert all(r.get("error_code") == "PARSE_ERROR" for r in parse_actions)
 
     dlq_messages = _drain_main_queue(sqs_client=sqs, main_url=main_url, dlq_url=dlq_url)
     assert len(dlq_messages) == 1
+
+
+@mock_aws
+def test_file_not_found_retries_then_dlq(make_load_queues) -> None:
+    env = "dev"
+    domain = "market"
+    main_url, dlq_url = make_load_queues(env, domain)
+
+    import boto3
+
+    sqs = boto3.client("sqs", region_name="us-east-1")
+    sqs.set_queue_attributes(QueueUrl=main_url, Attributes={"VisibilityTimeout": "0"})
+
+    body = {
+        "bucket": "data-pipeline-curated-dev",
+        "key": "market/prices/ds=2025-09-10/part-006.parquet",
+        "domain": "market",
+        "table_name": "prices",
+        "partition": "ds=2025-09-10",
+        "correlation_id": "a70e8400-e29b-41d4-a716-446655440000",
+    }
+    sqs.send_message(QueueUrl=main_url, MessageBody=json.dumps(body))
+
+    attempts: List[str] = []
+
+    def process_with_retries(_: Dict[str, Any]) -> str:
+        attempts.append("FILE_NOT_FOUND")
+        raise LoaderError("FILE_NOT_FOUND", "S3 returned 404")
+
+    agent = FakeLoaderAgent(LoaderConfig(queue_url=main_url, retry_visibility_timeout=0))
+
+    for _ in range(3):
+        result = agent.run_once(process_with_retries)
+        codes = [r.get("error_code") for r in result["results"] if r["action"] == "EXCEPTION"]
+        assert codes and codes[0] == "FILE_NOT_FOUND"
+
+    assert attempts == ["FILE_NOT_FOUND", "FILE_NOT_FOUND", "FILE_NOT_FOUND"]
+
+    dlq_messages = _drain_main_queue(sqs_client=sqs, main_url=main_url, dlq_url=dlq_url)
+    assert len(dlq_messages) == 1
+    dlq_body = json.loads(dlq_messages[0]["Body"])
+    assert dlq_body["correlation_id"] == body["correlation_id"]
 
 
 @mock_aws
@@ -204,20 +247,67 @@ def test_connection_error_retries_then_dlq(make_load_queues) -> None:
     }
     sqs.send_message(QueueUrl=main_url, MessageBody=json.dumps(body))
 
-    attempts = {"count": 0}
+    attempts: List[str] = []
 
-    def process_with_retries(msg: Dict[str, Any]) -> str:
-        attempts["count"] += 1
-        if attempts["count"] <= 3:
-            return "RETRY"  # connection issue recovered with backoff
-        return "FAIL"  # after retries exhausted
+    def process_connection(_: Dict[str, Any]) -> str:
+        attempts.append("CONNECTION_ERROR")
+        raise ConnectionError("clickhouse unreachable")
 
     agent = FakeLoaderAgent(LoaderConfig(queue_url=main_url, retry_visibility_timeout=0))
 
-    for _ in range(4):
-        agent.run_once(process_with_retries)
+    for _ in range(3):
+        result = agent.run_once(process_connection)
+        exception_codes = [r.get("error_code") for r in result["results"] if r["action"] == "EXCEPTION"]
+        assert exception_codes and exception_codes[0] == "CONNECTION_ERROR"
+
+    assert attempts == ["CONNECTION_ERROR", "CONNECTION_ERROR", "CONNECTION_ERROR"]
 
     dlq_messages = _drain_main_queue(sqs_client=sqs, main_url=main_url, dlq_url=dlq_url)
+    assert len(dlq_messages) == 1
+    dlq_body = json.loads(dlq_messages[0]["Body"])
+    assert dlq_body["correlation_id"] == body["correlation_id"]
+
+
+@mock_aws
+def test_memory_exhaustion_retry_limit(make_load_queues) -> None:
+    env = "dev"
+    domain = "market"
+    main_url, dlq_url = make_load_queues(env, domain)
+
+    import boto3
+
+    sqs = boto3.client("sqs", region_name="us-east-1")
+    sqs.set_queue_attributes(QueueUrl=main_url, Attributes={"VisibilityTimeout": "0"})
+
+    body = {
+        "bucket": "data-pipeline-curated-dev",
+        "key": "market/prices/ds=2025-09-10/part-007.parquet",
+        "domain": "market",
+        "table_name": "prices",
+        "partition": "ds=2025-09-10",
+        "correlation_id": "b80e8400-e29b-41d4-a716-446655440000",
+    }
+    sqs.send_message(QueueUrl=main_url, MessageBody=json.dumps(body))
+
+    attempt_codes: List[str] = []
+
+    def process_memory(_: Dict[str, Any]) -> str:
+        if len(attempt_codes) < 2:
+            attempt_codes.append("MEMORY_ERROR")
+            raise MemoryError("loader out of memory")
+        attempt_codes.append("MEMORY_ERROR")
+        raise LoaderError("MEMORY_ERROR", "OOM persisted")
+
+    agent = FakeLoaderAgent(LoaderConfig(queue_url=main_url, retry_visibility_timeout=0))
+
+    for _ in range(3):
+        result = agent.run_once(process_memory)
+        exception_codes = [r.get("error_code") for r in result["results"] if r["action"] == "EXCEPTION"]
+        assert exception_codes and exception_codes[0] == "MEMORY_ERROR"
+
+    assert attempt_codes == ["MEMORY_ERROR", "MEMORY_ERROR", "MEMORY_ERROR"]
+
+    dlq_messages = _drain_main_queue(sqs_client=sqs, main_url=main_url, dlq_url=dlq_url, max_attempts=3)
     assert len(dlq_messages) == 1
     dlq_body = json.loads(dlq_messages[0]["Body"])
     assert dlq_body["correlation_id"] == body["correlation_id"]
@@ -234,11 +324,11 @@ def test_large_file_processing_success(make_load_queues) -> None:
     sqs = boto3.client("sqs", region_name="us-east-1")
     body = {
         "bucket": "data-pipeline-curated-dev",
-        "key": "market/prices/ds=2025-09-10/part-007.parquet",
+        "key": "market/prices/ds=2025-09-10/part-008.parquet",
         "domain": "market",
         "table_name": "prices",
         "partition": "ds=2025-09-10",
-        "correlation_id": "b80e8400-e29b-41d4-a716-446655440000",
+        "correlation_id": "c80e8400-e29b-41d4-a716-446655440000",
         "file_size": 150 * 1024 * 1024,
     }
     sqs.send_message(QueueUrl=main_url, MessageBody=json.dumps(body))
@@ -324,3 +414,71 @@ def test_security_attributes_round_trip(make_load_queues, load_module) -> None:
     received_attrs = msg["MessageAttributes"]
     assert received_attrs["Domain"]["StringValue"] == "market"
     assert received_attrs["Priority"]["StringValue"] == "1"
+
+
+@mock_aws
+def test_permission_error_immediate_dlq(make_load_queues) -> None:
+    env = "dev"
+    domain = "market"
+    main_url, dlq_url = make_load_queues(env, domain)
+
+    import boto3
+
+    sqs = boto3.client("sqs", region_name="us-east-1")
+    sqs.set_queue_attributes(QueueUrl=main_url, Attributes={"VisibilityTimeout": "0"})
+
+    body = {
+        "bucket": "data-pipeline-curated-dev",
+        "key": "market/prices/ds=2025-09-10/part-009.parquet",
+        "domain": "market",
+        "table_name": "prices",
+        "partition": "ds=2025-09-10",
+        "correlation_id": "d90e8400-e29b-41d4-a716-446655440000",
+    }
+    sqs.send_message(QueueUrl=main_url, MessageBody=json.dumps(body))
+
+    agent = FakeLoaderAgent(LoaderConfig(queue_url=main_url, retry_visibility_timeout=0))
+
+    def process_permission(_: Dict[str, Any]) -> str:
+        raise PermissionError("access denied")
+
+    result = agent.run_once(process_permission)
+    exception_codes = [r.get("error_code") for r in result["results"] if r["action"] == "EXCEPTION"]
+    assert exception_codes and exception_codes[0] == "PERMISSION_ERROR"
+
+    dlq_messages = _drain_main_queue(sqs_client=sqs, main_url=main_url, dlq_url=dlq_url, max_attempts=3)
+    assert len(dlq_messages) == 1
+
+
+@mock_aws
+def test_secrets_failure_immediate_dlq(make_load_queues) -> None:
+    env = "dev"
+    domain = "market"
+    main_url, dlq_url = make_load_queues(env, domain)
+
+    import boto3
+
+    sqs = boto3.client("sqs", region_name="us-east-1")
+    sqs.set_queue_attributes(QueueUrl=main_url, Attributes={"VisibilityTimeout": "0"})
+
+    body = {
+        "bucket": "data-pipeline-curated-dev",
+        "key": "market/prices/ds=2025-09-10/part-010.parquet",
+        "domain": "market",
+        "table_name": "prices",
+        "partition": "ds=2025-09-10",
+        "correlation_id": "e90e8400-e29b-41d4-a716-446655440000",
+    }
+    sqs.send_message(QueueUrl=main_url, MessageBody=json.dumps(body))
+
+    agent = FakeLoaderAgent(LoaderConfig(queue_url=main_url, retry_visibility_timeout=0))
+
+    def process_secrets(_: Dict[str, Any]) -> str:
+        raise LoaderError("SECRETS_ERROR", "unable to read secret")
+
+    result = agent.run_once(process_secrets)
+    exception_codes = [r.get("error_code") for r in result["results"] if r["action"] == "EXCEPTION"]
+    assert exception_codes and exception_codes[0] == "SECRETS_ERROR"
+
+    dlq_messages = _drain_main_queue(sqs_client=sqs, main_url=main_url, dlq_url=dlq_url, max_attempts=3)
+    assert len(dlq_messages) == 1
