@@ -12,6 +12,10 @@ from typing import Any, Dict, Iterable, Mapping, Optional, Tuple
 from uuid import UUID, uuid4
 
 
+class ValidationError(ValueError):
+    """Raised when payload validation fails."""
+
+
 BUCKET_PATTERN = re.compile(r"^[a-z0-9][a-z0-9.-]{1,61}[a-z0-9]$")
 DOMAIN_PATTERN = re.compile(r"^[a-z0-9-]{1,50}$")
 TABLE_PATTERN = re.compile(r"^[a-z0-9_]{1,50}$")
@@ -26,8 +30,15 @@ _PRIORITY_BY_DOMAIN = {
 }
 
 
-class ValidationError(ValueError):
-    """Raised when payload validation fails."""
+class LoadErrorCodes:
+    PARSE_ERROR = "PARSE_ERROR"
+    VALIDATION_ERROR = "VALIDATION_ERROR"
+    FILE_NOT_FOUND = "FILE_NOT_FOUND"
+    CONNECTION_ERROR = "CONNECTION_ERROR"
+    TIMEOUT_ERROR = "TIMEOUT_ERROR"
+    MEMORY_ERROR = "MEMORY_ERROR"
+    PERMISSION_ERROR = "PERMISSION_ERROR"
+    SECRETS_ERROR = "SECRETS_ERROR"
 
 
 @dataclass(frozen=True)
