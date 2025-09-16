@@ -61,6 +61,30 @@ dev_config = {
     ],
     # Default suffixes when processing_triggers not specified
     "processing_suffixes": [".json", ".csv"],
+    # Load pipeline configuration (S3 → SQS)
+    "load_min_file_size_bytes": 1024,
+    "load_domain_configs": [
+        {
+            "domain": "market",
+            "s3_prefix": "market/",
+            "priority": "1",
+        },
+        {
+            "domain": "customer",
+            "s3_prefix": "customer/",
+            "priority": "2",
+        },
+        {
+            "domain": "product",
+            "s3_prefix": "product/",
+            "priority": "3",
+        },
+        {
+            "domain": "analytics",
+            "s3_prefix": "analytics/",
+            "priority": "3",
+        },
+    ],
     "tags": {
         "Environment": "dev",
         "Project": "ServerlessDataPipeline",

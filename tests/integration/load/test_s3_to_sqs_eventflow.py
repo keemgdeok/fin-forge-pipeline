@@ -408,7 +408,7 @@ def test_security_attributes_round_trip(make_load_queues, load_module) -> None:
 
     import boto3
 
-    module = load_module("src/lambda/shared/layers/core/load_contracts.py")
+    module = load_module("src/lambda/shared/layers/core/python/load_contracts.py")
     build_message_attributes = module["build_message_attributes"]
     LoadMessage = module["LoadMessage"]
 
