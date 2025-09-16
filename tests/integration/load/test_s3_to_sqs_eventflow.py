@@ -56,6 +56,14 @@ def test_happy_path_ack_deletes_message(make_load_queues) -> None:
     import boto3
 
     sqs = boto3.client("sqs", region_name="us-east-1")
+    # Given: 성공적으로 처리될 메시지가 큐에 존재하고
+    # Given: S3 404가 발생하는 메시지가 있고
+    # Given: ClickHouse 연결이 반복적으로 실패하는 메시지가 있고
+    # Given: 메모리 고갈이 반복되는 메시지가 있고
+    # Given: 큰 파일 크기를 가진 메시지가 있고
+    # Given: 재시도가 필요한 메시지가 있고
+    # Given: 권한 오류가 발생할 메시지가 있고
+    # Given: 시크릿 조회에 실패하는 메시지가 있고
     body = {
         "bucket": "data-pipeline-curated-dev",
         "key": "market/prices/ds=2025-09-10/part-001.parquet",
@@ -72,6 +80,8 @@ def test_happy_path_ack_deletes_message(make_load_queues) -> None:
         assert msg["domain"] == "market"
         return "SUCCESS"
 
+    # When: 에이전트가 메시지를 처리하면
+    # Then: 메시지가 삭제되어 큐가 비어야 한다
     result = agent.run_once(process)
     assert result["count"] == 1
 
@@ -89,6 +99,7 @@ def test_partial_batch_retry_then_success(make_load_queues) -> None:
     import boto3
 
     sqs = boto3.client("sqs", region_name="us-east-1")
+    # Given: 일부는 성공하고 일부는 재시도가 필요한 메시지 배치가 있고
     good = {
         "bucket": "data-pipeline-curated-dev",
         "key": "market/prices/ds=2025-09-10/part-001.parquet",
@@ -113,6 +124,7 @@ def test_partial_batch_retry_then_success(make_load_queues) -> None:
     def process_first(msg: Dict[str, Any]) -> str:
         return "RETRY" if msg["key"].endswith("part-002.parquet") else "SUCCESS"
 
+    # When: 첫 번째 실행에서 재시도가 발생하고
     # First pass: 1 success, 1 retry (visibility set to 0 to requeue)
     r1 = agent.run_once(process_first)
     assert r1["count"] == 2
@@ -121,6 +133,7 @@ def test_partial_batch_retry_then_success(make_load_queues) -> None:
     def process_second(msg: Dict[str, Any]) -> str:
         return "SUCCESS"
 
+    # Then: 두 번째 실행 이후 큐가 비어야 한다
     r2 = agent.run_once(process_second)
     assert r2["count"] >= 1  # at least the retried message
 
@@ -168,6 +181,7 @@ def test_parse_error_moves_to_dlq(make_load_queues) -> None:
     sqs = boto3.client("sqs", region_name="us-east-1")
     sqs.set_queue_attributes(QueueUrl=main_url, Attributes={"VisibilityTimeout": "0"})
 
+    # Given: JSON 파싱에 실패할 메시지가 큐에 있고
     sqs.send_message(QueueUrl=main_url, MessageBody="{invalid-json")
 
     agent = FakeLoaderAgent(LoaderConfig(queue_url=main_url, retry_visibility_timeout=0))
@@ -177,6 +191,8 @@ def test_parse_error_moves_to_dlq(make_load_queues) -> None:
         result = agent.run_once(lambda _: "SUCCESS")
         parse_actions.extend([r for r in result["results"] if r["action"] == "PARSE_ERROR"])
 
+    # When: 파싱 실패가 반복되면
+    # Then: DLQ로 이동하고 에러 코드가 기록된다
     assert parse_actions, "parse failures should be recorded"
     assert all(r.get("error_code") == "PARSE_ERROR" for r in parse_actions)
 
@@ -220,6 +236,7 @@ def test_file_not_found_retries_then_dlq(make_load_queues) -> None:
 
     assert attempts == ["FILE_NOT_FOUND", "FILE_NOT_FOUND", "FILE_NOT_FOUND"]
 
+    # Then: 재시도 후 DLQ로 이동한다
     dlq_messages = _drain_main_queue(sqs_client=sqs, main_url=main_url, dlq_url=dlq_url)
     assert len(dlq_messages) == 1
     dlq_body = json.loads(dlq_messages[0]["Body"])
@@ -262,6 +279,7 @@ def test_connection_error_retries_then_dlq(make_load_queues) -> None:
 
     assert attempts == ["CONNECTION_ERROR", "CONNECTION_ERROR", "CONNECTION_ERROR"]
 
+    # Then: 재시도 후 DLQ로 이동한다
     dlq_messages = _drain_main_queue(sqs_client=sqs, main_url=main_url, dlq_url=dlq_url)
     assert len(dlq_messages) == 1
     dlq_body = json.loads(dlq_messages[0]["Body"])
@@ -307,6 +325,9 @@ def test_memory_exhaustion_retry_limit(make_load_queues) -> None:
 
     assert attempt_codes == ["MEMORY_ERROR", "MEMORY_ERROR", "MEMORY_ERROR"]
 
+    # Then: 재시도 제한 후 DLQ로 이동한다
+    # Then: 즉시 DLQ로 라우팅된다
+    # Then: 즉시 DLQ로 라우팅된다
     dlq_messages = _drain_main_queue(sqs_client=sqs, main_url=main_url, dlq_url=dlq_url, max_attempts=3)
     assert len(dlq_messages) == 1
     dlq_body = json.loads(dlq_messages[0]["Body"])
@@ -339,6 +360,8 @@ def test_large_file_processing_success(make_load_queues) -> None:
         assert msg["file_size"] == body["file_size"]
         return "SUCCESS"
 
+    # When: 에이전트가 메시지를 처리하면
+    # Then: 성공적으로 삭제되어 큐가 비어야 한다
     result = agent.run_once(process_large)
     assert result["count"] == 1
 
@@ -370,6 +393,8 @@ def test_retry_visibility_extension(make_load_queues) -> None:
     def process_retry(_: Dict[str, Any]) -> str:
         return "RETRY"
 
+    # When: 재시도를 요청하면
+    # Then: visibility 타임아웃이 설정값으로 변경된다
     result = agent.run_once(process_retry)
     assert result["count"] == 1
     assert result["visibility_changes"] == [15]
@@ -387,6 +412,7 @@ def test_security_attributes_round_trip(make_load_queues, load_module) -> None:
     build_message_attributes = module["build_message_attributes"]
     LoadMessage = module["LoadMessage"]
 
+    # Given: 메시지 속성이 포함된 SQS 메시지가 전송되고
     message = LoadMessage(
         bucket="data-pipeline-curated-dev",
         key="market/prices/ds=2025-09-10/part-005.parquet",
@@ -412,6 +438,7 @@ def test_security_attributes_round_trip(make_load_queues, load_module) -> None:
     )
     msg = resp["Messages"][0]
     received_attrs = msg["MessageAttributes"]
+    # Then: 수신된 속성이 원본과 동일해야 한다
     assert received_attrs["Domain"]["StringValue"] == "market"
     assert received_attrs["Priority"]["StringValue"] == "1"
 

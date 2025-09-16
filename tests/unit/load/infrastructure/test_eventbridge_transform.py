@@ -19,6 +19,9 @@ def test_event_transform_to_sqs_message(load_module) -> None:
     mod: Dict[str, Any] = load_module(TARGET)
     transform = mod["transform_s3_event_to_message"]
 
+    # Given: 유효한 S3 Object Created 이벤트가 있고
+    # When: 이벤트를 SQS 메시지로 변환하면
+    # Then: 스펙에 맞는 필드가 추출된다
     bucket = "data-pipeline-curated-dev"
     key = "market/prices/ds=2025-09-10/part-001.parquet"
     event = build_s3_object_created_event(bucket=bucket, key=key, size=1337)
@@ -38,6 +41,9 @@ def test_event_transform_rejects_small_or_invalid_files(load_module) -> None:
     transform = mod["transform_s3_event_to_message"]
     ValidationError = mod.get("ValidationError")
 
+    # Given: 확장자나 크기가 유효하지 않은 이벤트가 주어지고
+    # When: 변환 함수를 호출하면
+    # Then: ValidationError가 발생한다
     bucket = "data-pipeline-curated-dev"
     bad_key = "market/prices/ds=2025-09-10/part-001.csv"
     bad_event = build_s3_object_created_event(bucket=bucket, key=bad_key, size=1337)

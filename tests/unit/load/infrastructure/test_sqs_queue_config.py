@@ -18,6 +18,9 @@ def test_queue_naming_and_redrive_policy(make_load_queues) -> None:
     domain = "market"
     main_url, dlq_url = make_load_queues(env, domain)
 
+    # Given: Load용 메인 큐와 DLQ가 생성되고
+    # When: 큐 이름 및 속성을 조회하면
+    # Then: 스펙의 네이밍 규칙과 redrive 설정을 만족해야 한다
     # Assert queue names follow the spec
     expected = build_queue_names(env=env, domain=domain)
 
