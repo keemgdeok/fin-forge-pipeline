@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import json
-from typing import Dict
+from typing import Dict, cast
 
 import pytest
 from moto import mock_aws
@@ -29,8 +29,12 @@ def test_queue_naming_and_redrive_policy(make_load_queues) -> None:
     sqs = boto3.client("sqs", region_name="us-east-1")
 
     def _name(url: str) -> str:
-        attrs: Dict[str, str] = sqs.get_queue_attributes(QueueUrl=url, AttributeNames=["QueueArn"])  # type: ignore[arg-type]
-        arn = attrs["Attributes"]["QueueArn"]
+        response: Dict[str, Dict[str, str]] = sqs.get_queue_attributes(  # type: ignore[arg-type]
+            QueueUrl=url,
+            AttributeNames=["QueueArn"],
+        )
+        attributes = cast(Dict[str, str], response.get("Attributes", {}))
+        arn = attributes["QueueArn"]
         return arn.split(":")[-1]
 
     assert _name(main_url) == expected.main
@@ -41,7 +45,8 @@ def test_queue_naming_and_redrive_policy(make_load_queues) -> None:
         QueueUrl=main_url,
         AttributeNames=["RedrivePolicy", "VisibilityTimeout", "MessageRetentionPeriod"],
     )
-    redrive = json.loads(attrs["Attributes"]["RedrivePolicy"])  # type: ignore[index]
+    attributes = cast(Dict[str, str], attrs.get("Attributes", {}))
+    redrive = json.loads(attributes["RedrivePolicy"])
     assert redrive["maxReceiveCount"] == 3
-    assert int(attrs["Attributes"]["VisibilityTimeout"]) == 1800  # type: ignore[index]
-    assert int(attrs["Attributes"]["MessageRetentionPeriod"]) == 14 * 24 * 60 * 60  # type: ignore[index]
+    assert int(attributes["VisibilityTimeout"]) == 1800
+    assert int(attributes["MessageRetentionPeriod"]) == 14 * 24 * 60 * 60
