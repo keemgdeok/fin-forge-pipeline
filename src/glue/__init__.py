@@ -1,8 +1,8 @@
 """Glue package initializer.
 
-Expose subpackages for import/patch resolution without importing heavy modules.
+This module intentionally avoids importing heavy submodules at import time to
+keep package initialization lightweight. Consumers should import the required
+modules explicitly, e.g. ``from glue import jobs`` or ``import glue.jobs``.
 """
 
-from . import jobs as jobs
-
-__all__ = ["jobs"]
+__all__: list[str] = []

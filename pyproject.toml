@@ -42,6 +42,9 @@ omit = [
   "src/lambda/layers/common/python/shared/clients/market_data.py",
   # Glue ETL jobs run in AWS Glue runtime; exclude from local coverage
   "src/glue/jobs/*",
+  # Glue support libraries are exercised in AWS Glue context; exclude from load-focused coverage
+  "src/glue/lib/*",
+  "src/glue/__init__.py",
 ]
 
 [tool.coverage.report]

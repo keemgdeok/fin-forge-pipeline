@@ -1,0 +1,1 @@
+"""Load event publisher Lambda."""

@@ -17,6 +17,7 @@ from infrastructure.pipelines.customer_data.ingestion_stack import (
 from infrastructure.pipelines.customer_data.processing_stack import (
     CustomerDataProcessingStack,
 )
+from infrastructure.pipelines.load import LoadPipelineStack
 
 # Platform Services
 from infrastructure.monitoring.observability_stack import ObservabilityStack
@@ -112,6 +113,16 @@ customer_processing_stack = CustomerDataProcessingStack(
     env=cdk_env,
 )
 
+load_pipeline_stack = LoadPipelineStack(
+    app,
+    f"{stack_prefix}-Pipeline-Load",
+    environment=environment,
+    config=config,
+    shared_storage_stack=shared_storage_stack,
+    lambda_execution_role_arn=security_stack.lambda_execution_role.role_arn,
+    env=cdk_env,
+)
+
 # TODO: Add more domain pipelines
 # - ProductAnalyticsIngestionStack
 # - ProductAnalyticsProcessingStack
@@ -137,6 +148,8 @@ customer_processing_stack.add_dependency(shared_storage_stack)
 # customer_processing_stack.add_dependency(customer_ingestion_stack)
 # Removed - No direct reference needed
 
+load_pipeline_stack.add_dependency(shared_storage_stack)
+
 # ========================================
 # TAGGING STRATEGY
 # ========================================
@@ -153,5 +166,7 @@ cdk.Tags.of(customer_ingestion_stack).add("Domain", "CustomerData")
 cdk.Tags.of(customer_processing_stack).add("Domain", "CustomerData")
 cdk.Tags.of(customer_ingestion_stack).add("PipelineType", "Ingestion")
 cdk.Tags.of(customer_processing_stack).add("PipelineType", "Processing")
+cdk.Tags.of(load_pipeline_stack).add("Domain", "SharedLoad")
+cdk.Tags.of(load_pipeline_stack).add("PipelineType", "Load")
 
 app.synth()

@@ -54,6 +54,29 @@ prod_config = {
         },
     ],
     "processing_suffixes": [".json", ".csv"],
+    "load_min_file_size_bytes": 1024,
+    "load_domain_configs": [
+        {
+            "domain": "market",
+            "s3_prefix": "market/",
+            "priority": "1",
+        },
+        {
+            "domain": "customer",
+            "s3_prefix": "customer/",
+            "priority": "2",
+        },
+        {
+            "domain": "product",
+            "s3_prefix": "product/",
+            "priority": "3",
+        },
+        {
+            "domain": "analytics",
+            "s3_prefix": "analytics/",
+            "priority": "3",
+        },
+    ],
     "tags": {
         "Environment": "prod",
         "Project": "ServerlessDataPipeline",
