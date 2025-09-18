@@ -2,7 +2,7 @@ from aws_cdk import App
 from aws_cdk.assertions import Template
 
 from infrastructure.core.shared_storage_stack import SharedStorageStack
-from infrastructure.pipelines.customer_data import processing_stack as ps
+from infrastructure.pipelines.daily_prices_data import processing_stack as ps
 
 
 def _base_config():
@@ -38,7 +38,7 @@ def test_glue_job_defaults_and_schema_fingerprint_path(monkeypatch) -> None:
     monkeypatch.setattr(ps, "PythonFunction", _fake_python_function, raising=False)
 
     shared = SharedStorageStack(app, "SharedStorageGlueDefaults", environment="dev", config=cfg)
-    proc = ps.CustomerDataProcessingStack(
+    proc = ps.DailyPricesDataProcessingStack(
         app,
         "ProcStackGlueDefaults",
         environment="dev",
@@ -96,7 +96,7 @@ def test_glue_job_includes_shared_package_via_extra_py_files(monkeypatch) -> Non
     monkeypatch.setattr(ps, "PythonFunction", _fake_python_function, raising=False)
 
     shared = SharedStorageStack(app, "SharedStorageGlueExtras", environment="dev", config=cfg)
-    proc = ps.CustomerDataProcessingStack(
+    proc = ps.DailyPricesDataProcessingStack(
         app,
         "ProcStackGlueExtras",
         environment="dev",

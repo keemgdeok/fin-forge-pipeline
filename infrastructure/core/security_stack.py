@@ -63,7 +63,7 @@ class SecurityStack(Stack):
             schema_object_arns.append(f"arn:aws:s3:::{artifacts_bucket_name}/{d}/{tbl}/_schema/*")
             curated_schema_object_arns.append(f"arn:aws:s3:::{curated_bucket_name}/{d}/{tbl}/_schema/*")
 
-        glue_job_arn = f"arn:aws:glue:{self.region}:{self.account}:job/{self.env_name}-customer-data-etl"
+        glue_job_arn = f"arn:aws:glue:{self.region}:{self.account}:job/{self.env_name}-daily-prices-data-etl"
         ingestion_queue_arn = f"arn:aws:sqs:{self.region}:{self.account}:{self.env_name}-ingestion-queue"
         load_queue_arn = f"arn:aws:sqs:{self.region}:{self.account}:{self.env_name}-*-load-queue"
 
@@ -211,9 +211,9 @@ class SecurityStack(Stack):
 
     def _create_step_functions_execution_role(self) -> iam.Role:
         """Create Step Functions execution role."""
-        preflight_fn_name = f"{self.env_name}-customer-data-preflight"
+        preflight_fn_name = f"{self.env_name}-daily-prices-data-preflight"
         schema_decider_fn_name = f"{self.env_name}-schema-change-decider"
-        glue_job_arn = f"arn:aws:glue:{self.region}:{self.account}:job/{self.env_name}-customer-data-etl"
+        glue_job_arn = f"arn:aws:glue:{self.region}:{self.account}:job/{self.env_name}-daily-prices-data-etl"
         indicators_job_arn = f"arn:aws:glue:{self.region}:{self.account}:job/{self.env_name}-market-indicators-etl"
         crawler_arn = f"arn:aws:glue:{self.region}:{self.account}:crawler/{self.env_name}-curated-data-crawler"
 

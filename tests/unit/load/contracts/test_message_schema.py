@@ -128,7 +128,7 @@ def test_domain_and_partition_must_match_key(load_module) -> None:
         LoadMessage(
             bucket="data-pipeline-curated-dev",
             key="market/prices/ds=2025-09-10/part-001.parquet",
-            domain="customer",
+            domain="daily-prices-data",
             table_name="prices",
             partition="ds=2025-09-10",
             correlation_id="550e8400-e29b-41d4-a716-446655440000",

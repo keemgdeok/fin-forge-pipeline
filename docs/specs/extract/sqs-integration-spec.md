@@ -118,4 +118,4 @@ Extract 파이프라인은 **Main Queue + Dead Letter Queue** 패턴을 사용�
 
 ---
 
-*본 명세는 `infrastructure/pipelines/customer_data/ingestion_stack.py`의 SQS 구성을 기반으로 작성되었습니다.*
+*본 명세는 `infrastructure/pipelines/daily_prices_data/ingestion_stack.py`의 SQS 구성을 기반으로 작성되었습니다.*

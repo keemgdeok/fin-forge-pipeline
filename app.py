@@ -11,11 +11,11 @@ from infrastructure.core.security_stack import SecurityStack
 from infrastructure.core.shared_storage_stack import SharedStorageStack
 
 # Domain Pipelines
-from infrastructure.pipelines.customer_data.ingestion_stack import (
-    CustomerDataIngestionStack,
+from infrastructure.pipelines.daily_prices_data.ingestion_stack import (
+    DailyPricesDataIngestionStack,
 )
-from infrastructure.pipelines.customer_data.processing_stack import (
-    CustomerDataProcessingStack,
+from infrastructure.pipelines.daily_prices_data.processing_stack import (
+    DailyPricesDataProcessingStack,
 )
 from infrastructure.pipelines.load import LoadPipelineStack
 
@@ -90,10 +90,10 @@ observability_stack = ObservabilityStack(
 # DOMAIN-SPECIFIC PIPELINE LAYER
 # ========================================
 
-# Customer Data Pipeline
-customer_ingestion_stack = CustomerDataIngestionStack(
+# Daily Prices Data Pipeline
+daily_prices_ingestion_stack = DailyPricesDataIngestionStack(
     app,
-    f"{stack_prefix}-Pipeline-CustomerData-Ingestion",
+    f"{stack_prefix}-Pipeline-DailyPricesData-Ingestion",
     environment=environment,
     config=config,
     shared_storage_stack=shared_storage_stack,
@@ -101,9 +101,9 @@ customer_ingestion_stack = CustomerDataIngestionStack(
     env=cdk_env,
 )
 
-customer_processing_stack = CustomerDataProcessingStack(
+daily_prices_processing_stack = DailyPricesDataProcessingStack(
     app,
-    f"{stack_prefix}-Pipeline-CustomerData-Processing",
+    f"{stack_prefix}-Pipeline-DailyPricesData-Processing",
     environment=environment,
     config=config,
     shared_storage_stack=shared_storage_stack,
@@ -139,13 +139,13 @@ load_pipeline_stack = LoadPipelineStack(
 catalog_stack.add_dependency(shared_storage_stack)
 
 # Pipeline dependencies - Remove Security dependencies to avoid circular references
-customer_ingestion_stack.add_dependency(shared_storage_stack)
-# customer_ingestion_stack.add_dependency(security_stack)  # Removed - CDK auto-resolves
+daily_prices_ingestion_stack.add_dependency(shared_storage_stack)
+# daily_prices_ingestion_stack.add_dependency(security_stack)  # Removed - CDK auto-resolves
 
-customer_processing_stack.add_dependency(shared_storage_stack)
-# customer_processing_stack.add_dependency(security_stack)
+daily_prices_processing_stack.add_dependency(shared_storage_stack)
+# daily_prices_processing_stack.add_dependency(security_stack)
 # Removed - CDK auto-resolves
-# customer_processing_stack.add_dependency(customer_ingestion_stack)
+# daily_prices_processing_stack.add_dependency(daily_prices_ingestion_stack)
 # Removed - No direct reference needed
 
 load_pipeline_stack.add_dependency(shared_storage_stack)
@@ -162,10 +162,10 @@ cdk.Tags.of(app).add("ManagedBy", "CDK")
 cdk.Tags.of(app).add("CostCenter", "DataEngineering")
 
 # Domain-specific tags
-cdk.Tags.of(customer_ingestion_stack).add("Domain", "CustomerData")
-cdk.Tags.of(customer_processing_stack).add("Domain", "CustomerData")
-cdk.Tags.of(customer_ingestion_stack).add("PipelineType", "Ingestion")
-cdk.Tags.of(customer_processing_stack).add("PipelineType", "Processing")
+cdk.Tags.of(daily_prices_ingestion_stack).add("Domain", "DailyPricesData")
+cdk.Tags.of(daily_prices_processing_stack).add("Domain", "DailyPricesData")
+cdk.Tags.of(daily_prices_ingestion_stack).add("PipelineType", "Ingestion")
+cdk.Tags.of(daily_prices_processing_stack).add("PipelineType", "Processing")
 cdk.Tags.of(load_pipeline_stack).add("Domain", "SharedLoad")
 cdk.Tags.of(load_pipeline_stack).add("PipelineType", "Load")
 

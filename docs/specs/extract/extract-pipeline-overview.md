@@ -46,7 +46,7 @@ Extract는 **Event-Driven Fan-Out 패턴**으로 확장 가능한 수집을 구�
 
 | 도메인 | 데이터 소스 | 스케줄 | 큐/DLQ |
 |--------|------------|--------|--------|
-| **customer-data** | Yahoo Finance | 22:00 UTC | 전용 큐 |
+| **daily-prices-data** | Yahoo Finance | 22:00 UTC | 전용 큐 |
 
 ## Transform 연계
 
@@ -57,4 +57,4 @@ Extract는 **Event-Driven Fan-Out 패턴**으로 확장 가능한 수집을 구�
 
 ---
 
-*본 명세는 `infrastructure/pipelines/customer_data/ingestion_stack.py` 기반입니다.*
+*본 명세는 `infrastructure/pipelines/daily_prices_data/ingestion_stack.py` 기반입니다.*

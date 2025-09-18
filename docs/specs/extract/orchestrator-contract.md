@@ -6,7 +6,7 @@
 
 | 항목 | 값 |
 |------|-----|
-| **Function Name** | `{environment}-customer-data-orchestrator` |
+| **Function Name** | `{environment}-daily-prices-data-orchestrator` |
 | **Runtime** | Python 3.12 |
 | **Memory** | 256MB |
 | **Timeout** | 60초 |

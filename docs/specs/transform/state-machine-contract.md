@@ -7,7 +7,7 @@
 | 필드 | 타입 | 필수 | 예시 | 제약/설명 |
 |---|---|:---:|---|---|
 | environment | string | Y | `dev` | `dev\|stg\|prod` 중 하나 |
-| domain | string | Y | `customer-data` | 도메인 식별자 |
+| domain | string | Y | `daily-prices-data` | 도메인 식별자 |
 | table_name | string | Y | `orders` | 데이터셋/테이블 이름 (`table` 별칭 허용) |
 | ds | string | C | `2025-09-07` | `YYYY-MM-DD` (UTC). `date_range`와 상호 배타(XOR) |
 | date_range.start | string | C | `2025-09-01` | `YYYY-MM-DD` (UTC) |
@@ -40,8 +40,8 @@
 | 필드 | 타입 | 예시 | 설명 |
 |---|---|---|---|
 | ok | boolean | `true` | 전체 실행 성공 여부 |
-| correlationId | string | `customer-data:orders:2025-09-07` | `domain:table:ds` 또는 생성된 실행 키 |
-| domain | string | `customer-data` | 입력 반사 |
+| correlationId | string | `daily-prices-data:orders:2025-09-07` | `domain:table:ds` 또는 생성된 실행 키 |
+| domain | string | `daily-prices-data` | 입력 반사 |
 | table_name | string | `orders` | 입력 반사 |
 | partitions | array<string> | `["ds=2025-09-07"]` | 성공적으로 처리된 파티션 목록 |
 | stats.rowCount | number | `123456` | 출력 레코드 수(합계) |
@@ -70,7 +70,7 @@
 ```json
 {
   "ok": false,
-  "correlationId": "customer-data:orders:2025-09-07",
+  "correlationId": "daily-prices-data:orders:2025-09-07",
   "error": {
     "code": "DQ_FAILED",
     "message": "null ratio exceeded for column price",
@@ -84,8 +84,8 @@
 ```json
 {
   "ok": true,
-  "correlationId": "customer-data:orders:2025-09-07",
-  "domain": "customer-data",
+  "correlationId": "daily-prices-data:orders:2025-09-07",
+  "domain": "daily-prices-data",
   "table": "orders",
   "partitions": ["ds=2025-09-07"],
   "stats": {"rowCount": 123456, "bytesWritten": 987654321, "fileCount": 24},

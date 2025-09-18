@@ -1,6 +1,6 @@
-"""Unit tests for customer data ETL Glue job with PySpark mocking.
+"""Unit tests for daily prices data ETL Glue job with PySpark mocking.
 
-This test module covers the customer_data_etl.py Glue job using comprehensive mocking
+This test module covers the daily_prices_data_etl.py Glue job using comprehensive mocking
 to avoid dependency on actual Spark/Glue infrastructure. Tests follow TDD methodology
 with focus on data quality, error handling, and specification compliance.
 """
@@ -13,8 +13,8 @@ from unittest.mock import Mock, patch
 
 
 def _load_etl_module():
-    """Load the customer data ETL module using runpy."""
-    return runpy.run_path("src/glue/jobs/customer_data_etl.py")
+    """Load the daily prices data ETL module using runpy."""
+    return runpy.run_path("src/glue/jobs/daily_prices_data_etl.py")
 
 
 class _MockDataFrame:

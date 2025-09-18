@@ -45,7 +45,7 @@ def test_notification_handler_sns_skipped_when_topic_missing(
     monkeypatch.setitem(mod["main"].__globals__, "boto3", _Boto())
 
     event = {
-        "pipeline_name": "customer-data",
+        "pipeline_name": "daily-prices-data",
         "domain": "market",
         "table_name": "prices",
         "status": "SUCCEEDED",

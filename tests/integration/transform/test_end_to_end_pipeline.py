@@ -85,25 +85,25 @@ def sample_market_data():
 
 
 @pytest.fixture
-def sample_customer_data():
-    """테스트용 고객 데이터 샘플"""
+def sample_daily_prices_orders():
+    """테스트용 일일 가격 주문 데이터 샘플"""
     return [
         {
-            "customer_id": "CUST001",
+            "account_id": "CUST001",
             "order_id": "ORD001",
             "product_id": "PROD001",
             "quantity": 2,
             "unit_price": 99.99,
-            "order_date": "2025-09-07",
+            "trade_date": "2025-09-07",
             "status": "completed",
         },
         {
-            "customer_id": "CUST002",
+            "account_id": "CUST002",
             "order_id": "ORD002",
             "product_id": "PROD002",
             "quantity": 1,
             "unit_price": 149.99,
-            "order_date": "2025-09-07",
+            "trade_date": "2025-09-07",
             "status": "pending",
         },
     ]
@@ -139,7 +139,7 @@ class TestEndToEndPipeline:
         s3_client.put_object(Bucket=pipeline_buckets["raw"], Key=raw_key, Body=raw_data, ContentType="application/json")
 
         # Simulate ETL processing (실제 Glue job 로직)
-        with patch("glue.jobs.customer_data_etl"):
+        with patch("glue.jobs.daily_prices_data_etl"):
             # Mock ETL execution results
             transformed_data = []
             for record in sample_market_data:
@@ -232,7 +232,12 @@ class TestEndToEndPipeline:
         assert len(stored_fingerprint["columns"]) == 7, "Should have 7 columns including ds"
 
     @mock_aws
-    def test_csv_to_parquet_transformation_pipeline(self, aws_credentials, pipeline_buckets, sample_customer_data):
+    def test_csv_to_parquet_transformation_pipeline(
+        self,
+        aws_credentials,
+        pipeline_buckets,
+        sample_daily_prices_orders,
+    ):
         """
         Given: Raw S3에 CSV 형태의 고객 데이터가 있으면
         When: CSV → Parquet 변환 파이프라인을 실행하면
@@ -245,13 +250,13 @@ class TestEndToEndPipeline:
             s3_client.create_bucket(Bucket=bucket)
 
         # Create CSV data
-        df_raw = pd.DataFrame(sample_customer_data)
+        df_raw = pd.DataFrame(sample_daily_prices_orders)
         csv_buffer = BytesIO()
         df_raw.to_csv(csv_buffer, index=False)
         csv_data = csv_buffer.getvalue()
 
         # Upload raw CSV data
-        raw_key = "customer/orders/ingestion_date=2025-09-07/data.csv"
+        raw_key = "market/daily-prices-orders/ingestion_date=2025-09-07/data.csv"
         s3_client.put_object(Bucket=pipeline_buckets["raw"], Key=raw_key, Body=csv_data, ContentType="text/csv")
 
         # Simulate ETL processing with proper type handling
@@ -270,7 +275,7 @@ class TestEndToEndPipeline:
         df_transformed["unit_price"] = df_transformed["unit_price"].astype("float64")
 
         # Write to Curated as Parquet with ZSTD compression (as per spec)
-        curated_key = "customer/orders/ds=2025-09-07/data.parquet"
+        curated_key = "market/daily-prices-orders/ds=2025-09-07/data.parquet"
         parquet_buffer = BytesIO()
         df_transformed.to_parquet(
             parquet_buffer,
@@ -288,7 +293,7 @@ class TestEndToEndPipeline:
 
         # Verify file was created and is readable
         curated_objects = s3_client.list_objects_v2(
-            Bucket=pipeline_buckets["curated"], Prefix="customer/orders/ds=2025-09-07/"
+            Bucket=pipeline_buckets["curated"], Prefix="market/daily-prices-orders/ds=2025-09-07/"
         )
         assert curated_objects["KeyCount"] == 1, "Should have 1 curated Parquet file"
 
@@ -299,14 +304,14 @@ class TestEndToEndPipeline:
         result_df = pd.read_parquet(result_buffer)
 
         # Verify transformations
-        assert len(result_df) == len(sample_customer_data), "Should preserve record count"
+        assert len(result_df) == len(sample_daily_prices_orders), "Should preserve record count"
         assert "ds" in result_df.columns, "Should add partition column"
         assert result_df["quantity"].dtype == "int64", "Quantity should be int64 type"
         assert result_df["unit_price"].dtype == "float64", "Unit price should be float64 type"
 
         # Verify business data integrity
         total_quantity = result_df["quantity"].sum()
-        expected_quantity = sum(item["quantity"] for item in sample_customer_data)
+        expected_quantity = sum(item["quantity"] for item in sample_daily_prices_orders)
         assert total_quantity == expected_quantity, "Total quantity should be preserved"
 
     @mock_aws

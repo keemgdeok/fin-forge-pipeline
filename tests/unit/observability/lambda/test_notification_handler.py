@@ -17,7 +17,7 @@ def test_notification_sns_only(monkeypatch) -> None:
     monkeypatch.setitem(mod["main"].__globals__, "boto3", BotoStub(sns=sns, ses=ses))
 
     event = {
-        "pipeline_name": "customer-data",
+        "pipeline_name": "daily-prices-data",
         "domain": "market",
         "table_name": "prices",
         "status": "SUCCEEDED",
@@ -47,7 +47,7 @@ def test_notification_email_on_critical(monkeypatch) -> None:
     monkeypatch.setitem(mod["main"].__globals__, "boto3", BotoStub(sns=sns, ses=ses))
 
     event = {
-        "pipeline_name": "customer-data",
+        "pipeline_name": "daily-prices-data",
         "domain": "market",
         "table_name": "prices",
         "status": "ERROR",
