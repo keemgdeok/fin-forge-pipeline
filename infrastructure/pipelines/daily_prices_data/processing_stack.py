@@ -1,4 +1,4 @@
-"""Customer data processing pipeline stack."""
+"""Daily prices processing pipeline stack."""
 
 from aws_cdk import (
     Stack,
@@ -18,8 +18,8 @@ from constructs import Construct
 from aws_cdk.aws_lambda_python_alpha import PythonFunction
 
 
-class CustomerDataProcessingStack(Stack):
-    """Customer data ETL processing pipeline."""
+class DailyPricesDataProcessingStack(Stack):
+    """Daily prices ETL processing pipeline."""
 
     def __init__(
         self,
@@ -43,12 +43,12 @@ class CustomerDataProcessingStack(Stack):
         self.step_functions_execution_role_arn = step_functions_execution_role_arn
 
         # Deterministic Glue job name used across resources (avoids Optional[str] typing)
-        self.etl_job_name: str = f"{self.env_name}-customer-data-etl"
+        self.etl_job_name: str = f"{self.env_name}-daily-prices-data-etl"
 
         # Common Layer for shared modules
         self.common_layer = self._create_common_layer()
 
-        # Glue ETL job for customer data transformation
+        # Glue ETL job for daily prices data transformation
         self.etl_job = self._create_etl_job()
 
         # Glue ETL job for indicators computation (Curated prices -> Curated indicators)
@@ -66,12 +66,12 @@ class CustomerDataProcessingStack(Stack):
         self._create_outputs()
 
     def _create_etl_job(self) -> glue.CfnJob:
-        """Create Glue ETL job for customer data processing."""
+        """Create Glue ETL job for daily prices data processing."""
         # Package Glue script as a CDK asset and reference its S3 location
         glue_script_asset = s3_assets.Asset(
             self,
-            "CustomerTransformScriptAsset",
-            path="src/glue/jobs/customer_data_etl.py",
+            "DailyPricesTransformScriptAsset",
+            path="src/glue/jobs/daily_prices_data_etl.py",
         )
         # Ensure Glue execution role can read the script asset
         glue_exec_role_ref = iam.Role.from_role_arn(self, "GlueExecRoleRefForScript", self.glue_execution_role_arn)
@@ -99,7 +99,7 @@ class CustomerDataProcessingStack(Stack):
 
         return glue.CfnJob(
             self,
-            "CustomerETLJob",
+            "DailyPricesETLJob",
             name=self.etl_job_name,
             role=self.glue_execution_role_arn,
             command=glue.CfnJob.JobCommandProperty(
@@ -224,7 +224,7 @@ class CustomerDataProcessingStack(Stack):
         # Preflight task: derive ds, idempotency skip, build Glue args
         preflight_task = tasks.LambdaInvoke(
             self,
-            "PreflightCustomerData",
+            "PreflightDailyPrices",
             lambda_function=self._create_preflight_function(),
             output_path="$.Payload",
         )
@@ -244,7 +244,7 @@ class CustomerDataProcessingStack(Stack):
         # Prices ETL job task (includes ALL data quality validation)
         etl_task = tasks.GlueStartJobRun(
             self,
-            "ProcessCustomerData",
+            "ProcessDailyPrices",
             glue_job_name=self.etl_job_name,
             integration_pattern=sfn.IntegrationPattern.RUN_JOB,
             arguments=sfn.TaskInput.from_json_path_at("$.glue_args"),
@@ -323,8 +323,8 @@ class CustomerDataProcessingStack(Stack):
         # Success notification
         success_task = sfn.Succeed(
             self,
-            "CustomerDataProcessingSuccess",
-            comment="Customer data processing completed successfully",
+            "DailyPricesProcessingSuccess",
+            comment="Daily prices data processing completed successfully",
         )
 
         # Create single day processing chain for standalone mode
@@ -370,7 +370,7 @@ class CustomerDataProcessingStack(Stack):
                 sfn.Condition.boolean_equals("$.proceed", True),
                 tasks.GlueStartJobRun(
                     self,
-                    "BackfillProcessCustomerData",
+                    "BackfillProcessDailyPrices",
                     glue_job_name=self.etl_job_name,
                     integration_pattern=sfn.IntegrationPattern.RUN_JOB,
                     arguments=sfn.TaskInput.from_json_path_at("$.glue_args"),
@@ -480,8 +480,8 @@ class CustomerDataProcessingStack(Stack):
 
         return sfn.StateMachine(
             self,
-            "CustomerDataProcessingWorkflow",
-            state_machine_name=f"{self.env_name}-customer-data-processing",
+            "DailyPricesProcessingWorkflow",
+            state_machine_name=f"{self.env_name}-daily-prices-data-processing",
             definition_body=sfn.DefinitionBody.from_chainable(top_definition),
             role=iam.Role.from_role_arn(
                 self,
@@ -573,8 +573,8 @@ class CustomerDataProcessingStack(Stack):
         """Create preflight Lambda function for ds/idempotency/args."""
         function = PythonFunction(
             self,
-            "CustomerDataPreflightFunction",
-            function_name=f"{self.env_name}-customer-data-preflight",
+            "DailyPricesPreflightFunction",
+            function_name=f"{self.env_name}-daily-prices-data-preflight",
             runtime=lambda_.Runtime.PYTHON_3_12,
             entry="src/lambda/functions/preflight",
             index="handler.py",
@@ -626,7 +626,7 @@ class CustomerDataProcessingStack(Stack):
             self,
             "ETLJobName",
             value=self.etl_job_name,
-            description="Customer data ETL job name",
+            description="Daily prices data ETL job name",
         )
 
         # Output only when processing is enabled
@@ -635,7 +635,7 @@ class CustomerDataProcessingStack(Stack):
                 self,
                 "ProcessingWorkflowArn",
                 value=self.processing_workflow.state_machine_arn,
-                description="Customer data processing workflow ARN",
+                description="Daily prices data processing workflow ARN",
             )
 
     def _create_common_layer(self) -> lambda_.LayerVersion:

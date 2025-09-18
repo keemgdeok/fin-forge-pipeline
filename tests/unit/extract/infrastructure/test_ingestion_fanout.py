@@ -2,7 +2,7 @@ from aws_cdk import App
 from aws_cdk.assertions import Template
 
 from infrastructure.core.shared_storage_stack import SharedStorageStack
-from infrastructure.pipelines.customer_data import ingestion_stack as ing
+from infrastructure.pipelines.daily_prices_data import ingestion_stack as ing
 
 
 def _base_config():
@@ -34,7 +34,7 @@ def test_fanout_resources(fake_python_function) -> None:
     fake_python_function(ing)
 
     shared = SharedStorageStack(app, "SharedStorageFanout", environment="dev", config=cfg)
-    stack = ing.CustomerDataIngestionStack(
+    stack = ing.DailyPricesDataIngestionStack(
         app,
         "IngestionFanout",
         environment="dev",

@@ -20,7 +20,7 @@ payload = TransformExecutionInput(
 )
 
 execution_arn = start_transform_execution(
-    sm_arn="arn:aws:states:us-east-1:123456789012:stateMachine:dev-customer-data-processing",
+    sm_arn="arn:aws:states:us-east-1:123456789012:stateMachine:dev-daily-prices-data-processing",
     payload=payload,
     region_name="us-east-1",
 )

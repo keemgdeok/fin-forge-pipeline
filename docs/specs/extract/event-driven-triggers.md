@@ -96,12 +96,12 @@ Extract 파이프라인은 다음 3가지 트리거 패턴을 지원합니다:
 ```bash
 # AWS CLI
 aws lambda invoke \
-  --function-name dev-customer-data-orchestrator \
+  --function-name dev-daily-prices-data-orchestrator \
   --payload '{"data_source":"yahoo_finance","symbols":["AAPL"],"correlation_id":"manual-001"}' \
   response.json
 
 # CDK CLI (권장)
-cdk deploy CustomerDataIngestionStack \
+cdk deploy DailyPricesDataIngestionStack \
   --parameters TriggerIngestion=true \
   --parameters TestSymbols=AAPL,MSFT
 ```
@@ -241,4 +241,4 @@ cloudwatch.put_metric_data(
 
 ---
 
-*본 명세는 `infrastructure/pipelines/customer_data/ingestion_stack.py`의 EventBridge 설정을 기반으로 작성되었습니다.*
+*본 명세는 `infrastructure/pipelines/daily_prices_data/ingestion_stack.py`의 EventBridge 설정을 기반으로 작성되었습니다.*

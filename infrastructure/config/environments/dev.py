@@ -69,21 +69,6 @@ dev_config = {
             "s3_prefix": "market/",
             "priority": "1",
         },
-        {
-            "domain": "customer",
-            "s3_prefix": "customer/",
-            "priority": "2",
-        },
-        {
-            "domain": "product",
-            "s3_prefix": "product/",
-            "priority": "3",
-        },
-        {
-            "domain": "analytics",
-            "s3_prefix": "analytics/",
-            "priority": "3",
-        },
     ],
     "tags": {
         "Environment": "dev",

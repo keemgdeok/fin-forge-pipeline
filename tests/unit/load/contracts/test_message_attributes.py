@@ -42,7 +42,7 @@ def test_build_message_attributes(load_module) -> None:
     "domain,expected",
     [
         ("market", "1"),
-        ("customer", "2"),
+        ("daily-prices-data", "2"),
         ("product", "3"),
         ("analytics", "3"),
         ("unknown", "3"),

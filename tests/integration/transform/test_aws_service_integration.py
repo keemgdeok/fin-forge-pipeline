@@ -55,7 +55,7 @@ def eventbridge_rule_config():
                 "object": {
                     "key": [
                         {"prefix": "market/prices/", "suffix": ".json"},
-                        {"prefix": "market/prices/", "suffix": ".csv"},
+                        {"prefix": "market/daily-prices-orders/", "suffix": ".csv"},
                     ]
                 },
             },
@@ -231,7 +231,7 @@ class TestAWSServiceIntegration:
                     "key": [
                         {"prefix": "market/prices/", "suffix": ".json"},
                         {"prefix": "market/prices/", "suffix": ".csv"},
-                        {"prefix": "customer/orders/", "suffix": ".json"},
+                        {"prefix": "market/daily-prices-orders/", "suffix": ".json"},
                     ]
                 },
             },
@@ -254,9 +254,9 @@ class TestAWSServiceIntegration:
                 "reason": "Matches market/prices + .csv",
             },
             {
-                "key": "customer/orders/ingestion_date=2025-09-07/data.json",
+                "key": "market/daily-prices-orders/ingestion_date=2025-09-07/data.json",
                 "should_match": True,
-                "reason": "Matches customer/orders + .json",
+                "reason": "Matches market/daily-prices-orders + .json",
             },
             {
                 "key": "market/prices/ingestion_date=2025-09-07/data.parquet",

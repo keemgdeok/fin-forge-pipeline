@@ -85,25 +85,23 @@ def test_market_data():
 
 
 @pytest.fixture
-def test_customer_data():
-    """Standard customer data for testing"""
+def test_daily_prices_orders():
+    """Standard daily prices order data for testing"""
     return [
         {
-            "customer_id": "CUST001",
             "order_id": "ORD001",
-            "product_id": "PROD001",
+            "symbol": "AAPL",
             "quantity": 2,
             "unit_price": 99.99,
-            "order_date": "2025-09-07",
+            "trade_date": "2025-09-07",
             "status": "completed",
         },
         {
-            "customer_id": "CUST002",
             "order_id": "ORD002",
-            "product_id": "PROD002",
+            "symbol": "MSFT",
             "quantity": 1,
             "unit_price": 149.99,
-            "order_date": "2025-09-07",
+            "trade_date": "2025-09-07",
             "status": "pending",
         },
     ]

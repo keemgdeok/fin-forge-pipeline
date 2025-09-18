@@ -1,4 +1,4 @@
-"""Customer data ingestion pipeline stack."""
+"""Daily prices ingestion pipeline stack."""
 
 from aws_cdk import (
     Stack,
@@ -17,8 +17,8 @@ from constructs import Construct
 from aws_cdk import aws_cloudwatch as cw
 
 
-class CustomerDataIngestionStack(Stack):
-    """Customer data ingestion pipeline."""
+class DailyPricesDataIngestionStack(Stack):
+    """Daily prices ingestion pipeline."""
 
     def __init__(
         self,
@@ -67,8 +67,8 @@ class CustomerDataIngestionStack(Stack):
 
         function = PythonFunction(
             self,
-            "CustomerIngestionWorker",
-            function_name=f"{self.env_name}-customer-data-ingestion-worker",
+            "DailyPricesIngestionWorker",
+            function_name=f"{self.env_name}-daily-prices-data-ingestion-worker",
             runtime=lambda_.Runtime.PYTHON_3_12,
             entry="src/lambda/functions/ingestion_worker",
             index="handler.py",
@@ -101,8 +101,8 @@ class CustomerDataIngestionStack(Stack):
         """Create orchestrator Lambda function to fan-out symbols into SQS."""
         function = PythonFunction(
             self,
-            "CustomerIngestionOrchestrator",
-            function_name=f"{self.env_name}-customer-data-orchestrator",
+            "DailyPricesIngestionOrchestrator",
+            function_name=f"{self.env_name}-daily-prices-data-orchestrator",
             runtime=lambda_.Runtime.PYTHON_3_12,
             entry="src/lambda/functions/ingestion_orchestrator",
             index="handler.py",
@@ -170,11 +170,11 @@ class CustomerDataIngestionStack(Stack):
         return Duration.seconds(int(self.config.get("lambda_timeout", 300)))
 
     def _create_ingestion_schedule(self) -> events.Rule:
-        """Create scheduled trigger for customer data ingestion."""
+        """Create scheduled trigger for daily prices data ingestion."""
         rule = events.Rule(
             self,
-            "CustomerIngestionSchedule",
-            rule_name=f"{self.env_name}-customer-ingestion-schedule",
+            "DailyPricesIngestionSchedule",
+            rule_name=f"{self.env_name}-daily-prices-ingestion-schedule",
             schedule=events.Schedule.cron(
                 minute="0",
                 hour="22",  # Daily at 7 AM (KST)
@@ -198,14 +198,14 @@ class CustomerDataIngestionStack(Stack):
             self,
             "IngestionFunctionArn",
             value=self.ingestion_function.function_arn,
-            description="Customer data ingestion function ARN",
+            description="Daily prices ingestion function ARN",
         )
 
         CfnOutput(
             self,
             "OrchestratorFunctionArn",
             value=self.orchestrator_function.function_arn,
-            description="Customer data ingestion orchestrator function ARN",
+            description="Daily prices ingestion orchestrator function ARN",
         )
 
         CfnOutput(

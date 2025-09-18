@@ -24,7 +24,7 @@ QUEUE_URL_PATTERN = re.compile(r"^https://sqs\.[a-z0-9-]+\.amazonaws\.com/\d{12}
 
 _PRIORITY_BY_DOMAIN = {
     "market": "1",  # High priority
-    "customer": "2",  # Medium priority
+    "daily-prices-data": "2",  # Medium priority
     "product": "3",  # Low priority
     "analytics": "3",  # Low priority
 }

@@ -63,7 +63,7 @@ def sfn_definition():
                 "Type": "Task",
                 "Resource": "arn:aws:states:::glue:startJobRun.sync",
                 "Parameters": {
-                    "JobName": "test-customer-data-etl",
+                    "JobName": "test-daily-prices-data-etl",
                     "Arguments.$": "$.preflight_result.Payload.glue_args",
                 },
                 "ResultPath": "$.glue_result",
@@ -115,7 +115,7 @@ def backfill_sfn_definition():
                         "ProcessPartition": {
                             "Type": "Task",
                             "Resource": "arn:aws:states:::glue:startJobRun.sync",
-                            "Parameters": {"JobName": "test-customer-data-etl", "Arguments": {"--ds.$": "$"}},
+                            "Parameters": {"JobName": "test-daily-prices-data-etl", "Arguments": {"--ds.$": "$"}},
                             "Next": "PartitionSuccess",
                         },
                         "PartitionSuccess": {"Type": "Succeed"},

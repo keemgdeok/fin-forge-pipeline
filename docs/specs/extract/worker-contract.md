@@ -6,7 +6,7 @@
 
 | 항목 | 값 |
 |------|-----|
-| **Function Name** | `{environment}-customer-data-ingestion-worker` |
+| **Function Name** | `{environment}-daily-prices-data-ingestion-worker` |
 | **Runtime** | Python 3.12 |
 | **Memory** | 512MB+ (설정 가능) |
 | **Timeout** | 300초 (기본, 설정 가능) |

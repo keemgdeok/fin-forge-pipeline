@@ -22,7 +22,7 @@ classDiagram
   }
 
   %% Extract pipeline (fan-out ingestion)
-  class CustomerDataIngestionStack {
+  class DailyPricesDataIngestionStack {
     +Queue queue
     +Queue dlq
     +Function orchestrator_function
@@ -32,7 +32,7 @@ classDiagram
   }
 
   %% Transform pipeline (processing/orchestration)
-  class CustomerDataProcessingStack {
+  class DailyPricesDataProcessingStack {
     +CfnJob etl_job
     +StateMachine processing_workflow  %% optional via enable_processing_orchestration
     +LogGroup sm_log_group
@@ -53,13 +53,13 @@ classDiagram
   %% Relationships
   SharedStorageStack *-- DataLakeConstruct : composes
 
-  CustomerDataIngestionStack --> SharedStorageStack : «uses» buckets
-  CustomerDataProcessingStack --> SharedStorageStack : «uses» buckets
+  DailyPricesDataIngestionStack --> SharedStorageStack : «uses» buckets
+  DailyPricesDataProcessingStack --> SharedStorageStack : «uses» buckets
   CatalogStack --> SharedStorageStack : «uses» buckets
 
-  CustomerDataIngestionStack ..> SecurityStack : «refers» lambda_execution_role_arn
-  CustomerDataProcessingStack ..> SecurityStack : «refers» lambda/glue/sfn roles
-  ObservabilityStack ..> CustomerDataIngestionStack : «monitors»
-  ObservabilityStack ..> CustomerDataProcessingStack : «monitors»
+  DailyPricesDataIngestionStack ..> SecurityStack : «refers» lambda_execution_role_arn
+  DailyPricesDataProcessingStack ..> SecurityStack : «refers» lambda/glue/sfn roles
+  ObservabilityStack ..> DailyPricesDataIngestionStack : «monitors»
+  ObservabilityStack ..> DailyPricesDataProcessingStack : «monitors»
 
 ```
