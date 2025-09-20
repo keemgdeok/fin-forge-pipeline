@@ -9,6 +9,7 @@ on:
 
 permissions:
   contents: read
+  pull-requests: read # 최소 권한: 변경 파일 확인 및 체크 보고용으로 충분
 
 concurrency:
   group: pr-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
@@ -17,142 +18,234 @@ concurrency:
 env:
   PYTHON_VERSION: '3.12'
   NODE_VERSION: '20'
+  AWS_CDK_VERSION: '2.150.0'
 
 jobs:
   validate:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
-    
+    timeout-minutes: 20
+
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@a5ac7e51b41094c92402da3b24376905380afc29 # v4.1.6
         with:
           fetch-depth: 0
 
       - name: Get changed files
         id: changed-files
-        uses: tj-actions/changed-files@v44
-      
-      - name: Setup Python (py or deps changed)
-        if: steps.changed-files.outputs.any_changed == 'true' && (contains(steps.changed-files.outputs.all_changed_files, '.py') || contains(steps.changed-files.outputs.all_changed_files, 'requirements.txt') || contains(steps.changed-files.outputs.all_changed_files, 'pyproject.toml') || contains(steps.changed-files.outputs.all_changed_files, 'setup.cfg') || contains(steps.changed-files.outputs.all_changed_files, 'setup.py'))
-        uses: actions/setup-python@v5
-        with:
-          python-version: ${{ env.PYTHON_VERSION }}
-          cache: 'pip'
-      
-      - name: Setup Node.js (infra changed, cache)
-        if: steps.changed-files.outputs.any_changed == 'true' && contains(steps.changed-files.outputs.all_changed_files, 'infrastructure/') && hashFiles('**/package-lock.json', '**/npm-shrinkwrap.json', '**/yarn.lock') != ''
-        uses: actions/setup-node@v4
-        with:
-          node-version: ${{ env.NODE_VERSION }}
-          cache: 'npm'
+        uses: tj-actions/changed-files@1754cd4b9e661d1f0eced3b33545a8d8b3bc46d8 # v44.5.0
 
-      - name: Setup Node.js (infra changed, no cache)
-        if: steps.changed-files.outputs.any_changed == 'true' && contains(steps.changed-files.outputs.all_changed_files, 'infrastructure/') && hashFiles('**/package-lock.json', '**/npm-shrinkwrap.json', '**/yarn.lock') == ''
-        uses: actions/setup-node@v4
-        with:
-          node-version: ${{ env.NODE_VERSION }}
-      
-      - name: Install Python deps (py or deps changed)
-        if: steps.changed-files.outputs.any_changed == 'true' && (contains(steps.changed-files.outputs.all_changed_files, '.py') || contains(steps.changed-files.outputs.all_changed_files, 'requirements.txt') || contains(steps.changed-files.outputs.all_changed_files, 'pyproject.toml') || contains(steps.changed-files.outputs.all_changed_files, 'setup.cfg') || contains(steps.changed-files.outputs.all_changed_files, 'setup.py'))
+      - name: Classify change scope
+        id: change-flags
+        shell: bash
         run: |
-          pip install -r requirements.txt
+          set -euo pipefail
+          python_changed=false
+          python_manifest_changed=false
+          infra_changed=false
 
-      - name: Install Node deps (infra changed, has lockfile)
-        if: steps.changed-files.outputs.any_changed == 'true' && contains(steps.changed-files.outputs.all_changed_files, 'infrastructure/') && hashFiles('**/package-lock.json') != ''
-        run: npm ci
+          while IFS= read -r file; do
+            [[ -z "$file" ]] && continue
+            if [[ "$file" == *.py ]]; then
+              python_changed=true
+            fi
+            case "$file" in
+              requirements.txt|pyproject.toml|setup.cfg|setup.py)
+                python_manifest_changed=true
+                ;;
+            esac
+            if [[ "$file" == infrastructure/* ]]; then
+              infra_changed=true
+            fi
+          done <<< "${{ steps.changed-files.outputs.all_changed_files }}"
 
-      - name: Install CDK CLI (infra changed, no lockfile)
-        if: steps.changed-files.outputs.any_changed == 'true' && contains(steps.changed-files.outputs.all_changed_files, 'infrastructure/') && hashFiles('**/package-lock.json') == ''
-        run: npm install -g aws-cdk@latest
-      
-      - name: Lint/Format Python (py changed)
-        if: steps.changed-files.outputs.any_changed == 'true' && contains(steps.changed-files.outputs.all_changed_files, '.py')
-        run: |
-          echo "🐍 Linting/formatting changed Python files..."
-          CHANGED=$(echo "${{ steps.changed-files.outputs.all_changed_files }}" | tr ' ' '\n' | grep -E "\.py$" || true)
-          if [ -n "$CHANGED" ]; then
-            echo "$CHANGED" | xargs -r ruff format --check --force-exclude
-            echo "$CHANGED" | xargs -r ruff check --force-exclude --output-format=github
+          if [[ "$python_changed" == true || "$python_manifest_changed" == true ]]; then
+            python_setup_needed=true
+          else
+            python_setup_needed=false
           fi
 
+          if [[ -f requirements.txt ]]; then
+            python_manifest=requirements
+          elif [[ -f pyproject.toml ]]; then
+            python_manifest=pyproject
+          else
+            python_manifest=none
+          fi
 
+          {
+            echo "python_changed=$python_changed"
+            echo "python_manifest_changed=$python_manifest_changed"
+            echo "python_setup_needed=$python_setup_needed"
+            echo "infra_changed=$infra_changed"
+            echo "python_manifest=$python_manifest"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Setup Python (py or deps changed)
+        if: steps.change-flags.outputs.python_setup_needed == 'true'
+        uses: actions/setup-python@39cd14951b08e74b54015e9e001cdefcf80e669f # v5.1.1
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+          cache-dependency-path: |
+            requirements.txt
+            pyproject.toml
+            setup.cfg
+            setup.py
+
+      - name: Install Python lint tooling
+        if: steps.change-flags.outputs.python_setup_needed == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pip install --upgrade --no-cache-dir pip
+          python -m pip install --no-cache-dir ruff mypy
+
+      - name: Install Python deps (py or deps changed)
+        if: steps.change-flags.outputs.python_setup_needed == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          case "${{ steps.change-flags.outputs.python_manifest }}" in
+            requirements)
+              python -m pip install --no-cache-dir -r requirements.txt
+              ;;
+            pyproject)
+              python -m pip install --no-cache-dir .
+              ;;
+            *)
+              echo "No Python dependency manifest detected; skipping project install."
+              ;;
+          esac
+
+      - name: Setup Node.js (infra changed)
+        if: steps.change-flags.outputs.infra_changed == 'true'
+        uses: actions/setup-node@39370e3970a6d050c480ffad4ff0ed4d3fdee5af # v4.1.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: |
+            infrastructure/package-lock.json
+            infrastructure/npm-shrinkwrap.json
+            infrastructure/yarn.lock
+
+      - name: Install Node deps (infra changed, has lockfile)
+        if: steps.change-flags.outputs.infra_changed == 'true' && hashFiles('infrastructure/package-lock.json', 'infrastructure/npm-shrinkwrap.json', 'infrastructure/yarn.lock') != ''
+        shell: bash
+        working-directory: infrastructure
+        run: |
+          set -euo pipefail
+          npm ci
+
+      - name: Install Node deps (infra changed, no lockfile)
+        if: steps.change-flags.outputs.infra_changed == 'true' && hashFiles('infrastructure/package-lock.json', 'infrastructure/npm-shrinkwrap.json', 'infrastructure/yarn.lock') == ''
+        shell: bash
+        working-directory: infrastructure
+        run: |
+          set -euo pipefail
+          if [[ -f package.json ]]; then
+            npm install
+          else
+            echo "No package.json found in infrastructure/. Skipping npm install."
+          fi
+
+      - name: Lint/Format Python (py changed)
+        if: steps.change-flags.outputs.python_changed == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          mapfile -t changed_py < <(printf '%s\n' "${{ steps.changed-files.outputs.all_changed_files }}" | grep -E '\.py$' || true)
+          if [[ "${#changed_py[@]}" -eq 0 ]]; then
+            echo "No changed Python files. Skipping ruff."
+            exit 0
+          fi
+          printf '%s\n' "${changed_py[@]}" | xargs -r ruff format --check --force-exclude
+          printf '%s\n' "${changed_py[@]}" | xargs -r ruff check --force-exclude --output-format=github
 
       - name: Type check (mypy, py changed)
-        if: steps.changed-files.outputs.any_changed == 'true' && contains(steps.changed-files.outputs.all_changed_files, '.py')
+        if: steps.change-flags.outputs.python_changed == 'true'
+        shell: bash
         run: |
-          echo "🔎 Type checking changed Python files..."
-          CHANGED=$(echo "${{ steps.changed-files.outputs.all_changed_files }}" | tr ' ' '\n' | grep -E "\.py$" || true)
-          if [ -z "$CHANGED" ]; then
+          set -euo pipefail
+          mapfile -t changed_py < <(printf '%s\n' "${{ steps.changed-files.outputs.all_changed_files }}" | grep -E '\.py$' || true)
+          if [[ "${#changed_py[@]}" -eq 0 ]]; then
             echo "No changed Python files. Skipping mypy."
             exit 0
           fi
 
           MOD_ARGS=()
           FILE_ARGS=()
-          # Helper to append a module once (dedupe)
+
           add_mod() {
-            local m="$1"
-            for i in "${!MOD_ARGS[@]}"; do
-              if [[ "${MOD_ARGS[$i]}" == "-m" && "${MOD_ARGS[$((i+1))]}" == "$m" ]]; then
+            local module="$1"
+            for ((i = 0; i < ${#MOD_ARGS[@]}; i+=2)); do
+              if [[ "${MOD_ARGS[$i+1]}" == "$module" ]]; then
                 return 0
               fi
             done
-            MOD_ARGS+=("-m" "$m")
+            MOD_ARGS+=("-m" "$module")
           }
-          while IFS= read -r f; do
+
+          for f in "${changed_py[@]}"; do
             if [[ "$f" == src/* ]]; then
-              # Convert src/path/to/module.py -> module path (e.g., glue.lib...)
-              mod=${f#src/}
+              mod="${f#src/}"
               if [[ "$mod" == */__init__.py ]]; then
-                mod=${mod%/__init__.py}
+                mod="${mod%/__init__.py}"
               else
-                mod=${mod%.py}
+                mod="${mod%.py}"
               fi
-              # Skip if empty (defensive)
-              if [[ -z "$mod" ]]; then
-                continue
-              fi
-              mod=${mod//\//.}
+              [[ -z "$mod" ]] && continue
+              mod="${mod//\//.}"
               add_mod "$mod"
             else
               FILE_ARGS+=("$f")
             fi
-          done <<< "$CHANGED"
+          done
 
-          echo "mypy module args: ${MOD_ARGS[*]}"
-          echo "mypy file args: ${FILE_ARGS[*]}"
-          # Use config from pyproject.toml; rely on mypy_path=["src"] and explicit_package_bases
-          # mypy does not allow mixing -m/--package with file paths in one call.
-          # Run modules and files in separate invocations.
-          if [ ${#MOD_ARGS[@]} -gt 0 ]; then
-            echo "Running mypy on modules..."
-            mypy "${MOD_ARGS[@]}"
+          if [[ ${#MOD_ARGS[@]} -gt 0 ]]; then
+            echo "Running mypy on modules: ${MOD_ARGS[*]}"
+            mypy --show-error-codes --hide-error-context --no-error-summary "${MOD_ARGS[@]}"
           fi
-          if [ ${#FILE_ARGS[@]} -gt 0 ]; then
-            echo "Running mypy on file paths..."
-            mypy "${FILE_ARGS[@]}"
+          if [[ ${#FILE_ARGS[@]} -gt 0 ]]; then
+            echo "Running mypy on file paths: ${FILE_ARGS[*]}"
+            mypy --show-error-codes --hide-error-context --no-error-summary "${FILE_ARGS[@]}"
           fi
-          
-      - name: CDK synth (local cdk, has lockfile)
-        if: steps.changed-files.outputs.any_changed == 'true' && contains(steps.changed-files.outputs.all_changed_files, 'infrastructure/') && hashFiles('**/package-lock.json') != ''
-        run: |
-          echo "🏗️ Validating CDK infrastructure (local cdk)..."
-          npx cdk synth --context environment=dev
 
-      - name: CDK synth (global cli, no lockfile)
-        if: steps.changed-files.outputs.any_changed == 'true' && contains(steps.changed-files.outputs.all_changed_files, 'infrastructure/') && hashFiles('**/package-lock.json') == ''
+      - name: CDK synth (local deps, has lockfile)
+        if: steps.change-flags.outputs.infra_changed == 'true' && hashFiles('infrastructure/package-lock.json', 'infrastructure/npm-shrinkwrap.json', 'infrastructure/yarn.lock') != ''
+        shell: bash
+        working-directory: infrastructure
+        env:
+          CDK_DISABLE_VERSION_CHECK: '1'
         run: |
-          echo "🏗️ Validating CDK infrastructure (global cli)..."
-          cdk synth --context environment=dev
-          
+          set -euo pipefail
+          echo "🏗️ Validating CDK infrastructure (local deps)..."
+          npx aws-cdk synth --context environment=dev
+
+      - name: CDK synth (pinned cdk, no lockfile)
+        if: steps.change-flags.outputs.infra_changed == 'true' && hashFiles('infrastructure/package-lock.json', 'infrastructure/npm-shrinkwrap.json', 'infrastructure/yarn.lock') == ''
+        shell: bash
+        working-directory: infrastructure
+        env:
+          CDK_DISABLE_VERSION_CHECK: '1'
+        run: |
+          set -euo pipefail
+          echo "🏗️ Validating CDK infrastructure (pinned cdk)..."
+          npx aws-cdk@${{ env.AWS_CDK_VERSION }} synth --context environment=dev
+
       - name: Quick tests (py changed)
-        if: steps.changed-files.outputs.any_changed == 'true' && contains(steps.changed-files.outputs.all_changed_files, '.py')
+        if: steps.change-flags.outputs.python_changed == 'true'
+        shell: bash
         run: |
+          set -euo pipefail
           echo "🧪 Running quick tests..."
-          if [ -d "tests/" ] && find tests/ -name "test_*.py" -type f | head -1 | grep -q .; then
-            pytest tests/ -v --tb=short -x --maxfail=3
+          if [[ -d tests ]]; then
+            if find tests -name 'test_*.py' -type f -print -quit | grep -q .; then
+              pytest tests/ -q --tb=short -x --maxfail=3
+            else
+              echo "No tests found - skipping"
+            fi
           else
-            echo "No tests found - skipping"
+            echo "tests/ directory not present - skipping"
           fi
           echo "✅ PR validation complete!"
