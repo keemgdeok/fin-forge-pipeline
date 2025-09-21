@@ -71,7 +71,15 @@ jobs:
           import os
           import sys
 
-          files = json.loads(os.environ.get('PY_FILES', '[]'))
+          raw_payload = os.environ.get('PY_FILES', '').strip()
+          if not raw_payload:
+            files = []
+          else:
+            try:
+              files = json.loads(raw_payload)
+            except json.JSONDecodeError as exc:
+              raise SystemExit(f"Failed to parse PY_FILES JSON: {exc}; payload={raw_payload!r}") from exc
+
           sys.stdout.write("\n".join(files))
           PY
 
