@@ -32,58 +32,97 @@ jobs:
       - name: Get changed files
         id: changed-files
         uses: tj-actions/changed-files@v44
-      
-      - name: Setup Python (py or deps changed)
-        if: steps.changed-files.outputs.any_changed == 'true' && (contains(steps.changed-files.outputs.all_changed_files, '.py') || contains(steps.changed-files.outputs.all_changed_files, 'requirements.txt') || contains(steps.changed-files.outputs.all_changed_files, 'pyproject.toml') || contains(steps.changed-files.outputs.all_changed_files, 'setup.cfg') || contains(steps.changed-files.outputs.all_changed_files, 'setup.py'))
+        with:
+          files_yaml: |
+            python:
+              - '**/*.py'
+              - 'requirements.txt'
+              - 'pyproject.toml'
+              - 'setup.cfg'
+              - 'setup.py'
+            infra:
+              - 'infrastructure/**'
+            node:
+              - 'package.json'
+              - 'package-lock.json'
+              - 'npm-shrinkwrap.json'
+              - 'yarn.lock'
+
+      - name: Cache pip
+        if: ${{ steps.changed-files.outputs.python_any_changed == 'true' || steps.changed-files.outputs.infra_any_changed == 'true' }}
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pip
+          key: ${{ runner.os }}-pip-${{ hashFiles('requirements.txt', 'pyproject.toml') }}
+          restore-keys: |
+            ${{ runner.os }}-pip-
+
+      - name: Setup Python environment
+        if: ${{ steps.changed-files.outputs.python_any_changed == 'true' || steps.changed-files.outputs.infra_any_changed == 'true' }}
         uses: actions/setup-python@v5
         with:
           python-version: ${{ env.PYTHON_VERSION }}
-          cache: 'pip'
-      
-      - name: Setup Node.js (infra changed, cache)
-        if: steps.changed-files.outputs.any_changed == 'true' && contains(steps.changed-files.outputs.all_changed_files, 'infrastructure/') && hashFiles('**/package-lock.json', '**/npm-shrinkwrap.json', '**/yarn.lock') != ''
+
+      - name: Create virtual environment
+        if: ${{ steps.changed-files.outputs.python_any_changed == 'true' || steps.changed-files.outputs.infra_any_changed == 'true' }}
+        shell: bash
+        run: |
+          python -m venv .venv
+          echo "VIRTUAL_ENV=$(pwd)/.venv" >> $GITHUB_ENV
+          echo "$(pwd)/.venv/bin" >> $GITHUB_PATH
+          echo "CDK_PYTHON=$(pwd)/.venv/bin/python" >> $GITHUB_ENV
+          source .venv/bin/activate
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Setup Node.js (with cache)
+        if: ${{ steps.changed-files.outputs.infra_any_changed == 'true' && hashFiles('**/package-lock.json', '**/npm-shrinkwrap.json', '**/yarn.lock') != '' }}
         uses: actions/setup-node@v4
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: 'npm'
 
-      - name: Setup Node.js (infra changed, no cache)
-        if: steps.changed-files.outputs.any_changed == 'true' && contains(steps.changed-files.outputs.all_changed_files, 'infrastructure/') && hashFiles('**/package-lock.json', '**/npm-shrinkwrap.json', '**/yarn.lock') == ''
+      - name: Setup Node.js (no lockfile)
+        if: ${{ steps.changed-files.outputs.infra_any_changed == 'true' && hashFiles('**/package-lock.json', '**/npm-shrinkwrap.json', '**/yarn.lock') == '' }}
         uses: actions/setup-node@v4
         with:
           node-version: ${{ env.NODE_VERSION }}
-      
-      - name: Install Python deps (py or deps changed)
-        if: steps.changed-files.outputs.any_changed == 'true' && (contains(steps.changed-files.outputs.all_changed_files, '.py') || contains(steps.changed-files.outputs.all_changed_files, 'requirements.txt') || contains(steps.changed-files.outputs.all_changed_files, 'pyproject.toml') || contains(steps.changed-files.outputs.all_changed_files, 'setup.cfg') || contains(steps.changed-files.outputs.all_changed_files, 'setup.py'))
-        run: |
-          pip install -r requirements.txt
 
-      - name: Install Node deps (infra changed, has lockfile)
-        if: steps.changed-files.outputs.any_changed == 'true' && contains(steps.changed-files.outputs.all_changed_files, 'infrastructure/') && hashFiles('**/package-lock.json') != ''
+      - name: Install Node dependencies
+        if: ${{ steps.changed-files.outputs.infra_any_changed == 'true' && hashFiles('**/package-lock.json') != '' }}
         run: npm ci
 
-      - name: Install CDK CLI (infra changed, no lockfile)
-        if: steps.changed-files.outputs.any_changed == 'true' && contains(steps.changed-files.outputs.all_changed_files, 'infrastructure/') && hashFiles('**/package-lock.json') == ''
-        run: npm install -g aws-cdk@latest
-      
-      - name: Lint/Format Python (py changed)
-        if: steps.changed-files.outputs.any_changed == 'true' && contains(steps.changed-files.outputs.all_changed_files, '.py')
+      - name: Install CDK CLI when no lockfile
+        if: ${{ steps.changed-files.outputs.infra_any_changed == 'true' && hashFiles('**/package-lock.json') == '' }}
+        run: npm install --no-save aws-cdk@latest
+
+      - name: Run pre-commit on changed Python files
+        if: ${{ steps.changed-files.outputs.python_any_changed == 'true' }}
+        shell: bash
+        env:
+          PY_FILES: ${{ steps.changed-files.outputs.python_files }}
         run: |
-          echo "🐍 Linting/formatting changed Python files..."
-          CHANGED=$(echo "${{ steps.changed-files.outputs.all_changed_files }}" | tr ' ' '\n' | grep -E "\.py$" || true)
-          if [ -n "$CHANGED" ]; then
-            echo "$CHANGED" | xargs -r ruff format --check --force-exclude
-            echo "$CHANGED" | xargs -r ruff check --force-exclude --output-format=github
+          readarray -t PY_CHANGED <<< "$(python - <<'PY'
+import json, os
+files = json.loads(os.environ.get('PY_FILES', '[]'))
+print('\n'.join(files))
+PY
+)"
+          if [ ${#PY_CHANGED[@]} -gt 0 ]; then
+            pre-commit run --files --show-diff-on-failure "${PY_CHANGED[@]}"
           fi
 
-
-
       - name: Type check (mypy, py changed)
-        if: steps.changed-files.outputs.any_changed == 'true' && contains(steps.changed-files.outputs.all_changed_files, '.py')
+        if: ${{ steps.changed-files.outputs.python_any_changed == 'true' }}
         run: |
           echo "🔎 Type checking changed Python files..."
-          CHANGED=$(echo "${{ steps.changed-files.outputs.all_changed_files }}" | tr ' ' '\n' | grep -E "\.py$" || true)
-          if [ -z "$CHANGED" ]; then
+          PY_FILES=$(python - <<'PY'
+import json, os
+files = json.loads(os.environ.get('PY_FILES', '[]'))
+print('\n'.join(files))
+PY
+)
+          if [ -z "$PY_FILES" ]; then
             echo "No changed Python files. Skipping mypy."
             exit 0
           fi
@@ -118,7 +157,7 @@ jobs:
             else
               FILE_ARGS+=("$f")
             fi
-          done <<< "$CHANGED"
+          done <<< "$PY_FILES"
 
           echo "mypy module args: ${MOD_ARGS[*]}"
           echo "mypy file args: ${FILE_ARGS[*]}"
@@ -135,19 +174,19 @@ jobs:
           fi
           
       - name: CDK synth (local cdk, has lockfile)
-        if: steps.changed-files.outputs.any_changed == 'true' && contains(steps.changed-files.outputs.all_changed_files, 'infrastructure/') && hashFiles('**/package-lock.json') != ''
+        if: ${{ steps.changed-files.outputs.infra_any_changed == 'true' && hashFiles('**/package-lock.json') != '' }}
         run: |
           echo "🏗️ Validating CDK infrastructure (local cdk)..."
           npx cdk synth --context environment=dev
 
       - name: CDK synth (global cli, no lockfile)
-        if: steps.changed-files.outputs.any_changed == 'true' && contains(steps.changed-files.outputs.all_changed_files, 'infrastructure/') && hashFiles('**/package-lock.json') == ''
+        if: ${{ steps.changed-files.outputs.infra_any_changed == 'true' && hashFiles('**/package-lock.json') == '' }}
         run: |
           echo "🏗️ Validating CDK infrastructure (global cli)..."
           cdk synth --context environment=dev
           
       - name: Quick tests (py changed)
-        if: steps.changed-files.outputs.any_changed == 'true' && contains(steps.changed-files.outputs.all_changed_files, '.py')
+        if: ${{ steps.changed-files.outputs.python_any_changed == 'true' }}
         run: |
           echo "🧪 Running quick tests..."
           if [ -d "tests/" ] && find tests/ -name "test_*.py" -type f | head -1 | grep -q .; then
