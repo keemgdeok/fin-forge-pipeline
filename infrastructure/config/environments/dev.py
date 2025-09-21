@@ -52,12 +52,6 @@ dev_config = {
             "file_type": "parquet",
             "suffixes": [".parquet"],
         },
-        {
-            "domain": "sales",
-            "table_name": "orders",
-            "file_type": "json",
-            "suffixes": [".json", ".csv"],
-        },
     ],
     # Default suffixes when processing_triggers not specified
     "processing_suffixes": [".json", ".csv"],

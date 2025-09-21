@@ -42,7 +42,17 @@ jobs:
         with:
           python-version: ${{ env.PYTHON_VERSION }}
           cache: 'pip'
-      
+
+      - name: Create virtual environment
+        shell: bash
+        run: |
+          python -m venv .venv
+          echo "VIRTUAL_ENV=$(pwd)/.venv" >> $GITHUB_ENV
+          echo "$(pwd)/.venv/bin" >> $GITHUB_PATH
+          echo "CDK_PYTHON=$(pwd)/.venv/bin/python" >> $GITHUB_ENV
+          source .venv/bin/activate
+          python -m pip install --upgrade pip
+
       - name: Setup Node.js (with cache)
         if: hashFiles('**/package-lock.json', '**/npm-shrinkwrap.json', '**/yarn.lock') != ''
         uses: actions/setup-node@v4
@@ -57,9 +67,35 @@ jobs:
           node-version: ${{ env.NODE_VERSION }}
       
       - name: Install Python dependencies
+        shell: bash
         run: |
+          source .venv/bin/activate
           pip install -r requirements.txt
           pip install bandit safety
+
+      - name: Cache market data Lambda layer
+        id: market-layer-cache
+        uses: actions/cache@v4
+        with:
+          path: src/lambda/layers/market_data_deps/python
+          key: market-layer-${{ hashFiles('src/lambda/layers/market_data_deps/requirements.txt') }}
+
+      - name: Build market data Lambda layer
+        if: steps.market-layer-cache.outputs.cache-hit != 'true'
+        shell: bash
+        run: |
+          echo "📦 Building market data dependency layer"
+          rm -rf src/lambda/layers/market_data_deps/python
+          mkdir -p src/lambda/layers/market_data_deps/python
+          source .venv/bin/activate
+          pip install -r src/lambda/layers/market_data_deps/requirements.txt \
+            -t src/lambda/layers/market_data_deps/python
+
+      - name: Validate market data Lambda layer
+        run: |
+          test -f src/lambda/layers/market_data_deps/python/yfinance/__init__.py
+          test -f src/lambda/layers/market_data_deps/python/pandas/__init__.py
+          echo "Layer dependencies verified"
 
       - name: Install Node deps (has lockfile)
         if: hashFiles('**/package-lock.json') != ''
@@ -125,7 +161,3 @@ jobs:
           echo "✅ Deployment completed!"
           echo "🎯 Environment: $TARGET_ENV"
           echo "📅 Deployed at: $(date)"
-          
-          # Quick drift check
-          echo "🔍 Post-deployment validation..."
-          npx cdk diff --context environment=$TARGET_ENV >/dev/null && echo "✅ No drift detected" || echo "⚠️ Configuration drift detected"

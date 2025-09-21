@@ -333,11 +333,101 @@ class SecurityStack(Stack):
             },
         )
 
-        # Start with AdministratorAccess for simplicity in small teams; tighten later.
-        return iam.Role(
+        role = iam.Role(
             self,
             "GitHubActionsDeployRole",
             role_name=f"{self.env_name}-github-actions-deploy-role",
             assumed_by=principal,
-            managed_policies=[iam.ManagedPolicy.from_aws_managed_policy_name("AdministratorAccess")],
         )
+
+        # CDK deployments require broad permissions across the resources managed by the stacks.
+        # Scope permissions to the data platform environment where possible to respect least privilege.
+        deploy_policy = iam.Policy(
+            self,
+            "GitHubActionsDeployInlinePolicy",
+            policy_name=f"{self.env_name}-github-actions-deploy",
+            statements=[
+                iam.PolicyStatement(
+                    effect=iam.Effect.ALLOW,
+                    actions=[
+                        "cloudformation:*",
+                        "s3:*",
+                        "lambda:*",
+                        "logs:*",
+                        "events:*",
+                        "sns:*",
+                        "sqs:*",
+                        "states:*",
+                        "glue:*",
+                        "kms:*",
+                        "cloudwatch:*",
+                    ],
+                    resources=["*"],
+                ),
+                iam.PolicyStatement(
+                    effect=iam.Effect.ALLOW,
+                    actions=[
+                        "iam:CreateRole",
+                        "iam:TagRole",
+                        "iam:UntagRole",
+                        "iam:UpdateRole",
+                        "iam:UpdateAssumeRolePolicy",
+                    ],
+                    conditions={
+                        "StringLike": {
+                            "iam:RoleName": [
+                                f"DataPlatform-{self.env_name}-*",
+                                f"{self.env_name}-*",
+                            ]
+                        }
+                    },
+                    resources=["*"],
+                ),
+                iam.PolicyStatement(
+                    effect=iam.Effect.ALLOW,
+                    actions=[
+                        "iam:DeleteRole",
+                        "iam:GetRole",
+                        "iam:GetRolePolicy",
+                        "iam:ListRolePolicies",
+                        "iam:AttachRolePolicy",
+                        "iam:DetachRolePolicy",
+                        "iam:PutRolePolicy",
+                        "iam:DeleteRolePolicy",
+                    ],
+                    resources=[
+                        f"arn:aws:iam::{self.account}:role/DataPlatform-{self.env_name}-*",
+                        f"arn:aws:iam::{self.account}:role/{self.env_name}-*",
+                    ],
+                ),
+                iam.PolicyStatement(
+                    effect=iam.Effect.ALLOW,
+                    actions=[
+                        "iam:CreatePolicy",
+                        "iam:DeletePolicy",
+                        "iam:CreatePolicyVersion",
+                        "iam:DeletePolicyVersion",
+                    ],
+                    conditions={"StringLike": {"iam:PolicyName": [f"DataPlatform-{self.env_name}-*"]}},
+                    resources=["*"],
+                ),
+                iam.PolicyStatement(
+                    effect=iam.Effect.ALLOW,
+                    actions=["iam:PassRole"],
+                    resources=[
+                        self.lambda_execution_role.role_arn,
+                        self.glue_execution_role.role_arn,
+                        self.step_functions_execution_role.role_arn,
+                        f"arn:aws:iam::{self.account}:role/DataPlatform-{self.env_name}-*",
+                        f"arn:aws:iam::{self.account}:role/{self.env_name}-*",
+                    ],
+                ),
+                iam.PolicyStatement(
+                    effect=iam.Effect.ALLOW,
+                    actions=["sts:AssumeRole", "sts:GetCallerIdentity"],
+                    resources=["*"],
+                ),
+            ],
+        )
+        role.attach_inline_policy(deploy_policy)
+        return role
