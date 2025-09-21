@@ -85,7 +85,7 @@ jobs:
           if [ ${#PY_CHANGED[@]} -eq 0 ]; then
             exit 0
           fi
-          pre-commit run --files --show-diff-on-failure "${PY_CHANGED[@]}"
+          pre-commit run --show-diff-on-failure --files "${PY_CHANGED[@]}"
 
       - name: Type check (mypy)
         if: ${{ steps.changed-files.outputs.python_any_changed == 'true' }}
