@@ -17,9 +17,9 @@ Extract는 **Event-Driven Fan-Out 패턴**으로 확장 가능한 수집을 구�
 
 | 패턴 | 트리거 | 용도 | 예시 |
 |------|--------|------|------|
-| **Scheduled** | EventBridge Cron | 정기 수집 | 매일 22:00 KST |
-| **Event-Driven** | EventBridge 이벤트 | 즉시 처리 | 신규 심볼 추가 |
-| **Manual** | 직접 호출 | 재처리/테스트 | 백필 작업 |
+| **Scheduled** | EventBridge Cron | 정기 수집 | 매일 07:00 KST (UTC 22:00) |
+| **Event-Driven** | _(향후 계획)_ | _(미구현)_ | - |
+| **Manual** | _(Lambda 직접 호출)_ | 재처리/테스트 | 백필 작업 |
 
 ## 성능 및 설정
 
@@ -28,8 +28,8 @@ Extract는 **Event-Driven Fan-Out 패턴**으로 확장 가능한 수집을 구�
 |------|-----|------|
 | Orchestrator Memory | 256MB | 경량 팬아웃 |
 | Worker Memory | 512MB+ | API 호출/처리 |
-| Chunk Size | 5개 | 심볼 그룹화 |
-| SQS Batch | 최대 10개 | 배치 전송 |
+| Chunk Size | 환경별(Dev 10 / Staging 15 / Prod 20) | 심볼 그룹화 |
+| SQS Batch | 환경별(Dev 1 / Staging 2 / Prod 2) | 배치 전송 |
 | SQS Visibility | Worker Timeout × 6 | 재처리 방지 |
 | DLQ 이동 | 5회 실패 후 | 격리 |
 
@@ -46,7 +46,7 @@ Extract는 **Event-Driven Fan-Out 패턴**으로 확장 가능한 수집을 구�
 
 | 도메인 | 데이터 소스 | 스케줄 | 큐/DLQ |
 |--------|------------|--------|--------|
-| **daily-prices-data** | Yahoo Finance | 22:00 UTC | 전용 큐 |
+| **daily-prices-data** | Yahoo Finance | 07:00 KST (UTC 22:00) | 전용 큐 |
 
 ## Transform 연계
 
