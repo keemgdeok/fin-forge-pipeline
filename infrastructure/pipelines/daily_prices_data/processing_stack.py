@@ -609,7 +609,12 @@ class DailyPricesDataProcessingStack(Stack):
             role=iam.Role.from_role_arn(self, "SchemaDeciderLambdaRole", self.lambda_execution_role_arn),
             layers=[self.common_layer],
             environment={
-                "CATALOG_UPDATE_DEFAULT": str(self.config.get("catalog_update_default", "on_schema_change")),
+                "CATALOG_UPDATE_DEFAULT": str(
+                    self.config.get(
+                        "catalog_update_default",
+                        self.config.get("catalog_update", "on_schema_change"),
+                    )
+                ),
             },
         )
         return function

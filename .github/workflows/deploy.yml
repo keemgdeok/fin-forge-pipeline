@@ -61,6 +61,13 @@ jobs:
           pip install -r requirements.txt
           pip install bandit safety
 
+      - name: Build market data Lambda layer
+        run: |
+          echo "📦 Building market data dependency layer"
+          mkdir -p src/lambda/layers/market_data_deps/python
+          pip install -r src/lambda/layers/market_data_deps/requirements.txt \
+            -t src/lambda/layers/market_data_deps/python
+
       - name: Install Node deps (has lockfile)
         if: hashFiles('**/package-lock.json') != ''
         run: npm ci

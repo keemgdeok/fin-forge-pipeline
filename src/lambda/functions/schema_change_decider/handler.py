@@ -33,7 +33,11 @@ def _parse_s3_uri(uri: str) -> tuple[str, str]:
 
 
 def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, bool]:
-    policy = str(event.get("catalog_update") or os.environ.get("CATALOG_UPDATE_DEFAULT", "on_schema_change")).strip()
+    event_policy = event.get("catalog_update")
+    if isinstance(event_policy, str) and event_policy.strip():
+        policy = event_policy.strip()
+    else:
+        policy = str(os.environ.get("CATALOG_UPDATE_DEFAULT", "on_schema_change")).strip()
     glue_args = event.get("glue_args") or {}
     fp_uri = str(glue_args.get("--schema_fingerprint_s3_uri", "")).strip()
 

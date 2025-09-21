@@ -5,9 +5,39 @@ ETL Data Quality Integration Tests
 Mock 환경의 한계를 극복하고 정확한 PySpark 동작을 검증합니다.
 """
 
-import pytest
 import json
 import hashlib
+from contextlib import contextmanager
+from typing import Iterator, TYPE_CHECKING
+
+import pytest
+
+
+@contextmanager
+def _spark_session(app_name: str, master: str = "local[1]") -> Iterator["SparkSession"]:
+    try:
+        from pyspark.sql import SparkSession  # type: ignore
+    except ImportError as exc:  # pragma: no cover - guard for environments without PySpark
+        pytest.skip(f"PySpark not available: {exc}")
+
+    try:
+        spark = (
+            SparkSession.builder.appName(app_name)
+            .master(master)
+            .config("spark.sql.warehouse.dir", "/tmp/spark-warehouse")
+            .getOrCreate()
+        )
+    except Exception as exc:  # pragma: no cover - skip when Spark cannot start (e.g., sandboxed CI)
+        pytest.skip(f"Spark session could not be created: {exc}")
+
+    try:
+        yield spark
+    finally:
+        spark.stop()
+
+
+if TYPE_CHECKING:  # pragma: no cover - import only for typing
+    from pyspark.sql import SparkSession
 
 
 @pytest.mark.integration
@@ -25,20 +55,11 @@ class TestETLDataQuality:
         """
         # pytest-spark나 findspark를 사용하지 않고 간단한 검증 수행
         try:
-            from pyspark.sql import SparkSession
             from pyspark.sql.functions import col
-        except ImportError:
-            pytest.skip("PySpark not available - integration test requires Spark environment")
+        except ImportError as exc:
+            pytest.skip(f"PySpark functions unavailable: {exc}")
 
-        # 로컬 Spark 세션 생성 (테스트용 최소 설정)
-        spark = (
-            SparkSession.builder.appName("ETL_Data_Quality_Test")
-            .master("local[1]")
-            .config("spark.sql.warehouse.dir", "/tmp/spark-warehouse")
-            .getOrCreate()
-        )
-
-        try:
+        with _spark_session("ETL_Data_Quality_Test") as spark:
             # Given: null symbol이 포함된 테스트 데이터
             test_data = [
                 {"symbol": None, "price": 150.25, "exchange": "NASDAQ"},  # null symbol
@@ -62,9 +83,6 @@ class TestETLDataQuality:
             assert null_records[0]["symbol"] is None
             assert null_records[0]["price"] == 150.25
 
-        finally:
-            spark.stop()
-
     def test_data_quality_quarantine_logic(self, daily_batch_env):
         """
         Given: 데이터 품질 위반 상황
@@ -84,15 +102,12 @@ class TestETLDataQuality:
                 )
 
         try:
-            from pyspark.sql import SparkSession
             from pyspark.sql.functions import col
             from pyspark.sql.types import StructType, StructField, StringType, DoubleType
-        except ImportError:
-            pytest.skip("PySpark not available")
+        except ImportError as exc:
+            pytest.skip(f"PySpark modules unavailable: {exc}")
 
-        spark = SparkSession.builder.appName("Quarantine_Test").master("local[1]").getOrCreate()
-
-        try:
+        with _spark_session("Quarantine_Test") as spark:
             # Given: 품질 위반 데이터
             bad_data = [{"symbol": None, "price": 100.0}]
             # 단일 행에 None이 포함되면 스키마 추론이 불가능할 수 있어 명시적 스키마를 제공
@@ -115,9 +130,6 @@ class TestETLDataQuality:
                 # Then: 적절한 예외가 발생해야 함
                 with pytest.raises(RuntimeError, match="DQ_FAILED.*null symbol present"):
                     simulate_quarantine_write(symbol_nulls, quarantine_path)
-
-        finally:
-            spark.stop()
 
 
 @pytest.mark.integration
