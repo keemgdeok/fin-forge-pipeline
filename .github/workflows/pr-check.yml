@@ -103,32 +103,32 @@ jobs:
           PY_FILES: ${{ steps.changed-files.outputs.python_files }}
         run: |
           readarray -t PY_CHANGED <<< "$(python - <<'PY'
-import json, os
-files = json.loads(os.environ.get('PY_FILES', '[]'))
-print('\n'.join(files))
-PY
-)"
-          if [ ${#PY_CHANGED[@]} -gt 0 ]; then
-            pre-commit run --files --show-diff-on-failure "${PY_CHANGED[@]}"
-          fi
+          import json, os
+          files = json.loads(os.environ.get('PY_FILES', '[]'))
+          print('\n'.join(files))
+          PY
+          )"
+                    if [ ${#PY_CHANGED[@]} -gt 0 ]; then
+                      pre-commit run --files --show-diff-on-failure "${PY_CHANGED[@]}"
+                    fi
 
       - name: Type check (mypy, py changed)
         if: ${{ steps.changed-files.outputs.python_any_changed == 'true' }}
         run: |
           echo "🔎 Type checking changed Python files..."
           PY_FILES=$(python - <<'PY'
-import json, os
-files = json.loads(os.environ.get('PY_FILES', '[]'))
-print('\n'.join(files))
-PY
-)
-          if [ -z "$PY_FILES" ]; then
-            echo "No changed Python files. Skipping mypy."
-            exit 0
-          fi
+          import json, os
+          files = json.loads(os.environ.get('PY_FILES', '[]'))
+          print('\n'.join(files))
+          PY
+          )
+                    if [ -z "$PY_FILES" ]; then
+                      echo "No changed Python files. Skipping mypy."
+                      exit 0
+                    fi
 
-          MOD_ARGS=()
-          FILE_ARGS=()
+                    MOD_ARGS=()
+                    FILE_ARGS=()
           # Helper to append a module once (dedupe)
           add_mod() {
             local m="$1"
