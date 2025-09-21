@@ -63,3 +63,32 @@ def test_fanout_resources(fake_python_function) -> None:
         return bool(targets)
 
     assert any(_has_lambda_target(r) for r in rules.values())
+
+
+def test_symbol_universe_deployment(fake_python_function) -> None:
+    """Symbol universe asset should be deployed via BucketDeployment when configured."""
+
+    app = App()
+    cfg = {
+        **_base_config(),
+        "symbol_universe_asset_path": "data/symbols",
+        "symbol_universe_asset_file": "nasdaq_sp500.json",
+        "symbol_universe_s3_key": "market/universe/nasdaq_sp500.json",
+        "symbol_universe_s3_bucket": None,
+    }
+
+    fake_python_function(ing)
+
+    shared = SharedStorageStack(app, "SharedStorageSymbols", environment="dev", config=cfg)
+    stack = ing.DailyPricesDataIngestionStack(
+        app,
+        "IngestionSymbols",
+        environment="dev",
+        config=cfg,
+        shared_storage_stack=shared,
+        lambda_execution_role_arn="arn:aws:iam::111122223333:role/lambda",
+    )
+
+    template = Template.from_stack(stack)
+    deployments = template.find_resources("Custom::CDKBucketDeployment")
+    assert deployments, "Symbol universe deployment custom resource must exist"

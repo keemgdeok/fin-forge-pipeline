@@ -1,5 +1,7 @@
 """Daily prices ingestion pipeline stack."""
 
+from pathlib import Path, PurePosixPath
+
 from aws_cdk import (
     Stack,
     aws_lambda as lambda_,
@@ -7,6 +9,8 @@ from aws_cdk import (
     aws_events_targets as targets,
     aws_iam as iam,
     aws_logs as logs,
+    aws_s3 as s3,
+    aws_s3_deployment as s3_deployment,
     aws_sqs as sqs,
     Duration,
     CfnOutput,
@@ -48,6 +52,9 @@ class DailyPricesDataIngestionStack(Stack):
 
         # Orchestrator Lambda (triggered by schedule)
         self.orchestrator_function = self._create_orchestrator_function()
+
+        # Publish symbol universe asset into artifacts bucket when configured
+        self._deploy_symbol_universe_asset()
 
         # Worker Lambda (triggered by SQS)
         self.ingestion_function = self._create_worker_function()
@@ -124,6 +131,42 @@ class DailyPricesDataIngestionStack(Stack):
             },
         )
         return function
+
+    def _deploy_symbol_universe_asset(self) -> None:
+        """Deploy symbol universe file to the target S3 bucket via CDK asset."""
+
+        asset_dir_raw = str(self.config.get("symbol_universe_asset_path", "") or "").strip()
+        asset_file = str(self.config.get("symbol_universe_asset_file", "") or "").strip()
+        s3_key_raw = str(self.config.get("symbol_universe_s3_key", "") or "").strip()
+
+        if not asset_dir_raw or not asset_file or not s3_key_raw:
+            return
+
+        asset_dir = Path(asset_dir_raw)
+        if not asset_dir.is_dir():
+            raise FileNotFoundError(f"Symbol asset directory not found: {asset_dir}")
+
+        source_file = asset_dir / asset_file
+        if not source_file.is_file():
+            raise FileNotFoundError(f"Symbol asset file not found: {source_file}")
+
+        s3_key = PurePosixPath(s3_key_raw)
+        destination_prefix = str(s3_key.parent) if str(s3_key.parent) != "." else ""
+
+        bucket_name = str(self.config.get("symbol_universe_s3_bucket") or "").strip()
+        if bucket_name:
+            bucket = s3.Bucket.from_bucket_name(self, "SymbolUniverseBucket", bucket_name)
+        else:
+            bucket = self.shared_storage.artifacts_bucket
+
+        s3_deployment.BucketDeployment(
+            self,
+            "SymbolUniverseDeployment",
+            destination_bucket=bucket,
+            destination_key_prefix=destination_prefix or None,
+            sources=[s3_deployment.Source.asset(str(asset_dir))],
+            prune=False,
+        )
 
     def _create_queues(self) -> tuple[sqs.Queue, sqs.Queue]:
         """Create SQS DLQ and main queue for ingestion fan-out."""
