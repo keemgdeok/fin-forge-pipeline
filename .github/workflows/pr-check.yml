@@ -15,8 +15,8 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  PYTHON_VERSION: '3.12'
-  NODE_VERSION: '20'
+  PYTHON_VERSION: &python_version '3.12'
+  NODE_VERSION: &node_version '20'
 
 jobs:
   validate:
@@ -85,7 +85,7 @@ jobs:
           if [ ${#PY_CHANGED[@]} -eq 0 ]; then
             exit 0
           fi
-          pre-commit run --show-diff-on-failure --files "${PY_CHANGED[@]}"
+          pre-commit run --files --show-diff-on-failure "${PY_CHANGED[@]}"
 
       - name: Type check (mypy)
         if: ${{ steps.changed-files.outputs.python_any_changed == 'true' }}
@@ -131,6 +131,6 @@ jobs:
   tests:
     uses: ./.github/workflows/ci.yml
     with:
-      python-version: "${{ env.PYTHON_VERSION }}"
+      python-version: *python_version
       run-precommit: false
     secrets: inherit
