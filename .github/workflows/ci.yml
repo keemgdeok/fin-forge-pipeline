@@ -1,28 +1,36 @@
 name: CI
 
 on:
-  push:
-    branches: ['**']
-  pull_request:
-    branches: ['**']
   workflow_call:
+    inputs:
+      python-version:
+        description: 'Python version'
+        required: false
+        type: string
+        default: '3.12'
+      run-precommit:
+        description: 'Whether to run pre-commit checks (true/false)'
+        required: false
+        type: boolean
+        default: true
+  push:
+    branches: [main, develop]
 
 jobs:
   tests:
     runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        python-version: [ '3.12' ]
+    env:
+      PY_VERSION: ${{ (github.event_name == 'workflow_call' && inputs['python-version']) || '3.12' }}
+      RUN_PRECOMMIT: ${{ (github.event_name == 'workflow_call' && (inputs['run-precommit'] && 'true' || 'false')) || 'true' }}
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Set up Python ${{ matrix.python-version }}
+      - name: Set up Python ${{ env.PY_VERSION }}
         uses: actions/setup-python@v5
         with:
-          python-version: ${{ matrix.python-version }}
+          python-version: ${{ env.PY_VERSION }}
 
       - name: Set up Java (for PySpark)
         uses: actions/setup-java@v4
@@ -50,6 +58,7 @@ jobs:
           pip install -r requirements.txt
 
       - name: Run pre-commit checks
+        if: ${{ env.RUN_PRECOMMIT == 'true' }}
         run: pre-commit run --all-files --show-diff-on-failure
 
       - name: Run unit + integration tests with coverage
