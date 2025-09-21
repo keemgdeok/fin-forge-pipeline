@@ -103,4 +103,4 @@
 
 ---
 
-*본 명세는 `src/lambda/functions/ingestion_orchestrator/handler.py` 기반입니다.*
+*본 명세는 `src/lambda/functions/ingestion_orchestrator/handler.py` 기반입니다.* CDK 배포 시 기본 `SYMBOLS_S3_*` 값은 `data/symbols/` 디렉터리의 심볼 파일을 아티팩트 버킷(`{env}-data-platform-artifacts-{account}`)으로 업로드하도록 구성되어 있습니다. 최신 NASDAQ/S&P 500 심볼은 `python data/symbols/find_symbols.py` 스크립트로 갱신한 뒤 PR에 포함하면 됩니다.
