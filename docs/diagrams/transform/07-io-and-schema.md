@@ -41,3 +41,4 @@ classDiagram
 - 파일 포맷: Parquet + ZSTD
 - 테이블 노출: Glue Catalog/Athena 테이블 `<domain>_<table>`
 - 카탈로그 갱신: 스키마 변경 감지 시에만 크롤러 실행(기본은 스킵)
+- RAW는 심볼별 파일(`{symbol}.{ext}[.gz]`)로 저장되어 재수집 시 멱등성을 보장합니다.

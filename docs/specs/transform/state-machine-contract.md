@@ -26,6 +26,8 @@
   - S3 트리거 모드: `source_bucket`/`source_key` 제공 → Preflight에서 `ds`를 도출.
 - 호환성: `table_name`을 기본으로 사용하되, 레거시 입력 `table`도 허용합니다(내부적으로 `table_name`으로 합쳐 처리).
 - 백필(Map) 사용 시 `date_range` 길이는 운영 정책 범위 내에서 제한(권장: ≤ 31일).
+- RAW 파티션 레이아웃은 `interval/data_source/year/month/day/{symbol}.{ext}` 구조로 고정되어야 하며, Preflight는 `source_key`에서 interval/data_source를 파싱해 Glue 인자와 멱등성 체크에 활용합니다.
+- 10년 이상 장기 백필은 일자·심볼 단위로 쪼개 1일씩 재처리하고, Glue 파티션 수/카탈로그 갱신 비용을 모니터링하면서 Athena 쿼리 계획을 검증해야 합니다.
 
 ### Preflight 출력(요약)
 

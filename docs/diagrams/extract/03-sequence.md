@@ -21,7 +21,7 @@ sequenceDiagram
       alt KeyCount > 0
         WRK-->>WRK: Skip write (idempotent)
       else
-        WRK->>S3: PutObject(key=.../<UTC_TS>.json|csv)
+        WRK->>S3: PutObject(key=.../{symbol}.{ext}[.gz])
       end
     end
     S3-->>EB: Object Created (EventBridge enabled)
