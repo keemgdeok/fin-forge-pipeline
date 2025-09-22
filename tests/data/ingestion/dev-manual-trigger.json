@@ -1,0 +1,12 @@
+{
+  "data_source": "yahoo_finance",
+  "data_type": "prices",
+  "domain": "market",
+  "table_name": "prices",
+  "symbols": ["AAPL", "MSFT"],
+  "period": "1mo",
+  "interval": "1d",
+  "file_format": "json",
+  "trigger_type": "manual-test",
+  "correlation_id": "local-test-001"
+}

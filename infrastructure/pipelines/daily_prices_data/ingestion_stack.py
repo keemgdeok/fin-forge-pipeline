@@ -16,7 +16,7 @@ from aws_cdk import (
     CfnOutput,
 )
 from aws_cdk import aws_lambda_event_sources as lambda_event_sources
-from aws_cdk.aws_lambda_python_alpha import PythonFunction
+from aws_cdk.aws_lambda_python_alpha import BundlingOptions, PythonFunction, PythonLayerVersion
 from constructs import Construct
 from aws_cdk import aws_cloudwatch as cw
 
@@ -72,6 +72,12 @@ class DailyPricesDataIngestionStack(Stack):
         memory = int(self.config.get("worker_memory", self._lambda_memory()))
         timeout = Duration.seconds(int(self.config.get("worker_timeout", self.config.get("lambda_timeout", 300))))
 
+        reserved_concurrency = self.config.get("worker_reserved_concurrency")
+        if reserved_concurrency is not None:
+            reserved_concurrency = int(reserved_concurrency)
+            if reserved_concurrency <= 0:
+                reserved_concurrency = None
+
         function = PythonFunction(
             self,
             "DailyPricesIngestionWorker",
@@ -90,7 +96,7 @@ class DailyPricesDataIngestionStack(Stack):
                 "RAW_BUCKET": self.shared_storage.raw_bucket.bucket_name,
                 "ENABLE_GZIP": str(bool(self.config.get("enable_gzip", False))).lower(),
             },
-            reserved_concurrent_executions=self.config.get("worker_reserved_concurrency"),
+            reserved_concurrent_executions=reserved_concurrency if reserved_concurrency is not None else None,
         )
 
         # Subscribe to SQS with batch size from config (default 1)
@@ -106,6 +112,26 @@ class DailyPricesDataIngestionStack(Stack):
 
     def _create_orchestrator_function(self) -> lambda_.IFunction:
         """Create orchestrator Lambda function to fan-out symbols into SQS."""
+        env_vars: dict[str, str] = {
+            "ENVIRONMENT": self.env_name,
+            "QUEUE_URL": self.queue.queue_url,
+            "CHUNK_SIZE": str(int(self.config.get("orchestrator_chunk_size", 5))),
+            "SQS_SEND_BATCH_SIZE": str(int(self.config.get("sqs_send_batch_size", 10))),
+        }
+
+        ssm_param = self.config.get("symbol_universe_ssm_param")
+        if ssm_param:
+            env_vars["SYMBOLS_SSM_PARAM"] = str(ssm_param)
+
+        symbols_s3_key = self.config.get("symbol_universe_s3_key")
+        if symbols_s3_key:
+            env_vars["SYMBOLS_S3_KEY"] = str(symbols_s3_key)
+
+        symbols_s3_bucket = self.config.get("symbol_universe_s3_bucket")
+        if not symbols_s3_bucket:
+            symbols_s3_bucket = self.shared_storage.artifacts_bucket.bucket_name
+        env_vars["SYMBOLS_S3_BUCKET"] = str(symbols_s3_bucket)
+
         function = PythonFunction(
             self,
             "DailyPricesIngestionOrchestrator",
@@ -119,16 +145,7 @@ class DailyPricesDataIngestionStack(Stack):
             log_retention=self._log_retention(),
             role=iam.Role.from_role_arn(self, "IngestionOrchestratorRole", self.lambda_execution_role_arn),
             layers=[self.common_layer],
-            environment={
-                "ENVIRONMENT": self.env_name,
-                "QUEUE_URL": self.queue.queue_url,
-                "CHUNK_SIZE": str(int(self.config.get("orchestrator_chunk_size", 5))),
-                "SQS_SEND_BATCH_SIZE": str(int(self.config.get("sqs_send_batch_size", 10))),
-                # Optional symbol sources
-                "SYMBOLS_SSM_PARAM": str(self.config.get("symbol_universe_ssm_param", "")),
-                "SYMBOLS_S3_BUCKET": str(self.config.get("symbol_universe_s3_bucket", "")),
-                "SYMBOLS_S3_KEY": str(self.config.get("symbol_universe_s3_key", "")),
-            },
+            environment=env_vars,
         )
         return function
 
@@ -322,13 +339,24 @@ class DailyPricesDataIngestionStack(Stack):
 
         Uses standard Python layer layout: python/shared/... at the root of asset.
         """
-        return lambda_.LayerVersion(
+        return PythonLayerVersion(
             self,
             "CommonLayer",
+            entry="src/lambda/layers/common",
             layer_version_name=f"{self.env_name}-common-layer",
             description="Shared common models and utilities",
             compatible_runtimes=[lambda_.Runtime.PYTHON_3_12],
-            code=lambda_.Code.from_asset("src/lambda/layers/common"),
+            bundling=BundlingOptions(
+                command=[
+                    "bash",
+                    "-c",
+                    "set -euxo pipefail; "
+                    "mkdir -p /asset-output/python; "
+                    "cp -R /asset-input/python/. /asset-output/python/; "
+                    "if [ -f requirements.txt ]; then pip install -q -r requirements.txt -t /asset-output/python; fi",
+                ],
+                asset_excludes=["tests", "__pycache__", "*.pyc"],
+            ),
         )
 
     def _create_market_data_deps_layer(self) -> lambda_.LayerVersion:
@@ -355,6 +383,7 @@ class DailyPricesDataIngestionStack(Stack):
         # Domain/table reflect current demo scope; adjust per domain pipeline
         domain = self.config.get("ingestion_domain", "market")
         table_name = self.config.get("ingestion_table_name", "prices")
+        trigger_type = self.config.get("ingestion_trigger_type", "schedule")
 
         return {
             "data_source": "yahoo_finance",
@@ -365,4 +394,5 @@ class DailyPricesDataIngestionStack(Stack):
             "period": period,
             "interval": interval,
             "file_format": file_format,
+            "trigger_type": trigger_type,
         }

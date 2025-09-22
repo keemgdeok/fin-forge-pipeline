@@ -15,7 +15,7 @@ from aws_cdk import (
     CfnOutput,
 )
 from constructs import Construct
-from aws_cdk.aws_lambda_python_alpha import PythonFunction
+from aws_cdk.aws_lambda_python_alpha import BundlingOptions, PythonFunction, PythonLayerVersion
 
 
 class DailyPricesDataProcessingStack(Stack):
@@ -651,13 +651,24 @@ class DailyPricesDataProcessingStack(Stack):
 
     def _create_common_layer(self) -> lambda_.LayerVersion:
         """Create Common Layer for shared models and utils."""
-        return lambda_.LayerVersion(
+        return PythonLayerVersion(
             self,
             "CommonLayer",
+            entry="src/lambda/layers/common",
             layer_version_name=f"{self.env_name}-common-layer",
             description="Shared common models and utilities",
             compatible_runtimes=[lambda_.Runtime.PYTHON_3_12],
-            code=lambda_.Code.from_asset("src/lambda/layers/common"),
+            bundling=BundlingOptions(
+                command=[
+                    "bash",
+                    "-c",
+                    "set -euxo pipefail; "
+                    "mkdir -p /asset-output/python; "
+                    "cp -R /asset-input/python/. /asset-output/python/; "
+                    "if [ -f requirements.txt ]; then pip install -q -r requirements.txt -t /asset-output/python; fi",
+                ],
+                asset_excludes=["tests", "__pycache__", "*.pyc"],
+            ),
         )
 
     # ===== Helpers =====
