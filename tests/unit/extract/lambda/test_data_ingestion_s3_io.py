@@ -17,7 +17,7 @@ def test_ingestion_s3_write_json(env_dev, load_module, yf_stub, s3_stub) -> None
     mod = load_module("src/lambda/functions/data_ingestion/handler.py")
     # Patch service deps
     yf_stub(["AAPL", "MSFT"])
-    s3 = s3_stub(keycount=0)
+    s3 = s3_stub(keycount=0, head_ok=False)
 
     event: Dict[str, Any] = {
         "data_source": "yahoo_finance",
@@ -35,6 +35,10 @@ def test_ingestion_s3_write_json(env_dev, load_module, yf_stub, s3_stub) -> None
     body = resp["body"]
     assert body["processed_records"] == 2
     assert len(body["written_keys"]) >= 1
+    first_key = body["written_keys"][0]
+    assert "interval=1d" in first_key
+    assert "data_source=yahoo_finance" in first_key
+    assert first_key.endswith(".json")
     # Verify S3 put was called and content type
     assert len(s3.put_calls) >= 1
     assert s3.put_calls[0]["ContentType"] == "application/json"

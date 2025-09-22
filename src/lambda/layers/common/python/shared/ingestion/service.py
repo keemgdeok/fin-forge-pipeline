@@ -3,10 +3,11 @@ from __future__ import annotations
 import io
 import json
 import os
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from typing import Any, Dict, List, Optional, Tuple
 
 import boto3
+from botocore.exceptions import ClientError
 
 from shared.models.events import DataIngestionEvent
 from shared.utils.logger import get_logger, extract_correlation_id
@@ -20,18 +21,16 @@ def _compose_s3_key(
     domain: str,
     table_name: str,
     data_source: str,
-    symbol: str,
-    period: str,
     interval: str,
+    symbol: str,
     ext: str,
-    ts: Optional[datetime] = None,
+    partition_day: date,
 ) -> str:
-    dt = (ts or datetime.now(timezone.utc)).strftime("%Y-%m-%dT%H-%M-%SZ")
-    partition = datetime.now(timezone.utc).strftime("%Y-%m-%d")
     return (
-        f"{domain}/{table_name}/ingestion_date={partition}/"
-        f"data_source={data_source}/symbol={symbol}/interval={interval}/period={period}/"
-        f"{dt}.{ext}"
+        f"{domain}/{table_name}/interval={interval}/"
+        f"data_source={data_source}/year={partition_day.year:04d}/"
+        f"month={partition_day.month:02d}/day={partition_day.day:02d}/"
+        f"{symbol}.{ext}"
     )
 
 
@@ -118,33 +117,42 @@ def process_event(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
         if fetched and raw_bucket:
             s3 = boto3.client("s3")
 
-            # Group by symbol to keep files small
-            by_symbol: Dict[str, List[PriceRecord]] = {}
-            for r in fetched:
-                by_symbol.setdefault(r.symbol, []).append(r)
+            # Group records by (symbol, UTC 날짜)로 묶어 일자별 파일 생성
+            grouped: Dict[Tuple[str, date], List[PriceRecord]] = {}
+            for record in fetched:
+                ts = record.timestamp
+                if ts.tzinfo is None:
+                    ts = ts.replace(tzinfo=timezone.utc)
+                else:
+                    ts = ts.astimezone(timezone.utc)
+                day_key = ts.date()
+                grouped.setdefault((record.symbol, day_key), []).append(record)
 
-            for sym, rows in by_symbol.items():
+            for (symbol, day_key), rows in grouped.items():
                 body, ext = _serialize_records(rows, file_format)
-                key = _compose_s3_key(domain, table_name, data_source, sym, period, interval, ext)
-
-                # Idempotency: if any object exists under the prefix for this date/symbol/period/interval, skip
-                prefix = (
-                    f"{domain}/{table_name}/ingestion_date="
-                    f"{datetime.now(timezone.utc).strftime('%Y-%m-%d')}/data_source={data_source}/"
-                    f"symbol={sym}/interval={interval}/period={period}/"
+                key = _compose_s3_key(
+                    domain=domain,
+                    table_name=table_name,
+                    data_source=data_source,
+                    interval=interval,
+                    symbol=symbol,
+                    ext=ext,
+                    partition_day=day_key,
                 )
 
+                # Idempotency: 동일 키 존재 시 스킵
                 try:
-                    existed = False
-                    resp = s3.list_objects_v2(Bucket=raw_bucket, Prefix=prefix, MaxKeys=1)
-                    if int(resp.get("KeyCount", 0)) > 0:
-                        existed = True
-                    if existed:
-                        log.info(f"Skip write due to idempotency prefix exists: s3://{raw_bucket}/{prefix}")
-                        continue
-                except Exception:
-                    # Non-fatal; proceed with put
-                    pass
+                    s3.head_object(Bucket=raw_bucket, Key=key)
+                    log.info(
+                        "Skip write due to existing object",
+                        extra={"bucket": raw_bucket, "key": key},
+                    )
+                    continue
+                except ClientError as exc:
+                    error_code = exc.response.get("Error", {}).get("Code")
+                    if error_code not in {"404", "NoSuchKey", "NotFound"}:
+                        log.exception("Failed to check existing object")
+                        raise
 
                 # Optional gzip compression
                 enable_gzip = str(os.environ.get("ENABLE_GZIP", "false")).lower() == "true"
@@ -154,7 +162,7 @@ def process_event(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                     import gzip
 
                     body = gzip.compress(body)
-                    key = key + ".gz"
+                    key = f"{key}.gz"
                     content_encoding = "gzip"
 
                 put_kwargs: Dict[str, Any] = {

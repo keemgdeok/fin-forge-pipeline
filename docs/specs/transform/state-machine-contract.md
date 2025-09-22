@@ -16,7 +16,9 @@
 | execution_id | string | N | `ext-req-123` | 상관키. 미제공 시 상태 머신이 생성 |
 | catalog_update | string | N | `on_schema_change` | `on_schema_change|never|force`. 기본은 스키마 변경 감지 시에만 크롤러 실행 |
 | source_bucket | string | C | `data-pipeline-raw-dev-1234` | S3 트리거 모드일 때 필수 |
-| source_key | string | C | `market/prices/ingestion_date=2025-09-07/file.json` | S3 트리거 모드일 때 필수 |
+| source_key | string | C | `market/prices/interval=1d/data_source=yahoo_finance/year=2025/month=09/day=07/AAPL.json` | S3 트리거 모드일 때 필수 |
+| interval | string | C | `1d` | S3 트리거 모드에서 RAW 경로 파티션 정보 |
+| data_source | string | C | `yahoo_finance` | S3 트리거 모드에서 RAW 경로 파티션 정보 |
 | file_type | string | N | `json` | `json|csv|parquet`. S3 트리거 모드에서 권장 |
 
 - 두 가지 입력 모드를 지원합니다.
@@ -24,6 +26,8 @@
   - S3 트리거 모드: `source_bucket`/`source_key` 제공 → Preflight에서 `ds`를 도출.
 - 호환성: `table_name`을 기본으로 사용하되, 레거시 입력 `table`도 허용합니다(내부적으로 `table_name`으로 합쳐 처리).
 - 백필(Map) 사용 시 `date_range` 길이는 운영 정책 범위 내에서 제한(권장: ≤ 31일).
+- RAW 파티션 레이아웃은 `interval/data_source/year/month/day/{symbol}.{ext}` 구조로 고정되어야 하며, Preflight는 `source_key`에서 interval/data_source를 파싱해 Glue 인자와 멱등성 체크에 활용합니다.
+- 10년 이상 장기 백필은 일자·심볼 단위로 쪼개 1일씩 재처리하고, Glue 파티션 수/카탈로그 갱신 비용을 모니터링하면서 Athena 쿼리 계획을 검증해야 합니다.
 
 ### Preflight 출력(요약)
 

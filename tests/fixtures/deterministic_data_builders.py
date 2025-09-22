@@ -338,10 +338,16 @@ class DeterministicTransformEventBuilder:
         }
 
         if include_s3_trigger:
+            partition_date = datetime.strptime(ds, "%Y-%m-%d")
+            symbol = self.config.base_symbols[0] if self.config.base_symbols else "symbol"
             event.update(
                 {
                     "source_bucket": "test-raw-bucket",
-                    "source_key": f"{domain}/{table_name}/ingestion_date={ds}/data.json",
+                    "source_key": (
+                        f"{domain}/{table_name}/interval=1d/data_source=yahoo_finance/"
+                        f"year={partition_date.year:04d}/month={partition_date.month:02d}/"
+                        f"day={partition_date.day:02d}/{symbol}.json"
+                    ),
                     "file_type": "json",
                 }
             )
@@ -386,7 +392,7 @@ class DeterministicTransformEventBuilder:
         return {
             "--ds": ds,
             "--raw_bucket": "test-raw-bucket",
-            "--raw_prefix": f"{domain}/{table_name}/",
+            "--raw_prefix": f"{domain}/{table_name}/interval=1d/data_source=yahoo_finance/",
             "--curated_bucket": "test-curated-bucket",
             "--curated_prefix": f"{domain}/{table_name}/",
             "--job-bookmark-option": "job-bookmark-enable",

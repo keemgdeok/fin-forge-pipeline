@@ -18,6 +18,8 @@ import pytest
 import boto3
 import json
 import hashlib
+from collections import defaultdict
+from datetime import datetime
 from unittest.mock import patch
 from moto import mock_aws
 from io import BytesIO
@@ -115,6 +117,45 @@ def _stable_hash(obj: dict) -> str:
     return hashlib.sha256(s.encode("utf-8")).hexdigest()
 
 
+def _raw_day_prefix(
+    date_str: str,
+    *,
+    domain: str = "market",
+    table: str = "prices",
+    interval: str = "1d",
+    data_source: str = "yahoo_finance",
+) -> str:
+    """Build raw S3 prefix for the interval/data_source/year/month/day layout."""
+
+    dt = datetime.strptime(date_str, "%Y-%m-%d")
+    return (
+        f"{domain}/{table}/"
+        f"interval={interval}/"
+        f"data_source={data_source}/"
+        f"year={dt.year:04d}/month={dt.month:02d}/day={dt.day:02d}/"
+    )
+
+
+def _raw_object_key(
+    date_str: str,
+    *,
+    domain: str = "market",
+    table: str = "prices",
+    interval: str = "1d",
+    data_source: str = "yahoo_finance",
+    object_name: str,
+    extension: str = "json",
+) -> str:
+    prefix = _raw_day_prefix(
+        date_str,
+        domain=domain,
+        table=table,
+        interval=interval,
+        data_source=data_source,
+    )
+    return f"{prefix}{object_name}.{extension}"
+
+
 @pytest.mark.integration
 class TestEndToEndPipeline:
     """End-to-End 파이프라인 검증 테스트 클래스"""
@@ -132,11 +173,22 @@ class TestEndToEndPipeline:
         for bucket in pipeline_buckets.values():
             s3_client.create_bucket(Bucket=bucket)
 
-        # Upload raw JSON data
-        raw_key = "market/prices/ingestion_date=2025-09-07/data.json"
-        raw_data = json.dumps(sample_market_data).encode()
+        # Upload raw JSON data (one object per symbol)
+        target_date = "2025-09-07"
+        raw_prefix = _raw_day_prefix(target_date)
+        records_by_symbol: defaultdict[str, list[dict]] = defaultdict(list)
+        for record in sample_market_data:
+            records_by_symbol[record["symbol"]].append(record)
 
-        s3_client.put_object(Bucket=pipeline_buckets["raw"], Key=raw_key, Body=raw_data, ContentType="application/json")
+        for symbol, records in records_by_symbol.items():
+            body = "\n".join(json.dumps(r) for r in records).encode()
+            key = _raw_object_key(target_date, object_name=symbol)
+            s3_client.put_object(
+                Bucket=pipeline_buckets["raw"],
+                Key=key,
+                Body=body,
+                ContentType="application/json",
+            )
 
         # Simulate ETL processing (실제 Glue job 로직)
         with patch("glue.jobs.daily_prices_data_etl"):
@@ -192,8 +244,8 @@ class TestEndToEndPipeline:
             )
 
         # Verify raw data was uploaded correctly
-        raw_objects = s3_client.list_objects_v2(Bucket=pipeline_buckets["raw"], Prefix="market/prices/")
-        assert raw_objects["KeyCount"] == 1, "Should have 1 raw data file"
+        raw_objects = s3_client.list_objects_v2(Bucket=pipeline_buckets["raw"], Prefix=raw_prefix)
+        assert raw_objects["KeyCount"] == len(records_by_symbol), "Should have per-symbol raw files"
 
         # Verify curated Parquet file was created
         curated_objects = s3_client.list_objects_v2(
@@ -255,8 +307,15 @@ class TestEndToEndPipeline:
         df_raw.to_csv(csv_buffer, index=False)
         csv_data = csv_buffer.getvalue()
 
-        # Upload raw CSV data
-        raw_key = "market/daily-prices-orders/ingestion_date=2025-09-07/data.csv"
+        # Upload raw CSV data under new partition layout
+        raw_key = _raw_object_key(
+            "2025-09-07",
+            domain="market",
+            table="daily-prices-orders",
+            data_source="orders_service",
+            object_name="orders",
+            extension="csv",
+        )
         s3_client.put_object(Bucket=pipeline_buckets["raw"], Key=raw_key, Body=csv_data, ContentType="text/csv")
 
         # Simulate ETL processing with proper type handling
@@ -330,6 +389,8 @@ class TestEndToEndPipeline:
         # Create data for multiple partitions
         test_dates = ["2025-09-05", "2025-09-06", "2025-09-07"]
 
+        expected_symbol_count = len({record["symbol"] for record in sample_market_data})
+
         for i, date in enumerate(test_dates):
             # Modify data slightly for each partition
             partition_data = []
@@ -339,14 +400,21 @@ class TestEndToEndPipeline:
                 modified_record["timestamp"] = f"{date}T09:30:00Z"
                 partition_data.append(modified_record)
 
-            # Upload raw data for this partition
-            raw_key = f"market/prices/ingestion_date={date}/data.json"
-            s3_client.put_object(
-                Bucket=pipeline_buckets["raw"],
-                Key=raw_key,
-                Body=json.dumps(partition_data).encode(),
-                ContentType="application/json",
-            )
+            # Upload raw data for this partition (split per symbol)
+            raw_prefix = _raw_day_prefix(date)
+            records_by_symbol: defaultdict[str, list[dict]] = defaultdict(list)
+            for record in partition_data:
+                records_by_symbol[record["symbol"]].append(record)
+
+            for symbol, records in records_by_symbol.items():
+                body = "\n".join(json.dumps(r) for r in records).encode()
+                key = _raw_object_key(date, object_name=symbol)
+                s3_client.put_object(
+                    Bucket=pipeline_buckets["raw"],
+                    Key=key,
+                    Body=body,
+                    ContentType="application/json",
+                )
 
             # Simulate ETL processing for this partition
             df = pd.DataFrame(partition_data)
@@ -365,10 +433,11 @@ class TestEndToEndPipeline:
 
         # Verify all raw partitions were created
         for date in test_dates:
-            raw_objects = s3_client.list_objects_v2(
-                Bucket=pipeline_buckets["raw"], Prefix=f"market/prices/ingestion_date={date}/"
-            )
-            assert raw_objects["KeyCount"] == 1, f"Raw partition {date} should exist"
+            raw_prefix = _raw_day_prefix(date)
+            raw_objects = s3_client.list_objects_v2(Bucket=pipeline_buckets["raw"], Prefix=raw_prefix)
+            assert (
+                raw_objects["KeyCount"] == expected_symbol_count
+            ), f"Raw partition {date} should contain per-symbol objects"
 
         # Verify all curated partitions were created
         for date in test_dates:
@@ -412,8 +481,11 @@ class TestEndToEndPipeline:
             {"symbol": "AMZN", "price": 3500.00, "exchange": "NASDAQ"},  # good record
         ]
 
-        # Upload problematic data
-        raw_key = "market/prices/ingestion_date=2025-09-07/problematic_data.json"
+        # Upload problematic data under interval/source partitioning
+        raw_key = _raw_object_key(
+            "2025-09-07",
+            object_name="problematic_data",
+        )
         s3_client.put_object(
             Bucket=pipeline_buckets["raw"],
             Key=raw_key,
@@ -546,18 +618,25 @@ class TestEndToEndPipeline:
             evolved_record["market_cap"] = record["price"] * 1000000  # New column
             evolved_data.append(evolved_record)
 
-        # Upload evolved data
-        raw_key = "market/prices/ingestion_date=2025-09-08/evolved_data.json"
-        s3_client.put_object(
-            Bucket=pipeline_buckets["raw"],
-            Key=raw_key,
-            Body=json.dumps(evolved_data).encode(),
-            ContentType="application/json",
-        )
+        # Upload evolved data (per symbol)
+        evolved_date = "2025-09-08"
+        records_by_symbol: defaultdict[str, list[dict]] = defaultdict(list)
+        for record in evolved_data:
+            records_by_symbol[record["symbol"]].append(record)
+
+        for symbol, records in records_by_symbol.items():
+            body = "\n".join(json.dumps(r) for r in records).encode()
+            key = _raw_object_key(evolved_date, object_name=symbol)
+            s3_client.put_object(
+                Bucket=pipeline_buckets["raw"],
+                Key=key,
+                Body=body,
+                ContentType="application/json",
+            )
 
         # Process evolved data
         df_evolved = pd.DataFrame(evolved_data)
-        df_evolved["ds"] = "2025-09-08"
+        df_evolved["ds"] = evolved_date
 
         # Generate new schema fingerprint
         new_schema = {

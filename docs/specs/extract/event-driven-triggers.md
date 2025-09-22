@@ -147,7 +147,7 @@ cdk deploy DailyPricesDataIngestionStack \
   "detail": {
     "bucket": "data-pipeline-raw-dev-1234",
     "object": {
-      "key": "market/prices/ingestion_date=2025-09-09/...",
+  "key": "market/prices/interval=1d/data_source=yahoo_finance/year=2025/month=09/day=09/AAPL.json",
       "size": 12345
     }
   }

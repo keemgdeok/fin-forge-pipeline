@@ -53,6 +53,8 @@ def test_date_range_expands_items_with_idempotency_and_glue_args(monkeypatch: py
         "domain": "market",
         "table_name": "prices",
         "file_type": "json",
+        "interval": "1d",
+        "data_source": "yahoo_finance",
         "date_range": {"start": "2025-09-01", "end": "2025-09-03"},
         "catalog_update": "on_schema_change",
     }
@@ -99,6 +101,8 @@ def test_date_range_respects_max_backfill_days(monkeypatch: pytest.MonkeyPatch) 
         "domain": "market",
         "table_name": "prices",
         "file_type": "json",
+        "interval": "1d",
+        "data_source": "yahoo_finance",
         "date_range": {"start": "2025-09-01", "end": "2025-09-05"},
     }
 

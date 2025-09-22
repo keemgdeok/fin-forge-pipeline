@@ -43,7 +43,7 @@ def test_missing_required_fields_returns_pre_validation_failed(
     assert resp["error"]["code"] == "PRE_VALIDATION_FAILED"
 
 
-def test_no_ingestion_date_in_key_returns_pre_validation_failed(
+def test_missing_date_segments_in_key_returns_pre_validation_failed(
     monkeypatch,
 ) -> None:
     mod = _load_module()
@@ -57,7 +57,7 @@ def test_no_ingestion_date_in_key_returns_pre_validation_failed(
 
     event = {
         "source_bucket": "raw-bucket-dev",
-        "source_key": "market/prices/file.json",
+        "source_key": "market/prices/interval=1d/data_source=yahoo_finance/AAPL.json",
         "domain": "market",
         "table_name": "prices",
         "file_type": "json",
@@ -80,7 +80,7 @@ def test_missing_bucket_env_returns_pre_validation_failed(monkeypatch) -> None:
 
     event = {
         "source_bucket": "raw-bucket-dev",
-        "source_key": "market/prices/ingestion_date=2025-09-07/file.json",
+        "source_key": ("market/prices/interval=1d/data_source=yahoo_finance/" "year=2025/month=09/day=07/AAPL.json"),
         "domain": "market",
         "table_name": "prices",
         "file_type": "json",
@@ -103,7 +103,7 @@ def test_idempotent_skip_returns_expected_code_and_ds(monkeypatch) -> None:
 
     event = {
         "source_bucket": "raw-bucket-dev",
-        "source_key": "market/prices/ingestion_date=2025-09-07/file.json",
+        "source_key": ("market/prices/interval=1d/data_source=yahoo_finance/" "year=2025/month=09/day=07/AAPL.json"),
         "domain": "market",
         "table_name": "prices",
         "file_type": "json",
@@ -126,7 +126,7 @@ def test_valid_builds_glue_args_with_schema_path(monkeypatch) -> None:
 
     event = {
         "source_bucket": "raw-bucket-dev",
-        "source_key": "market/prices/ingestion_date=2025-09-07/file.json",
+        "source_key": ("market/prices/interval=1d/data_source=yahoo_finance/" "year=2025/month=09/day=07/AAPL.json"),
         "domain": "market",
         "table_name": "prices",
         "file_type": "json",
@@ -153,7 +153,7 @@ def test_valid_includes_threshold_args(monkeypatch) -> None:
 
     event = {
         "source_bucket": "raw-bucket-dev",
-        "source_key": "market/prices/ingestion_date=2025-09-07/file.json",
+        "source_key": ("market/prices/interval=1d/data_source=yahoo_finance/" "year=2025/month=09/day=07/AAPL.json"),
         "domain": "market",
         "table_name": "prices",
         "file_type": "json",

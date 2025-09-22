@@ -1,8 +1,9 @@
 """Preflight Lambda for Transform pipeline.
 
 Purpose
-- Derive partition `ds` from the raw S3 object key (expects
-  `ingestion_date=YYYY-MM-DD` in key) or accept direct `ds`.
+- Derive partition information (`interval`, `data_source`, `ds`) from the raw S3
+  object key (expects `interval=.../data_source=.../year=YYYY/month=MM/day=DD`
+  segments) or accept direct parameters.
 - Perform idempotency check by looking for an existing curated partition.
 - Return Glue arguments for the transform job.
 
@@ -13,7 +14,7 @@ Error contract (spec-aligned)
 Input event (S3 -> EventBridge rule)
 {
   "source_bucket": "data-pipeline-raw-dev-123456789012",
-  "source_key": "market/prices/ingestion_date=2025-09-07/file.json",
+  "source_key": "market/prices/interval=1d/data_source=yahoo_finance/year=2025/month=09/day=07/AAPL.json",
   "domain": "market",
   "table_name": "prices",
   "file_type": "json"
@@ -27,7 +28,7 @@ Output
   "proceed": true,
   "reason": null,
   "ds": "2025-09-07",
-  "glue_args": {"--ds": "2025-09-07", ...}
+  "glue_args": {"--ds": "2025-09-07", "--interval": "1d", "--data_source": "yahoo_finance", ...}
 }
 """
 
@@ -35,7 +36,7 @@ from __future__ import annotations
 
 import os
 import re
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Optional, Tuple
 
 import boto3
 from botocore.exceptions import ClientError
@@ -50,9 +51,29 @@ except Exception:  # pragma: no cover
     _HAVE_SHARED_MODELS = False
 
 
+_LEGACY_DS_PATTERN = re.compile(r"ingestion_date=(\d{4}-\d{2}-\d{2})")
+_DATE_COMPONENT_PATTERN = re.compile(r"year=(\d{4})/month=(\d{2})/day=(\d{2})")
+_INTERVAL_PATTERN = re.compile(r"interval=([^/]+)/")
+_DATA_SOURCE_PATTERN = re.compile(r"data_source=([^/]+)/")
+
+
 def _extract_ds_from_key(key: str) -> Optional[str]:
-    m = re.search(r"ingestion_date=(\d{4}-\d{2}-\d{2})", key)
-    return m.group(1) if m else None
+    legacy = _LEGACY_DS_PATTERN.search(key)
+    if legacy:
+        return legacy.group(1)
+    components = _DATE_COMPONENT_PATTERN.search(key)
+    if components:
+        year, month, day = components.groups()
+        return f"{year}-{month}-{day}"
+    return None
+
+
+def _extract_interval_and_source(key: str) -> Tuple[Optional[str], Optional[str]]:
+    interval_match = _INTERVAL_PATTERN.search(key)
+    data_source_match = _DATA_SOURCE_PATTERN.search(key)
+    interval = interval_match.group(1) if interval_match else None
+    data_source = data_source_match.group(1) if data_source_match else None
+    return interval, data_source
 
 
 def _curated_partition_exists(s3_client, bucket: str, prefix: str) -> bool:
@@ -108,6 +129,8 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
         file_type = parsed_event.file_type
         direct_ds = str(parsed_event.ds or "")
         allowed_suffixes = _normalize_suffixes(parsed_event.allowed_suffixes)
+        interval_value = str(parsed_event.interval or "").strip()
+        data_source_value = str(parsed_event.data_source or "").strip()
     else:
         source_bucket = str(event.get("source_bucket", ""))
         source_key = str(event.get("source_key", ""))
@@ -116,14 +139,23 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
         file_type = str(event.get("file_type", "json"))
         direct_ds = str(event.get("ds", ""))
         allowed_suffixes = _normalize_suffixes(event.get("allowed_suffixes"))
+        interval_value = str(event.get("interval", "")).strip()
+        data_source_value = str(event.get("data_source", "")).strip()
 
-    if not domain or not table_name:
+    if not interval_value or not data_source_value:
+        derived_interval, derived_source = _extract_interval_and_source(source_key or "")
+        if not interval_value and derived_interval:
+            interval_value = derived_interval
+        if not data_source_value and derived_source:
+            data_source_value = derived_source
+
+    if not domain or not table_name or not interval_value or not data_source_value:
         result = {
             "proceed": False,
             "reason": "Missing required fields",
             "error": {
                 "code": "PRE_VALIDATION_FAILED",
-                "message": "Missing domain/table_name",
+                "message": "Missing domain/table_name/interval/data_source",
             },
         }
         return result
@@ -169,10 +201,12 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
             artifacts_bucket_env = os.environ.get("ARTIFACTS_BUCKET", "")
             schema_fp_uri_i = f"s3://{artifacts_bucket_env}/{domain}/{table_name}/_schema/latest.json"
 
+            raw_prefix = f"{domain}/{table_name}/interval={interval_value}/" f"data_source={data_source_value}/"
+
             glue_args_i: Dict[str, str] = {
                 "--environment": os.environ.get("ENVIRONMENT", "dev"),
                 "--raw_bucket": os.environ.get("RAW_BUCKET", ""),
-                "--raw_prefix": f"{domain}/{table_name}/",
+                "--raw_prefix": raw_prefix,
                 "--curated_bucket": os.environ.get("CURATED_BUCKET", ""),
                 "--curated_prefix": f"{domain}/{table_name}/",
                 "--schema_fingerprint_s3_uri": schema_fp_uri_i,
@@ -182,6 +216,8 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                 "--max_critical_error_rate": os.environ.get("MAX_CRITICAL_ERROR_RATE", "5.0"),
                 "--ds": ds_i,
                 "--file_type": file_type,
+                "--interval": interval_value,
+                "--data_source": data_source_value,
             }
 
             if exists:
@@ -233,10 +269,10 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
         if not extracted_ds:
             result = {
                 "proceed": False,
-                "reason": "ingestion_date not found in key",
+                "reason": "date partition not found in key",
                 "error": {
                     "code": "PRE_VALIDATION_FAILED",
-                    "message": "ingestion_date=YYYY-MM-DD not found in key",
+                    "message": "year=YYYY/month=MM/day=DD not found in key",
                 },
             }
             return result
@@ -280,10 +316,12 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
 
     # Build Glue args (merge with job defaults on StartJobRun)
     schema_fp_uri = f"s3://{artifacts_bucket}/{domain}/{table_name}/_schema/latest.json"
+    raw_prefix = f"{domain}/{table_name}/interval={interval_value}/" f"data_source={data_source_value}/"
+
     glue_args: Dict[str, str] = {
         "--environment": environment,
         "--raw_bucket": raw_bucket,
-        "--raw_prefix": f"{domain}/{table_name}/",
+        "--raw_prefix": raw_prefix,
         "--curated_bucket": curated_bucket,
         "--curated_prefix": f"{domain}/{table_name}/",
         # Artifacts path aligned to spec: <domain>/<table>/_schema/latest.json
@@ -294,6 +332,8 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
         "--max_critical_error_rate": os.environ.get("MAX_CRITICAL_ERROR_RATE", "5.0"),
         "--ds": ds,
         "--file_type": file_type,
+        "--interval": interval_value,
+        "--data_source": data_source_value,
     }
 
     result = {

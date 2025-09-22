@@ -57,9 +57,19 @@
 ### 파티셔닝 (Hive 스타일)
 
 ```
-s3://{RAW_BUCKET}/{domain}/{table_name}/ingestion_date={YYYY-MM-DD}/
-    data_source={source}/symbol={symbol}/interval={interval}/period={period}/
+s3://{RAW_BUCKET}/{domain}/{table_name}/
+    interval={interval}/
+    data_source={data_source}/
+    year={YYYY}/
+    month={MM}/
+    day={DD}/
+    {symbol}.{file_format}[.gz]
 ```
+
+- `interval`: 이벤트나 환경 설정에서 전달한 수집 해상도(예: `1d`, `1m`).
+- `data_source`: 원본 데이터 공급자(예: `yahoo_finance`).
+- `year/month/day`: 시세 레코드의 UTC 날짜.
+- 파일 이름은 심볼을 기준으로 하며, `ENABLE_GZIP=true` 인 경우 `.gz` 확장자가 추가됩니다.
 
 ### 파일 형식 비교
 
@@ -76,6 +86,12 @@ s3://{RAW_BUCKET}/{domain}/{table_name}/ingestion_date={YYYY-MM-DD}/
 | **JSON** | 1-10MB | 50MB | ~9MB |
 | **CSV** | 1-5MB | 25MB | ~6MB |
 | **Parquet** | 10-100MB | 200MB | ~3MB |
+
+### 백필 & 증분 수집 전략
+
+- **대규모 초기 적재(예: 10년)**: 동일 심볼의 레코드를 UTC 기준 일 단위로 나누어 업로드합니다. 각 날짜는 `year=YYYY/month=MM/day=DD` 파티션에 매핑되므로 Athena/Glue 파티션 수가 예측 가능합니다.
+- **일일 증분**: 매일 새로 수집된 값은 동일 파티션 경로(같은 interval/data_source/year/month/day)로 업로드하되, 동형 키가 이미 존재하면 idempotency 로직이 덮어쓰지 않고 건너뜁니다.
+- **분석 워크로드**: 장기 분석 시에는 원하는 날짜 범위만 스캔하도록 `year/month/day` 필터를 사용하고, 고빈도(interval=1m 등) 데이터는 별도 파티션으로 분리됩니다.
 
 ## 출력 명세 (Partial Batch Failure)
 

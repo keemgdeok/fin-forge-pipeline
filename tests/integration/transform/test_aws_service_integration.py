@@ -16,8 +16,11 @@ import pytest
 import boto3
 import json
 import time
+from datetime import datetime
 from typing import Dict
 from moto import mock_aws
+
+from tests.fixtures.data_builders import build_raw_s3_object_key
 
 
 @pytest.fixture
@@ -155,13 +158,37 @@ class TestAWSServiceIntegration:
             ],
         )
 
-        # Simulate S3 event by uploading a file
-        test_key = "market/prices/ingestion_date=2025-09-07/data.json"
+        partition_date = datetime.strptime("2025-09-07", "%Y-%m-%d")
+        aapl_key = build_raw_s3_object_key(
+            domain="market",
+            table_name="prices",
+            data_source="yahoo_finance",
+            interval="1d",
+            symbol="AAPL",
+            date=partition_date,
+        )
+        googl_key = build_raw_s3_object_key(
+            domain="market",
+            table_name="prices",
+            data_source="yahoo_finance",
+            interval="1d",
+            symbol="GOOGL",
+            date=partition_date,
+        )
+
         s3_client.put_object(
             Bucket=test_buckets["raw_bucket"],
-            Key=test_key,
-            Body=json.dumps([{"symbol": "AAPL", "price": 150.25}, {"symbol": "GOOGL", "price": 2750.00}]).encode(),
+            Key=aapl_key,
+            Body=json.dumps({"symbol": "AAPL", "price": 150.25}).encode(),
         )
+        s3_client.put_object(
+            Bucket=test_buckets["raw_bucket"],
+            Key=googl_key,
+            Body=json.dumps({"symbol": "GOOGL", "price": 2750.00}).encode(),
+        )
+
+        # Simulate S3 event for a single symbol object
+        test_key = aapl_key
 
         # Simulate EventBridge event (normally triggered by S3)
         test_event = {
@@ -241,35 +268,88 @@ class TestAWSServiceIntegration:
             Name="test-multi-pattern-rule", EventPattern=json.dumps(multi_pattern_rule), State="ENABLED"
         )
 
+        partition_date = datetime.strptime("2025-09-07", "%Y-%m-%d")
+
+        matching_json_key = build_raw_s3_object_key(
+            domain="market",
+            table_name="prices",
+            data_source="yahoo_finance",
+            interval="1d",
+            symbol="AAPL",
+            date=partition_date,
+        )
+        matching_csv_key = build_raw_s3_object_key(
+            domain="market",
+            table_name="prices",
+            data_source="yahoo_finance",
+            interval="1d",
+            symbol="AAPL",
+            extension="csv",
+            date=partition_date,
+        )
+        matching_orders_key = build_raw_s3_object_key(
+            domain="market",
+            table_name="daily-prices-orders",
+            data_source="orders_service",
+            interval="1d",
+            symbol="ORDERS",
+            date=partition_date,
+        )
+        wrong_suffix_key = build_raw_s3_object_key(
+            domain="market",
+            table_name="prices",
+            data_source="yahoo_finance",
+            interval="1d",
+            symbol="AAPL",
+            extension="parquet",
+            date=partition_date,
+        )
+        wrong_prefix_reports_key = build_raw_s3_object_key(
+            domain="analytics",
+            table_name="reports",
+            data_source="reporting_api",
+            interval="daily",
+            symbol="summary",
+            date=partition_date,
+        )
+        wrong_prefix_symbols_key = build_raw_s3_object_key(
+            domain="market",
+            table_name="symbols",
+            data_source="reference_data",
+            interval="daily",
+            symbol="snapshot",
+            date=partition_date,
+        )
+
         # Test file scenarios
         test_scenarios = [
             {
-                "key": "market/prices/ingestion_date=2025-09-07/data.json",
+                "key": matching_json_key,
                 "should_match": True,
                 "reason": "Matches market/prices + .json",
             },
             {
-                "key": "market/prices/ingestion_date=2025-09-07/data.csv",
+                "key": matching_csv_key,
                 "should_match": True,
                 "reason": "Matches market/prices + .csv",
             },
             {
-                "key": "market/daily-prices-orders/ingestion_date=2025-09-07/data.json",
+                "key": matching_orders_key,
                 "should_match": True,
                 "reason": "Matches market/daily-prices-orders + .json",
             },
             {
-                "key": "market/prices/ingestion_date=2025-09-07/data.parquet",
+                "key": wrong_suffix_key,
                 "should_match": False,
                 "reason": "Wrong suffix (.parquet not in rule)",
             },
             {
-                "key": "analytics/reports/ingestion_date=2025-09-07/data.json",
+                "key": wrong_prefix_reports_key,
                 "should_match": False,
                 "reason": "Wrong prefix (analytics/reports not in rule)",
             },
             {
-                "key": "market/symbols/ingestion_date=2025-09-07/data.json",
+                "key": wrong_prefix_symbols_key,
                 "should_match": False,
                 "reason": "Wrong prefix (market/symbols not market/prices)",
             },
@@ -365,9 +445,18 @@ class TestAWSServiceIntegration:
         )["stateMachineArn"]
 
         # Execute workflow
+        partition_date = datetime.strptime("2025-09-07", "%Y-%m-%d")
+        execution_source_key = build_raw_s3_object_key(
+            domain="market",
+            table_name="prices",
+            data_source="yahoo_finance",
+            interval="1d",
+            symbol="AAPL",
+            date=partition_date,
+        )
         execution_input = {
             "source_bucket": "test-raw-bucket",
-            "source_key": "market/prices/ingestion_date=2025-09-07/file.json",
+            "source_key": execution_source_key,
             "domain": "market",
             "table_name": "prices",
         }
@@ -573,8 +662,16 @@ class TestAWSServiceIntegration:
         )
 
         # Upload files to both regions
-        test_key = "market/prices/ingestion_date=2025-09-07/data.json"
-        test_data = json.dumps([{"symbol": "AAPL", "price": 150.25}]).encode()
+        partition_date = datetime.strptime("2025-09-07", "%Y-%m-%d")
+        test_key = build_raw_s3_object_key(
+            domain="market",
+            table_name="prices",
+            data_source="yahoo_finance",
+            interval="1d",
+            symbol="AAPL",
+            date=partition_date,
+        )
+        test_data = json.dumps({"symbol": "AAPL", "price": 150.25}).encode()
 
         s3_us_east.put_object(Bucket="test-raw-bucket-east", Key=test_key, Body=test_data)
         s3_us_west.put_object(Bucket="test-raw-bucket-west", Key=test_key, Body=test_data)
