@@ -50,20 +50,40 @@ def build_raw_s3_prefix(
     domain: str,
     table_name: str,
     data_source: str,
-    symbol: str,
-    period: str,
     interval: str,
     date: Optional[datetime] = None,
 ) -> str:
-    """Compose RAW bucket prefix for a given symbol/day consistent with service logic.
+    """Compose RAW bucket day-level prefix following the interval/source partition scheme."""
 
-    Mirrors the partitioning used in shared.ingestion.service._compose_s3_key.
-    """
-    d = (date or datetime.now(timezone.utc)).strftime("%Y-%m-%d")
+    dt = (date or datetime.now(timezone.utc)).astimezone(timezone.utc)
     return (
-        f"{domain}/{table_name}/ingestion_date={d}/"
-        f"data_source={data_source}/symbol={symbol}/interval={interval}/period={period}/"
+        f"{domain}/{table_name}/"
+        f"interval={interval}/"
+        f"data_source={data_source}/"
+        f"year={dt.year:04d}/month={dt.month:02d}/day={dt.day:02d}/"
     )
+
+
+def build_raw_s3_object_key(
+    *,
+    domain: str,
+    table_name: str,
+    data_source: str,
+    interval: str,
+    symbol: str,
+    extension: str = "json",
+    date: Optional[datetime] = None,
+) -> str:
+    """Compose full RAW bucket object key for a given symbol/day."""
+
+    prefix = build_raw_s3_prefix(
+        domain=domain,
+        table_name=table_name,
+        data_source=data_source,
+        interval=interval,
+        date=date,
+    )
+    return f"{prefix}{symbol}.{extension}"
 
 
 def build_transform_event(
@@ -185,7 +205,7 @@ def build_glue_job_args(
     *,
     ds: str,
     raw_bucket: str = "test-raw-bucket",
-    raw_prefix: str = "market/prices/",
+    raw_prefix: str = "market/prices/interval=1d/data_source=yahoo_finance/",
     curated_bucket: str = "test-curated-bucket",
     curated_prefix: str = "market/prices/",
     artifacts_bucket: str = "test-artifacts-bucket",

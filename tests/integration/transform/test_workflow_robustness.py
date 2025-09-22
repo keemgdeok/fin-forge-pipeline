@@ -17,10 +17,14 @@ import boto3
 import json
 import time
 import concurrent.futures
+from collections import defaultdict
+from datetime import datetime
 from typing import Dict, Any, List
 from unittest.mock import patch, MagicMock
 from moto import mock_aws
 from io import BytesIO
+
+from tests.fixtures.data_builders import build_raw_s3_object_key, build_raw_s3_prefix
 
 try:
     import pandas as pd
@@ -138,11 +142,20 @@ class TestWorkflowRobustness:
             roleArn="arn:aws:iam::123456789012:role/stepfunctions-role",
         )["stateMachineArn"]
 
-        # Upload test data
+        # Upload test data under new partition scheme
         test_data = [{"symbol": "AAPL", "price": 150.25}]
+        partition_date = datetime.strptime("2025-09-07", "%Y-%m-%d")
+        raw_key = build_raw_s3_object_key(
+            domain="market",
+            table_name="prices",
+            data_source="yahoo_finance",
+            interval="1d",
+            symbol="AAPL",
+            date=partition_date,
+        )
         s3_client.put_object(
             Bucket=robustness_test_config["buckets"]["raw"],
-            Key="market/prices/ingestion_date=2025-09-07/data.json",
+            Key=raw_key,
             Body=json.dumps(test_data).encode(),
             ContentType="application/json",
         )
@@ -159,7 +172,7 @@ class TestWorkflowRobustness:
                     input=json.dumps(
                         {
                             "source_bucket": robustness_test_config["buckets"]["raw"],
-                            "source_key": "market/prices/ingestion_date=2025-09-07/data.json",
+                            "source_key": raw_key,
                             "domain": "market",
                             "table_name": "prices",
                         }
@@ -238,6 +251,23 @@ class TestWorkflowRobustness:
             Name=robustness_test_config["glue_job_name"],
             Role="arn:aws:iam::123456789012:role/glue-role",
             Command={"Name": "glueetl", "ScriptLocation": "s3://test/script.py"},
+        )
+
+        # Upload sample raw data for the workflow
+        partition_date = datetime.strptime("2025-09-07", "%Y-%m-%d")
+        raw_key = build_raw_s3_object_key(
+            domain="market",
+            table_name="prices",
+            data_source="yahoo_finance",
+            interval="1d",
+            symbol="AAPL",
+            date=partition_date,
+        )
+        s3_client.put_object(
+            Bucket=robustness_test_config["buckets"]["raw"],
+            Key=raw_key,
+            Body=json.dumps([{"symbol": "AAPL", "price": 150.25}]).encode(),
+            ContentType="application/json",
         )
 
         # State machine with retry configuration
@@ -350,7 +380,7 @@ class TestWorkflowRobustness:
                 input=json.dumps(
                     {
                         "source_bucket": robustness_test_config["buckets"]["raw"],
-                        "source_key": "market/prices/ingestion_date=2025-09-07/data.json",
+                        "source_key": raw_key,
                     }
                 ),
             )["executionArn"]
@@ -386,12 +416,21 @@ class TestWorkflowRobustness:
         # Split into multiple files (simulating real-world scenario)
         chunk_size = 10000
         file_count = 0
+        partition_date = datetime.strptime("2025-09-07", "%Y-%m-%d")
 
         for i in range(0, len(large_dataset), chunk_size):
             chunk = large_dataset[i : i + chunk_size]
             file_count += 1
 
-            raw_key = f"market/prices/ingestion_date=2025-09-07/chunk_{file_count:03d}.json"
+            object_name = f"chunk_{file_count:03d}"
+            raw_key = build_raw_s3_object_key(
+                domain="market",
+                table_name="prices",
+                data_source="yahoo_finance",
+                interval="1d",
+                symbol=object_name,
+                date=partition_date,
+            )
             s3_client.put_object(
                 Bucket=robustness_test_config["buckets"]["raw"],
                 Key=raw_key,
@@ -407,7 +446,15 @@ class TestWorkflowRobustness:
         # Process each chunk (simulate Glue job processing)
         processed_records = 0
         for i in range(1, file_count + 1):
-            raw_key = f"market/prices/ingestion_date=2025-09-07/chunk_{i:03d}.json"
+            object_name = f"chunk_{i:03d}"
+            raw_key = build_raw_s3_object_key(
+                domain="market",
+                table_name="prices",
+                data_source="yahoo_finance",
+                interval="1d",
+                symbol=object_name,
+                date=partition_date,
+            )
 
             # Read and process chunk
             response = s3_client.get_object(Bucket=robustness_test_config["buckets"]["raw"], Key=raw_key)
@@ -484,6 +531,15 @@ class TestWorkflowRobustness:
         chunk_size = resource_constraints["max_concurrent_files"] * 1000  # Smaller chunks
         processed_chunks = 0
 
+        partition_date = datetime.strptime("2025-09-07", "%Y-%m-%d")
+        raw_prefix = build_raw_s3_prefix(
+            domain="market",
+            table_name="prices",
+            data_source="yahoo_finance",
+            interval="1d",
+            date=partition_date,
+        )
+
         try:
             for i in range(0, len(moderate_dataset), chunk_size):
                 # Check timeout constraint
@@ -501,8 +557,14 @@ class TestWorkflowRobustness:
                     for j in range(0, len(chunk), sub_chunk_size):
                         sub_chunk = chunk[j : j + sub_chunk_size]
 
-                        raw_key = (
-                            f"market/prices/ingestion_date=2025-09-07/constrained_chunk_{processed_chunks}_{j}.json"
+                        object_name = f"constrained_chunk_{processed_chunks}_{j}"
+                        raw_key = build_raw_s3_object_key(
+                            domain="market",
+                            table_name="prices",
+                            data_source="yahoo_finance",
+                            interval="1d",
+                            symbol=object_name,
+                            date=partition_date,
                         )
                         s3_client.put_object(
                             Bucket=robustness_test_config["buckets"]["raw"],
@@ -511,7 +573,15 @@ class TestWorkflowRobustness:
                             ContentType="application/json",
                         )
                 else:
-                    raw_key = f"market/prices/ingestion_date=2025-09-07/constrained_chunk_{processed_chunks}.json"
+                    object_name = f"constrained_chunk_{processed_chunks}"
+                    raw_key = build_raw_s3_object_key(
+                        domain="market",
+                        table_name="prices",
+                        data_source="yahoo_finance",
+                        interval="1d",
+                        symbol=object_name,
+                        date=partition_date,
+                    )
                     s3_client.put_object(
                         Bucket=robustness_test_config["buckets"]["raw"],
                         Key=raw_key,
@@ -522,9 +592,7 @@ class TestWorkflowRobustness:
             processing_time = time.time() - start_time
 
             # Verify graceful degradation occurred
-            raw_objects = s3_client.list_objects_v2(
-                Bucket=robustness_test_config["buckets"]["raw"], Prefix="market/prices/ingestion_date=2025-09-07/"
-            )
+            raw_objects = s3_client.list_objects_v2(Bucket=robustness_test_config["buckets"]["raw"], Prefix=raw_prefix)
 
             assert raw_objects["KeyCount"] > 0, "Should have processed some data despite constraints"
             assert (
@@ -560,13 +628,27 @@ class TestWorkflowRobustness:
         # Create test dataset
         test_data = _generate_large_dataset(10000)
 
-        # Upload raw data
-        s3_client.put_object(
-            Bucket=robustness_test_config["buckets"]["raw"],
-            Key="market/prices/ingestion_date=2025-09-07/data.json",
-            Body=json.dumps(test_data).encode(),
-            ContentType="application/json",
-        )
+        # Upload raw data (per symbol) using new partition layout
+        partition_date = datetime.strptime("2025-09-07", "%Y-%m-%d")
+        records_by_symbol: defaultdict[str, List[Dict[str, Any]]] = defaultdict(list)
+        for record in test_data:
+            records_by_symbol[record["symbol"]].append(record)
+
+        for symbol, records in records_by_symbol.items():
+            raw_key = build_raw_s3_object_key(
+                domain="market",
+                table_name="prices",
+                data_source="yahoo_finance",
+                interval="1d",
+                symbol=symbol,
+                date=partition_date,
+            )
+            s3_client.put_object(
+                Bucket=robustness_test_config["buckets"]["raw"],
+                Key=raw_key,
+                Body="\n".join(json.dumps(r) for r in records).encode(),
+                ContentType="application/json",
+            )
 
         # Simulate partial processing before interruption
         partial_records = test_data[:5000]  # First half

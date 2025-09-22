@@ -10,7 +10,7 @@ import pytest
 import os
 from typing import Dict, Any, List, Optional, Union
 from datetime import date, datetime, timedelta
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from unittest.mock import Mock
 
 
@@ -32,18 +32,35 @@ class PartitionFixture:
     domain: str
     table_name: str
     ds: str
+    interval: str = "1d"
+    data_source: str = "yahoo_finance"
+    symbols: List[str] = field(default_factory=lambda: ["AAPL"])
     file_type: str = "json"
     record_count: int = 100
 
     @property
     def raw_prefix(self) -> str:
         """Get raw S3 prefix for this partition."""
-        return f"{self.domain}/{self.table_name}/ingestion_date={self.ds}/"
+        partition_date = date.fromisoformat(self.ds)
+        return (
+            f"{self.domain}/{self.table_name}/"
+            f"interval={self.interval}/"
+            f"data_source={self.data_source}/"
+            f"year={partition_date.year:04d}/"
+            f"month={partition_date.month:02d}/"
+            f"day={partition_date.day:02d}/"
+        )
 
     @property
     def curated_prefix(self) -> str:
         """Get curated S3 prefix for this partition."""
         return f"{self.domain}/{self.table_name}/ds={self.ds}/"
+
+    def raw_key(self, symbol: Optional[str] = None) -> str:
+        """Build the raw object key for a given symbol (defaults to first symbol)."""
+
+        target_symbol = symbol or (self.symbols[0] if self.symbols else "symbol")
+        return f"{self.raw_prefix}{target_symbol}.{self.file_type}"
 
 
 class MockAWSEnvironment:
@@ -85,33 +102,47 @@ class MockAWSEnvironment:
         partition: PartitionFixture,
         data: Optional[List[Dict[str, Any]]] = None,
     ) -> None:
-        """Create a raw partition with sample data."""
-        if data is None:
-            data = generate_sample_market_data(partition.record_count)
+        """Create raw objects per symbol under the interval/source partition."""
 
-        file_name = f"data.{partition.file_type}"
-        s3_key = f"{partition.raw_prefix}{file_name}"
-
-        if partition.file_type == "json":
-            content = "\n".join(json.dumps(record) for record in data)
-        elif partition.file_type == "csv":
-            if data:
-                headers = ",".join(data[0].keys())
-                rows = [",".join(str(record.get(k, "")) for k in data[0].keys()) for record in data]
-                content = headers + "\n" + "\n".join(rows)
+        for symbol in partition.symbols:
+            if data is None:
+                symbol_records = generate_sample_market_data(
+                    partition.record_count,
+                    symbol=symbol,
+                )
             else:
-                content = ""
-        else:  # parquet - simplified as JSON for testing
-            content = json.dumps(data)
+                symbol_records = []
+                for record in data:
+                    record_copy = dict(record)
+                    record_copy.setdefault("symbol", symbol)
+                    symbol_records.append(record_copy)
 
-        self.add_s3_object(
-            S3ObjectFixture(
-                bucket=self.raw_bucket,
-                key=s3_key,
-                content=content,
-                content_type=("application/json" if partition.file_type == "json" else "text/plain"),
+            if partition.file_type == "json":
+                content: Union[str, bytes] = "\n".join(json.dumps(record) for record in symbol_records)
+                content_type = "application/json"
+            elif partition.file_type == "csv":
+                if symbol_records:
+                    headers = ",".join(symbol_records[0].keys())
+                    rows = [
+                        ",".join(str(record.get(key, "")) for key in symbol_records[0].keys())
+                        for record in symbol_records
+                    ]
+                    content = headers + "\n" + "\n".join(rows)
+                else:
+                    content = ""
+                content_type = "text/csv"
+            else:  # parquet - simplified as JSON payload for tests
+                content = json.dumps(symbol_records)
+                content_type = "application/octet-stream"
+
+            self.add_s3_object(
+                S3ObjectFixture(
+                    bucket=self.raw_bucket,
+                    key=partition.raw_key(symbol),
+                    content=content,
+                    content_type=content_type,
+                )
             )
-        )
 
     def create_curated_partition(self, partition: PartitionFixture) -> None:
         """Create a curated partition to simulate existing data."""
@@ -381,8 +412,8 @@ def assert_error_contract(
 
 def assert_success_contract(response: Dict[str, Any], expected_fields: List[str]) -> None:
     """Assert that a response follows the success contract specification."""
-    for field in expected_fields:
-        assert field in response, f"Response should contain field {field}"
+    for expected_field in expected_fields:
+        assert expected_field in response, f"Response should contain field {expected_field}"
 
     # Should not contain error field in success response
     assert "error" not in response, "Success response should not contain error field"
@@ -414,7 +445,11 @@ def assert_glue_args_valid(
     assert glue_args["--ds"] == partition.ds
     assert glue_args["--raw_bucket"] == aws_env.raw_bucket
     assert glue_args["--curated_bucket"] == aws_env.curated_bucket
-    assert glue_args["--raw_prefix"] == f"{partition.domain}/{partition.table_name}/"
+    expected_raw_prefix = (
+        f"{partition.domain}/{partition.table_name}/interval={partition.interval}/"
+        f"data_source={partition.data_source}/"
+    )
+    assert glue_args["--raw_prefix"] == expected_raw_prefix
     assert glue_args["--curated_prefix"] == f"{partition.domain}/{partition.table_name}/"
     assert glue_args["--codec"] == "zstd"
     assert glue_args["--target_file_mb"] == "256"
@@ -450,7 +485,7 @@ def create_step_functions_event(partition: PartitionFixture, event_type: str = "
     elif event_type == "s3_trigger":
         return {
             "source_bucket": "raw-bucket-test",
-            "source_key": f"{partition.raw_prefix}data.{partition.file_type}",
+            "source_key": partition.raw_key(),
             "domain": partition.domain,
             "table_name": partition.table_name,
             "file_type": partition.file_type,

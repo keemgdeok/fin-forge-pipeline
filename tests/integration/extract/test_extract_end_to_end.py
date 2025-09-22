@@ -7,6 +7,7 @@ from moto import mock_aws
 import boto3
 from tests.fixtures.data_builders import (
     build_ingestion_event,
+    build_raw_s3_object_key,
     build_raw_s3_prefix,
 )
 
@@ -212,17 +213,16 @@ def test_e2e_basic_flow(
     assert wr == {"batchItemFailures": []}
     # 각 심볼의 prefix별 정확한 객체 수 검증(심볼당 1개)
     today_dt = datetime.now(timezone.utc)
+    day_prefix = build_raw_s3_prefix(
+        domain="market",
+        table_name="prices",
+        data_source="yahoo_finance",
+        interval="1d",
+        date=today_dt,
+    )
     for sym in ["AAPL", "MSFT", "GOOG"]:
-        prefix = build_raw_s3_prefix(
-            domain="market",
-            table_name="prices",
-            data_source="yahoo_finance",
-            symbol=sym,
-            period="1mo",
-            interval="1d",
-            date=today_dt,
-        )
-        listed_sym = s3.list_objects_v2(Bucket=bucket, Prefix=prefix)
+        symbol_prefix = f"{day_prefix}{sym}"
+        listed_sym = s3.list_objects_v2(Bucket=bucket, Prefix=symbol_prefix)
         assert int(listed_sym.get("KeyCount", 0)) == 1
 
 
@@ -261,7 +261,10 @@ def test_e2e_gzip(
     sqs_event = _receive_all_sqs_messages(queue_url)
     wr = mod_wrk["main"](sqs_event, None)
     assert wr == {"batchItemFailures": []}
-    listed = s3.list_objects_v2(Bucket=bucket, Prefix="market/prices/")
+    listed = s3.list_objects_v2(
+        Bucket=bucket,
+        Prefix="market/prices/interval=1d/data_source=yahoo_finance/",
+    )
     assert int(listed.get("KeyCount", 0)) == 1
     key = listed["Contents"][0]["Key"]
     assert key.endswith(".gz")
@@ -302,7 +305,10 @@ def test_e2e_partial_batch_failure(monkeypatch, worker_env, yf_stub, make_queue,
     sqs_event = _receive_all_sqs_messages(queue_url)
     wr = mod_wrk["main"](sqs_event, None)
     assert any(f.get("itemIdentifier") for f in wr.get("batchItemFailures", []))
-    listed = s3.list_objects_v2(Bucket=bucket, Prefix="market/prices/")
+    listed = s3.list_objects_v2(
+        Bucket=bucket,
+        Prefix="market/prices/interval=1d/data_source=yahoo_finance/",
+    )
     assert int(listed.get("KeyCount", 0)) == 1
 
 
@@ -337,16 +343,15 @@ def test_e2e_idempotency_skip(
     worker_env(bucket, enable_gzip=False)
     # Pre-create an existing MSFT object under today's prefix
     today_dt = datetime.now(timezone.utc)
-    prefix = build_raw_s3_prefix(
+    msft_key = build_raw_s3_object_key(
         domain="market",
         table_name="prices",
         data_source="yahoo_finance",
-        symbol="MSFT",
-        period="1mo",
         interval="1d",
+        symbol="MSFT",
         date=today_dt,
     )
-    s3.put_object(Bucket=bucket, Key=f"{prefix}existing.json", Body=b"x")
+    s3.put_object(Bucket=bucket, Key=msft_key, Body=b"x")
 
     mod_wrk = load_module("src/lambda/functions/ingestion_worker/handler.py")
     yf_stub(["AAPL", "MSFT"])
@@ -354,16 +359,15 @@ def test_e2e_idempotency_skip(
     sqs_event = _receive_all_sqs_messages(queue_url)
     wr = mod_wrk["main"](sqs_event, None)
     assert wr == {"batchItemFailures": []}
-    listed_msft = s3.list_objects_v2(Bucket=bucket, Prefix=prefix)
+    listed_msft = s3.list_objects_v2(Bucket=bucket, Prefix=msft_key)
     assert int(listed_msft.get("KeyCount", 0)) == 1
-    prefix_aapl = build_raw_s3_prefix(
+    aapl_key = build_raw_s3_object_key(
         domain="market",
         table_name="prices",
         data_source="yahoo_finance",
-        symbol="AAPL",
-        period="1mo",
         interval="1d",
+        symbol="AAPL",
         date=today_dt,
     )
-    listed_aapl = s3.list_objects_v2(Bucket=bucket, Prefix=prefix_aapl)
+    listed_aapl = s3.list_objects_v2(Bucket=bucket, Prefix=aapl_key)
     assert int(listed_aapl.get("KeyCount", 0)) == 1
