@@ -53,6 +53,8 @@ args = getResolvedOptions(
         "file_type",
         "expected_min_records",
         "max_critical_error_rate",
+        "interval",
+        "data_source",
     ],
 )
 
@@ -70,7 +72,23 @@ persists curated data and schema fingerprint artifacts.
 """
 
 # Read raw partition for ds
-raw_path = f"s3://{args['raw_bucket']}/{args['raw_prefix']}ingestion_date={args['ds']}/"
+interval = args.get("interval")
+data_source = args.get("data_source")
+if not interval or not data_source:
+    raise ValueError("Glue job requires --interval and --data_source arguments")
+
+ds_parts = args["ds"].split("-")
+if len(ds_parts) != 3:
+    raise ValueError(f"Invalid ds format: {args['ds']}")
+year, month, day = ds_parts
+
+raw_prefix = args["raw_prefix"].rstrip("/")
+if "year=" in raw_prefix and "month=" in raw_prefix and "day=" in raw_prefix:
+    raw_path = f"s3://{args['raw_bucket']}/{raw_prefix}/"
+else:
+    raw_path = f"s3://{args['raw_bucket']}/{raw_prefix}/" if raw_prefix else f"s3://{args['raw_bucket']}/"
+    raw_path = f"{raw_path.rstrip('/')}/year={year}/month={month}/day={day}/"
+
 ft = args["file_type"].lower()
 if ft == "json":
     df = spark.read.json(raw_path)

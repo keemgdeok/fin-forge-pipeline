@@ -93,6 +93,8 @@ class TransformPreflightEvent(BaseModel):
     table: Optional[str] = Field(default=None)
     file_type: str = Field(default="json")
     allowed_suffixes: Optional[List[str]] = Field(default=None)
+    interval: Optional[str] = Field(default=None)
+    data_source: Optional[str] = Field(default=None)
 
     # Direct mode
     ds: Optional[str] = None

@@ -15,8 +15,13 @@ payload = TransformExecutionInput(
     domain="market",
     table_name="prices",
     source_bucket="data-pipeline-raw-dev-1234",
-    source_key="market/prices/ingestion_date=2025-09-07/file.json",
+    source_key=(
+        "market/prices/interval=1d/data_source=yahoo_finance/"
+        "year=2025/month=09/day=07/AAPL.json"
+    ),
     file_type="json",
+    interval="1d",
+    data_source="yahoo_finance",
 )
 
 execution_arn = start_transform_execution(
@@ -64,6 +69,8 @@ class TransformExecutionInput:
     source_bucket: Optional[str] = None
     source_key: Optional[str] = None
     file_type: str = "json"
+    interval: Optional[str] = None
+    data_source: Optional[str] = None
 
     # Optional ancillary fields
     reprocess: Optional[bool] = None
@@ -93,6 +100,11 @@ class TransformExecutionInput:
         if self.source_bucket and self.source_key:
             payload["source_bucket"] = self.source_bucket
             payload["source_key"] = self.source_key
+
+        if self.interval:
+            payload["interval"] = self.interval
+        if self.data_source:
+            payload["data_source"] = self.data_source
 
         return payload
 
@@ -129,6 +141,9 @@ def _validate_payload(payload: TransformExecutionInput) -> None:
 
     if not has_direct and not has_s3_trigger:
         raise ValueError("Provide either ds/date_range or source_bucket/source_key")
+
+    if has_s3_trigger and not (payload.interval and payload.data_source):
+        raise ValueError("S3 trigger mode requires interval and data_source")
 
     if payload.date_range:
         # Simple structural validation; content validation left to Preflight
