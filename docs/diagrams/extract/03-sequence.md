@@ -17,7 +17,7 @@ sequenceDiagram
     WRK->>YF: fetch_prices (multi-ticker or per symbol)
     YF-->>WRK: List<PriceRecord>
     loop per symbol
-      WRK->>S3: ListObjectsV2(prefix=.../ingestion_date=YYYY-MM-DD/...)
+  WRK->>S3: head_object(check existing interval/data_source/year/month/day)
       alt KeyCount > 0
         WRK-->>WRK: Skip write (idempotent)
       else

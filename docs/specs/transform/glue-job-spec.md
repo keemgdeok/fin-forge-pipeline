@@ -20,9 +20,11 @@
 |---|---|---|
 | `--ds` | `2025-09-07` | 처리 대상 파티션(UTC) |
 | `--raw_bucket` | `raw-bucket` | 입력 버킷 |
-| `--raw_prefix` | `<domain>/<table>/` | 입력 프리픽스 |
+| `--raw_prefix` | `<domain>/<table>/interval=<interval>/data_source=<source>/` | 입력 프리픽스 |
 | `--curated_bucket` | `curated-bucket` | 출력 버킷 |
 | `--curated_prefix` | `<domain>/<table>/` | 출력 프리픽스 |
+| `--interval` | `1d` | RAW 파티션 interval | 
+| `--data_source` | `yahoo_finance` | RAW 파티션 data_source |
 | `--job-bookmark-option` | `job-bookmark-enable` | 증분 읽기 활성화 |
 | `--enable-s3-parquet-optimized-committer` | `1` | 원자적 커밋 |
 | `--codec` | `zstd` | Parquet 압축(고정) |
@@ -33,8 +35,8 @@
 
 | 항목 | 값 |
 |---|---|
-| 경로 | `s3://<raw-bucket>/<domain>/<table>/ingestion_date=<YYYY-MM-DD>/` |
-| 파티션 키 | `ingestion_date` (UTC) |
+| 경로 | `s3://<raw-bucket>/<domain>/<table>/interval=<interval>/data_source=<source>/year=<YYYY>/month=<MM>/day=<DD>/` |
+| 파티션 키 | `interval, data_source, year, month, day` |
 | 스키마(예) | `symbol:string, ts_utc:timestamp, price:decimal(18,6), exchange:string` |
 | 최소 데이터 | 파티션당 ≥ 1 파일 |
 
