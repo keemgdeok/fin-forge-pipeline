@@ -347,6 +347,7 @@ class DailyPricesDataProcessingStack(Stack):
             .otherwise(
                 sfn.Choice(self, "PreflightSkipOrError")
                 .when(sfn.Condition.string_equals("$.error.code", "IDEMPOTENT_SKIP"), success_task)
+                .when(sfn.Condition.string_equals("$.error.code", "IGNORED_OBJECT"), success_task)
                 .otherwise(fail_chain)
             )
         )
@@ -449,6 +450,10 @@ class DailyPricesDataProcessingStack(Stack):
                     sfn.Condition.string_equals("$.error.code", "IDEMPOTENT_SKIP"),
                     sfn.Succeed(self, "BackfillSkipSuccess", comment="Processing skipped (idempotent)"),
                 )
+                .when(
+                    sfn.Condition.string_equals("$.error.code", "IGNORED_OBJECT"),
+                    sfn.Succeed(self, "BackfillSkipNonMatching", comment="Processing skipped (ignored object)"),
+                )
                 .otherwise(backfill_fail_chain)
             )
         )
@@ -532,8 +537,8 @@ class DailyPricesDataProcessingStack(Stack):
         """Create a single EventBridge rule for a specific domain/table and suffix set."""
         prefix = f"{domain}/{table_name}/"
 
-        # Build key filters: require prefix AND any-of suffixes, use one entry per suffix
-        key_filters = [{"prefix": prefix, "suffix": s} for s in suffixes]
+        # Only filter by prefix in EventBridge; suffix validation happens in Preflight Lambda.
+        sanitized_suffixes = [str(s).strip() for s in suffixes if str(s).strip()]
 
         rule_id = f"RawObjectCreated-{domain}-{table_name}".replace("/", "-")
         rule = events.Rule(
@@ -545,7 +550,7 @@ class DailyPricesDataProcessingStack(Stack):
                 detail_type=["Object Created"],
                 detail={
                     "bucket": {"name": [self.shared_storage.raw_bucket.bucket_name]},
-                    "object": {"key": key_filters},
+                    "object": {"key": [{"prefix": prefix}]},
                 },
             ),
         )
@@ -560,6 +565,7 @@ class DailyPricesDataProcessingStack(Stack):
                         "table_name": table_name,
                         "domain": domain,
                         "file_type": file_type,
+                        "allowed_suffixes": sanitized_suffixes,
                     }
                 ),
             )
