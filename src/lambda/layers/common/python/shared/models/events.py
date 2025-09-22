@@ -92,6 +92,7 @@ class TransformPreflightEvent(BaseModel):
     # Legacy alias support
     table: Optional[str] = Field(default=None)
     file_type: str = Field(default="json")
+    allowed_suffixes: Optional[List[str]] = Field(default=None)
 
     # Direct mode
     ds: Optional[str] = None
@@ -110,6 +111,22 @@ class TransformPreflightEvent(BaseModel):
     @classmethod
     def _normalize_file_type(cls, v: str) -> str:  # type: ignore[override]
         return (v or "json").strip().lower()
+
+    @field_validator("allowed_suffixes", mode="before")
+    @classmethod
+    def _normalize_allowed_suffixes(cls, v: Optional[Any]) -> Optional[List[str]]:  # type: ignore[override]
+        if v is None:
+            return None
+
+        if isinstance(v, (list, tuple, set)):
+            cleaned = [str(item or "").strip() for item in v if str(item or "").strip()]
+            return cleaned
+
+        if isinstance(v, str):
+            value = v.strip()
+            return [value] if value else []
+
+        raise ValueError("allowed_suffixes must be a list of strings")
 
     @field_validator("date_range")
     @classmethod

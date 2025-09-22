@@ -162,7 +162,8 @@ class DataCatalogStack(Stack):
                 '{"AddOrUpdateBehavior":"InheritFromTable"}},'
                 '"Grouping":{"TableGroupingPolicy":"CombineCompatibleSchemas"}}'
             ),
-            recrawl_policy=glue.CfnCrawler.RecrawlPolicyProperty(recrawl_behavior="CRAWL_NEW_FOLDERS_ONLY"),
+            # Use full recrawl so schema changes in existing prefixes propagate to the catalog.
+            recrawl_policy=glue.CfnCrawler.RecrawlPolicyProperty(recrawl_behavior="CRAWL_EVERYTHING"),
             schema_change_policy=glue.CfnCrawler.SchemaChangePolicyProperty(
                 update_behavior="UPDATE_IN_DATABASE",
                 delete_behavior="LOG",

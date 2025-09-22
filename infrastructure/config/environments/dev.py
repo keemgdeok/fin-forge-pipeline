@@ -34,7 +34,6 @@ dev_config = {
     "orchestrator_chunk_size": 10,
     "sqs_send_batch_size": 10,
     "sqs_batch_size": 1,
-    "worker_reserved_concurrency": 5,
     "worker_timeout": 300,
     "worker_memory": 512,
     "enable_gzip": False,

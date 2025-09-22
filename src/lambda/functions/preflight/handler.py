@@ -75,25 +75,39 @@ def _coalesce_table_name(event: Dict[str, Any]) -> str:
     return chosen
 
 
+def _normalize_suffixes(values: Any) -> list[str]:
+    if not values:
+        return []
+
+    if isinstance(values, (list, tuple, set)):
+        iterable = values
+    else:
+        iterable = [values]
+
+    normalized: list[str] = []
+    for item in iterable:
+        candidate = str(item or "").strip()
+        if candidate:
+            normalized.append(candidate)
+    return normalized
+
+
 def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
-    # Inputs: support two modes per spec: direct ds or S3-trigger
+    parsed_event: Optional["TransformPreflightEvent"] = None
     if _HAVE_SHARED_MODELS:
         try:
-            parsed = TransformPreflightEvent.model_validate(event)
-            source_bucket = str(parsed.source_bucket or "")
-            source_key = str(parsed.source_key or "")
-            domain = str(parsed.domain or "").strip()
-            table_name = parsed.resolved_table_name
-            file_type = parsed.file_type
-            direct_ds = str(parsed.ds or "")
+            parsed_event = TransformPreflightEvent.model_validate(event)
         except Exception:
-            # Fall back to permissive parsing if validation fails
-            source_bucket = str(event.get("source_bucket", ""))
-            source_key = str(event.get("source_key", ""))
-            domain = str(event.get("domain", "")).strip()
-            table_name = _coalesce_table_name(event)
-            file_type = str(event.get("file_type", "json"))
-            direct_ds = str(event.get("ds", ""))
+            parsed_event = None
+
+    if parsed_event:
+        source_bucket = str(parsed_event.source_bucket or "")
+        source_key = str(parsed_event.source_key or "")
+        domain = str(parsed_event.domain or "").strip()
+        table_name = parsed_event.resolved_table_name
+        file_type = parsed_event.file_type
+        direct_ds = str(parsed_event.ds or "")
+        allowed_suffixes = _normalize_suffixes(parsed_event.allowed_suffixes)
     else:
         source_bucket = str(event.get("source_bucket", ""))
         source_key = str(event.get("source_key", ""))
@@ -101,6 +115,7 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
         table_name = _coalesce_table_name(event)
         file_type = str(event.get("file_type", "json"))
         direct_ds = str(event.get("ds", ""))
+        allowed_suffixes = _normalize_suffixes(event.get("allowed_suffixes"))
 
     if not domain or not table_name:
         result = {
@@ -114,13 +129,8 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
         return result
 
     # Handle backfill date range: build per-date items with per-item glue_args
-    date_range = None
-    if _HAVE_SHARED_MODELS:
-        try:
-            parsed = TransformPreflightEvent.model_validate(event)
-            date_range = parsed.date_range
-        except Exception:
-            date_range = event.get("date_range")
+    if parsed_event:
+        date_range = parsed_event.date_range
     else:
         date_range = event.get("date_range")
 
@@ -205,6 +215,20 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                 },
             }
             return result
+
+        if allowed_suffixes:
+            key_lower = source_key.lower()
+            allowed_lower = [s.lower() for s in allowed_suffixes]
+            if not any(key_lower.endswith(sfx) for sfx in allowed_lower):
+                result = {
+                    "proceed": False,
+                    "reason": "Object suffix not allowed",
+                    "error": {
+                        "code": "IGNORED_OBJECT",
+                        "message": f"Object key does not match allowed suffixes: {allowed_suffixes}",
+                    },
+                }
+                return result
         extracted_ds = _extract_ds_from_key(source_key or "")
         if not extracted_ds:
             result = {
