@@ -20,13 +20,14 @@ staging_config = {
     "ingestion_period": "3mo",
     "ingestion_interval": "1d",
     "ingestion_file_format": "json",
+    "ingestion_trigger_type": "schedule",
     "ingestion_domain": "market",
     "ingestion_table_name": "prices",
     # Symbol universe asset (deployed via CDK into artifacts bucket)
     "symbol_universe_asset_path": "data/symbols",
     "symbol_universe_asset_file": "nasdaq_sp500.json",
     "symbol_universe_s3_key": "market/universe/nasdaq_sp500.json",
-    "symbol_universe_s3_bucket": None,
+    "symbol_universe_s3_bucket": "",
     # Indicators
     "indicators_table_name": "indicators",
     "indicators_lookback_days": 252,
