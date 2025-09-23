@@ -41,6 +41,8 @@ dev_config = {
     "enable_gzip": False,
     "raw_manifest_basename": "_batch",
     "raw_manifest_suffix": ".manifest.json",
+    "batch_tracker_table_name": "",
+    "batch_tracker_ttl_days": 7,
     "max_retries": 5,
     "enable_processing_orchestration": True,
     # Catalog update policy for crawler: on_schema_change|never|force

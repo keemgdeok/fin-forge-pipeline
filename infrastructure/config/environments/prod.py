@@ -43,6 +43,8 @@ prod_config = {
     "enable_gzip": True,
     "raw_manifest_basename": "_batch",
     "raw_manifest_suffix": ".manifest.json",
+    "batch_tracker_table_name": "",
+    "batch_tracker_ttl_days": 7,
     "max_retries": 6,
     # Enable full processing orchestration in production so Step Functions + Glue
     # assets are synthesized and deployable by default.
