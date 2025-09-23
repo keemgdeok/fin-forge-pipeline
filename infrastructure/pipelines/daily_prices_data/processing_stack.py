@@ -513,7 +513,7 @@ class DailyPricesDataProcessingStack(Stack):
                     "domain": self.config.get("ingestion_domain", "market"),
                     "table_name": self.config.get("ingestion_table_name", "prices"),
                     "file_type": self.config.get("ingestion_file_format", "json"),
-                    "suffixes": self.config.get("processing_suffixes", [".json", ".csv"]),
+                    "suffixes": self.config.get("processing_suffixes", [".manifest.json"]),
                 }
             ]
 
@@ -522,7 +522,7 @@ class DailyPricesDataProcessingStack(Stack):
             domain: str = str(t.get("domain", "")).strip()
             table_name: str = str(t.get("table_name", "")).strip()
             file_type: str = str(t.get("file_type", "json")).strip() or "json"
-            suffixes: list[str] = list(t.get("suffixes", [".json", ".csv"]))
+            suffixes: list[str] = list(t.get("suffixes", [".manifest.json"]))
 
             if not domain or not table_name:
                 # Skip malformed trigger

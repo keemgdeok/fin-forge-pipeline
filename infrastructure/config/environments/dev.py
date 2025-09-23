@@ -39,18 +39,22 @@ dev_config = {
     "worker_reserved_concurrency": 0,
     "worker_memory": 512,
     "enable_gzip": False,
+    "raw_manifest_basename": "_batch",
+    "raw_manifest_suffix": ".manifest.json",
+    "batch_tracker_table_name": "",
+    "batch_tracker_ttl_days": 7,
     "max_retries": 5,
     "enable_processing_orchestration": True,
     # Catalog update policy for crawler: on_schema_change|never|force
     "catalog_update": "on_schema_change",
     # Processing triggers (S3->EventBridge->SFN). Supports multiple domain/table pairs.
-    # Each item: {"domain": str, "table_name": str, "file_type": "json|csv|parquet", "suffixes": [".json", ".csv"]}
+    # Each item: {"domain": str, "table_name": str, "file_type": "json|csv|parquet", "suffixes": [".manifest.json"]}
     "processing_triggers": [
         {
             "domain": "market",
             "table_name": "prices",
             "file_type": "json",
-            "suffixes": [".json", ".csv"],
+            "suffixes": [".manifest.json"],
         },
         {
             "domain": "market",
@@ -60,7 +64,7 @@ dev_config = {
         },
     ],
     # Default suffixes when processing_triggers not specified
-    "processing_suffixes": [".json", ".csv"],
+    "processing_suffixes": [".manifest.json"],
     # Load pipeline configuration (S3 → SQS)
     "load_min_file_size_bytes": 1024,
     "load_domain_configs": [

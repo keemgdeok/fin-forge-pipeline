@@ -86,6 +86,31 @@ def build_raw_s3_object_key(
     return f"{prefix}{symbol}.{extension}"
 
 
+def build_raw_manifest_key(
+    *,
+    domain: str,
+    table_name: str,
+    data_source: str,
+    interval: str,
+    basename: str = "_batch",
+    suffix: str = ".manifest.json",
+    date: Optional[datetime] = None,
+) -> str:
+    """Compose RAW bucket manifest object key for a given day."""
+
+    if suffix and not suffix.startswith("."):
+        suffix = f".{suffix}"
+
+    prefix = build_raw_s3_prefix(
+        domain=domain,
+        table_name=table_name,
+        data_source=data_source,
+        interval=interval,
+        date=date,
+    )
+    return f"{prefix}{basename}{suffix}"
+
+
 def build_transform_event(
     *,
     domain: str = "market",

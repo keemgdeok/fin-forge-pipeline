@@ -3,6 +3,7 @@ from __future__ import annotations
 import io
 import json
 import os
+from collections import defaultdict
 from datetime import date, datetime, timezone
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -100,6 +101,7 @@ def process_event(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
 
         processed_records = 0
         written_keys: List[str] = []
+        manifest_objects: Dict[date, Dict[str, Any]] = defaultdict(lambda: {"objects": [], "raw_prefix": ""})
 
         # Fetch data (currently only yahoo_finance supported; optional dependency)
         fetched: List[PriceRecord] = []
@@ -176,8 +178,31 @@ def process_event(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
 
                 s3.put_object(**put_kwargs)
                 written_keys.append(key)
+                manifest_summary = manifest_objects[day_key]
+                manifest_summary["objects"].append(
+                    {
+                        "symbol": symbol,
+                        "key": key,
+                        "records": len(rows),
+                    }
+                )
+                manifest_summary["raw_prefix"] = (
+                    f"{domain}/{table_name}/"
+                    f"interval={interval}/"
+                    f"data_source={data_source}/"
+                    f"year={day_key.year:04d}/month={day_key.month:02d}/day={day_key.day:02d}/"
+                )
 
         # Response
+        partition_summaries = [
+            {
+                "ds": day_key.isoformat(),
+                "objects": summary["objects"],
+                "raw_prefix": summary["raw_prefix"],
+            }
+            for day_key, summary in manifest_objects.items()
+            if summary["objects"]
+        ]
         result = {
             "statusCode": 200,
             "body": {
@@ -196,6 +221,7 @@ def process_event(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                 "raw_bucket": raw_bucket,
                 "processed_records": processed_records,
                 "written_keys": written_keys,
+                "partition_summaries": partition_summaries,
             },
         }
 

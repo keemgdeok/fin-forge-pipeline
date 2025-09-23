@@ -9,6 +9,9 @@ from __future__ import annotations
 
 import json
 import os
+import uuid
+from datetime import datetime, timedelta, timezone
+from decimal import Decimal
 from typing import Any, Dict, List, Optional
 
 import boto3
@@ -146,6 +149,50 @@ def _parse_symbol_text(text: str) -> List[str]:
     return [line.strip() for line in text.splitlines() if line.strip()]
 
 
+def _init_batch_tracker_entry(
+    *,
+    table_name: str,
+    batch_id: str,
+    batch_ds: str,
+    expected_chunks: int,
+    metadata: Dict[str, Any],
+    ttl_days: int,
+    log: Any,
+) -> None:
+    if not table_name or expected_chunks <= 0:
+        return
+
+    dynamodb = boto3.resource("dynamodb")
+    table = dynamodb.Table(table_name)
+    now = datetime.now(timezone.utc)
+
+    item: Dict[str, Any] = {
+        "pk": batch_id,
+        "batch_ds": batch_ds,
+        "expected_chunks": Decimal(expected_chunks),
+        "processed_chunks": Decimal(0),
+        "status": "processing",
+        "created_at": now.isoformat(),
+        "last_update": now.isoformat(),
+        **{f"meta_{k}": v for k, v in metadata.items()},
+    }
+
+    if ttl_days > 0:
+        item["ttl"] = int((now + timedelta(days=ttl_days)).timestamp())
+
+    try:
+        table.put_item(Item=item, ConditionExpression="attribute_not_exists(pk)")
+    except ClientError as exc:
+        if exc.response.get("Error", {}).get("Code") == "ConditionalCheckFailedException":
+            log.warning(
+                "Batch tracker entry already exists",
+                extra={"batch_id": batch_id},
+            )
+        else:
+            log.exception("Failed to initialize batch tracker entry")
+            raise
+
+
 def main(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
     """Entry point for the orchestrator Lambda.
 
@@ -162,6 +209,8 @@ def main(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
     queue_url = os.environ.get("QUEUE_URL")
     chunk_size = max(1, int(os.environ.get("CHUNK_SIZE", "5")))
     send_batch_size = max(1, min(10, int(os.environ.get("SQS_SEND_BATCH_SIZE", "10"))))
+    batch_table = os.environ.get("BATCH_TRACKING_TABLE", "")
+    ttl_days = int(os.environ.get("BATCH_TRACKER_TTL_DAYS", "7"))
 
     if not queue_url:
         raise ValueError("QUEUE_URL environment variable is required")
@@ -190,15 +239,42 @@ def main(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
         "file_format": event.get("file_format", "json"),
     }
 
+    total_symbols = len(symbols)
+    chunks_count = (total_symbols + chunk_size - 1) // chunk_size if total_symbols else 0
+
+    batch_ds = str(event.get("batch_ds") or event.get("ds") or datetime.now(timezone.utc).date().isoformat())
+    batch_id = str(event.get("batch_id") or uuid.uuid4())
+
+    if batch_table and chunks_count > 0:
+        _init_batch_tracker_entry(
+            table_name=batch_table,
+            batch_id=batch_id,
+            batch_ds=batch_ds,
+            expected_chunks=chunks_count,
+            metadata={
+                "environment": env,
+                "domain": params["domain"],
+                "table_name": params["table_name"],
+                "interval": params["interval"],
+                "data_source": params["data_source"],
+            },
+            ttl_days=ttl_days,
+            log=log,
+        )
+
     sqs = boto3.client("sqs")
 
     published = 0
     entries: List[Dict[str, Any]] = []
     msg_id_counter = 0
-    chunks_count = 0
     for ch in _chunks(symbols, chunk_size):
-        chunks_count += 1
-        body = {**params, "symbols": ch}
+        body = {
+            **params,
+            "symbols": ch,
+            "batch_id": batch_id,
+            "batch_ds": batch_ds,
+            "batch_total_chunks": chunks_count,
+        }
         payload = json.dumps(body, ensure_ascii=False)
         entries.append({"Id": f"m-{msg_id_counter}", "MessageBody": payload})
         msg_id_counter += 1
@@ -215,6 +291,14 @@ def main(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
             "environment": env,
             "chunks": chunks_count,
             "published": published,
+            "batch_id": batch_id,
+            "batch_ds": batch_ds,
         },
     )
-    return {"published": published, "chunks": chunks_count, "environment": env}
+    return {
+        "published": published,
+        "chunks": chunks_count,
+        "environment": env,
+        "batch_id": batch_id,
+        "batch_ds": batch_ds,
+    }

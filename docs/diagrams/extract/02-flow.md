@@ -1,18 +1,23 @@
 ```mermaid
 flowchart TD
-  A["EventBridge Scheduled Event<br/>default event from env config"] --> B["Orchestrator Lambda"]
-  B --> C["Load symbol universe"]
+  A["EventBridge Scheduled Event<br/>env-configured payload"] --> B["Orchestrator Lambda"]
+  B --> C["Load symbol universe (SSM/S3 fallback)"]
   C --> D["Chunk symbols (size N)"]
-  D --> E["SendMessageBatch to SQS"]
-  E --> F["SQS → Ingestion Worker Lambda"]
-  F --> G["Fetch prices (multi-ticker if possible)"]
-  G --> H["Group by symbol"]
-  H --> I["ListObjectsV2 with partition prefix"]
-  I -->|KeyCount>0| J["Skip write (idempotent)"]
-  I -->|No objects| K["Serialize JSON/CSV (w/.gz)"]
-  K --> L["PutObject to RAW bucket"]
-  J --> M["Accumulate written_keys"]
-  L --> M["Accumulate written_keys"]
-  L --> R["EventBridge: Object Created"]
+  D --> E["Init/refresh DynamoDB batch tracker\n(expected_chunks, status='processing')"]
+  E --> F["SendMessageBatch to ingestion SQS"]
+  F --> G["SQS → Ingestion Worker Lambda"]
+  G --> H["Fetch prices from provider"]
+  H --> I["Group records by symbol & ds"]
+  I --> J{RAW object exists?}
+  J -->|Yes| K["Skip write (idempotent)"]
+  J -->|No| L["Serialize and PutObject\ninterval/data_source/year/month/day"]
+  L --> M["Record written key"]
+  K --> M
+  M --> N["Update DynamoDB tracker\n(ADD processed_chunks, append partition summary)"]
+  N --> O{All chunks processed?}
+  O -->|No| P["Return partial success"]
+  O -->|Yes| Q["Emit partition manifests\n(_batch.manifest.json)"]
+  Q --> R["EventBridge: ObjectCreated (manifest)"]
+  R --> S["Transform Step Functions\n(preflight → Glue/Indicators)"]
 
 ```

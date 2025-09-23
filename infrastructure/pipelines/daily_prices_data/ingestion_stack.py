@@ -12,8 +12,10 @@ from aws_cdk import (
     aws_s3 as s3,
     aws_s3_deployment as s3_deployment,
     aws_sqs as sqs,
+    aws_dynamodb as dynamodb,
     Duration,
     CfnOutput,
+    RemovalPolicy,
 )
 from aws_cdk import aws_lambda_event_sources as lambda_event_sources
 from aws_cdk.aws_lambda_python_alpha import BundlingOptions, PythonFunction, PythonLayerVersion
@@ -50,6 +52,9 @@ class DailyPricesDataIngestionStack(Stack):
         # Queues for fan-out processing
         self.dlq, self.queue = self._create_queues()
 
+        # DynamoDB table used to track batch completion across worker Lambdas
+        self.batch_tracker_table = self._create_batch_tracker_table()
+
         # Orchestrator Lambda (triggered by schedule)
         self.orchestrator_function = self._create_orchestrator_function()
 
@@ -58,6 +63,10 @@ class DailyPricesDataIngestionStack(Stack):
 
         # Worker Lambda (triggered by SQS)
         self.ingestion_function = self._create_worker_function()
+
+        # Grant orchestrator and worker access to the batch tracker table
+        self.batch_tracker_table.grant_read_write_data(self.orchestrator_function)
+        self.batch_tracker_table.grant_read_write_data(self.ingestion_function)
 
         # Event-driven orchestrator trigger (schedule)
         self.ingestion_schedule = self._create_ingestion_schedule()
@@ -95,6 +104,9 @@ class DailyPricesDataIngestionStack(Stack):
                 "ENVIRONMENT": self.env_name,
                 "RAW_BUCKET": self.shared_storage.raw_bucket.bucket_name,
                 "ENABLE_GZIP": str(bool(self.config.get("enable_gzip", False))).lower(),
+                "RAW_MANIFEST_BASENAME": str(self.config.get("raw_manifest_basename", "_batch")),
+                "RAW_MANIFEST_SUFFIX": str(self.config.get("raw_manifest_suffix", ".manifest.json")),
+                "BATCH_TRACKING_TABLE": self.batch_tracker_table.table_name,
             },
             reserved_concurrent_executions=reserved_concurrency if reserved_concurrency is not None else None,
         )
@@ -117,6 +129,8 @@ class DailyPricesDataIngestionStack(Stack):
             "QUEUE_URL": self.queue.queue_url,
             "CHUNK_SIZE": str(int(self.config.get("orchestrator_chunk_size", 5))),
             "SQS_SEND_BATCH_SIZE": str(int(self.config.get("sqs_send_batch_size", 10))),
+            "BATCH_TRACKING_TABLE": self.batch_tracker_table.table_name,
+            "BATCH_TRACKER_TTL_DAYS": str(int(self.config.get("batch_tracker_ttl_days", 7))),
         }
 
         ssm_param = self.config.get("symbol_universe_ssm_param")
@@ -148,6 +162,29 @@ class DailyPricesDataIngestionStack(Stack):
             environment=env_vars,
         )
         return function
+
+    def _create_batch_tracker_table(self) -> dynamodb.Table:
+        """Create DynamoDB table to coordinate batch processing concurrency."""
+        table_name = str(self.config.get("batch_tracker_table_name") or "").strip()
+        if not table_name:
+            table_name = f"{self.env_name}-daily-prices-batch-tracker"
+
+        table = dynamodb.Table(
+            self,
+            "BatchTrackerTable",
+            table_name=table_name,
+            partition_key=dynamodb.Attribute(name="pk", type=dynamodb.AttributeType.STRING),
+            billing_mode=dynamodb.BillingMode.PAY_PER_REQUEST,
+            time_to_live_attribute="ttl",
+        )
+
+        removal_policy = str(self.config.get("removal_policy", "retain")).lower()
+        if removal_policy == "destroy":
+            table.apply_removal_policy(RemovalPolicy.DESTROY)
+        else:
+            table.apply_removal_policy(RemovalPolicy.RETAIN)
+
+        return table
 
     def _deploy_symbol_universe_asset(self) -> None:
         """Deploy symbol universe file to the target S3 bucket via CDK asset."""
