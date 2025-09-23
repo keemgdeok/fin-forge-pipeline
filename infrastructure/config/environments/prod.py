@@ -41,6 +41,8 @@ prod_config = {
     "worker_timeout": 900,
     "worker_memory": 1024,
     "enable_gzip": True,
+    "raw_manifest_basename": "_batch",
+    "raw_manifest_suffix": ".manifest.json",
     "max_retries": 6,
     # Enable full processing orchestration in production so Step Functions + Glue
     # assets are synthesized and deployable by default.
@@ -52,7 +54,7 @@ prod_config = {
             "domain": "market",
             "table_name": "prices",
             "file_type": "json",
-            "suffixes": [".json", ".csv"],
+            "suffixes": [".manifest.json"],
         },
         {
             "domain": "market",
@@ -61,7 +63,7 @@ prod_config = {
             "suffixes": [".parquet"],
         },
     ],
-    "processing_suffixes": [".json", ".csv"],
+    "processing_suffixes": [".manifest.json"],
     "load_min_file_size_bytes": 1024,
     "load_domain_configs": [
         {

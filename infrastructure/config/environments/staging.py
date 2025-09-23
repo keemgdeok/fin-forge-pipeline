@@ -39,6 +39,8 @@ staging_config = {
     "worker_timeout": 600,
     "worker_memory": 512,
     "enable_gzip": True,
+    "raw_manifest_basename": "_batch",
+    "raw_manifest_suffix": ".manifest.json",
     "max_retries": 5,
     "enable_processing_orchestration": True,
     # Catalog update policy for crawler: on_schema_change|never|force
@@ -48,7 +50,7 @@ staging_config = {
             "domain": "market",
             "table_name": "prices",
             "file_type": "json",
-            "suffixes": [".json", ".csv"],
+            "suffixes": [".manifest.json"],
         },
         {
             "domain": "market",
@@ -57,7 +59,7 @@ staging_config = {
             "suffixes": [".parquet"],
         },
     ],
-    "processing_suffixes": [".json", ".csv"],
+    "processing_suffixes": [".manifest.json"],
     "load_min_file_size_bytes": 1024,
     "load_domain_configs": [
         {

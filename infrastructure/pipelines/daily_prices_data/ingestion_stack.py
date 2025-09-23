@@ -95,6 +95,8 @@ class DailyPricesDataIngestionStack(Stack):
                 "ENVIRONMENT": self.env_name,
                 "RAW_BUCKET": self.shared_storage.raw_bucket.bucket_name,
                 "ENABLE_GZIP": str(bool(self.config.get("enable_gzip", False))).lower(),
+                "RAW_MANIFEST_BASENAME": str(self.config.get("raw_manifest_basename", "_batch")),
+                "RAW_MANIFEST_SUFFIX": str(self.config.get("raw_manifest_suffix", ".manifest.json")),
             },
             reserved_concurrent_executions=reserved_concurrency if reserved_concurrency is not None else None,
         )
