@@ -3,6 +3,7 @@ from __future__ import annotations
 import io
 import json
 import os
+from collections import defaultdict
 from datetime import date, datetime, timezone
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -100,6 +101,13 @@ def process_event(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
 
         processed_records = 0
         written_keys: List[str] = []
+        manifest_objects: Dict[date, List[Dict[str, Any]]] = defaultdict(list)
+
+        manifest_basename = (os.environ.get("RAW_MANIFEST_BASENAME") or "_batch").strip() or "_batch"
+        manifest_suffix = (os.environ.get("RAW_MANIFEST_SUFFIX") or ".manifest.json").strip()
+        if manifest_suffix and not manifest_suffix.startswith("."):
+            manifest_suffix = f".{manifest_suffix}"
+        manifest_filename_template = f"{manifest_basename}{manifest_suffix or '.manifest.json'}"
 
         # Fetch data (currently only yahoo_finance supported; optional dependency)
         fetched: List[PriceRecord] = []
@@ -176,6 +184,45 @@ def process_event(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
 
                 s3.put_object(**put_kwargs)
                 written_keys.append(key)
+                manifest_objects[day_key].append(
+                    {
+                        "symbol": symbol,
+                        "key": key,
+                        "records": len(rows),
+                    }
+                )
+
+            # Create manifest files per day if new objects were written
+            for day_key, objects in manifest_objects.items():
+                if not objects:
+                    continue
+
+                manifest_key = (
+                    f"{domain}/{table_name}/"
+                    f"interval={interval}/"
+                    f"data_source={data_source}/"
+                    f"year={day_key.year:04d}/month={day_key.month:02d}/day={day_key.day:02d}/"
+                    f"{manifest_filename_template}"
+                )
+
+                manifest_body = {
+                    "environment": environment,
+                    "domain": domain,
+                    "table_name": table_name,
+                    "data_source": data_source,
+                    "interval": interval,
+                    "ds": day_key.isoformat(),
+                    "generated_at": datetime.now(timezone.utc).isoformat(),
+                    "objects": objects,
+                }
+
+                s3.put_object(
+                    Bucket=raw_bucket,
+                    Key=manifest_key,
+                    Body=json.dumps(manifest_body).encode("utf-8"),
+                    ContentType="application/json",
+                )
+                written_keys.append(manifest_key)
 
         # Response
         result = {
