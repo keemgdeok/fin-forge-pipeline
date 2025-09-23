@@ -7,16 +7,22 @@ graph LR
   subgraph Pipeline_Extract
     EV["EventBridge Rule (Schedule)"]
     ORC["Orchestrator Lambda"]
-    SQS["SQS Queue"]
+    SQS["Ingestion SQS Queue"]
     WRK["Ingestion Worker Lambda"]
+    DDB["Batch Tracker<br/>DynamoDB Table"]
+    MAN["_batch.manifest.json"]
+    SFN["Transform Step Functions"]
   end
   SEC -->|LambdaExecutionRole ARN| ORC
   SEC -->|LambdaExecutionRole ARN| WRK
-  SS -->|RAW bucket name via env| WRK
+  SS -->|RAW bucket env vars| WRK
   EV --> ORC
   ORC -->|SendMessageBatch| SQS
-  SQS -->|SQS event| WRK
-  WRK -->|Put/List| RAW[(S3 Raw)]
-  RAW --> EB["EventBridge (S3 Integration)"]
-
+  ORC -->|PutItem expected_chunks| DDB
+  SQS -->|SQS invoke| WRK
+  WRK -->|Put/List RAW objects| SS
+  WRK -->|UpdateItem processed_chunks| DDB
+  SS --> EB["EventBridge (S3 notifications)"]
+  EB --> MAN
+  MAN --> SFN
 ```
