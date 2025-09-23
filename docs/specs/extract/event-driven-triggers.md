@@ -131,11 +131,13 @@ cdk deploy DailyPricesDataIngestionStack \
     },
     {
       "name": "suffix", 
-      "value": ".json"
+      "value": ".manifest.json"
     }
   ]
 }
 ```
+
+워커 Lambda는 하루치 배치가 완료되면 `_batch.manifest.json` 파일을 해당 파티션에 기록하며, 이 마커에만 이벤트가 연결되도록 설계되었습니다. 심볼별 RAW 객체는 그대로 저장되지만, Step Functions 트리거는 배치 마커 1건에만 반응합니다.
 
 ### Transform EventBridge Event
 
@@ -147,7 +149,7 @@ cdk deploy DailyPricesDataIngestionStack \
   "detail": {
     "bucket": "data-pipeline-raw-dev-1234",
     "object": {
-  "key": "market/prices/interval=1d/data_source=yahoo_finance/year=2025/month=09/day=09/AAPL.json",
+  "key": "market/prices/interval=1d/data_source=yahoo_finance/year=2025/month=09/day=09/_batch.manifest.json",
       "size": 12345
     }
   }

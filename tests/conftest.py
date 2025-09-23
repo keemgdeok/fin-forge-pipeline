@@ -88,10 +88,19 @@ def orchestrator_env(monkeypatch: pytest.MonkeyPatch) -> Callable[[str], None]:
 def worker_env(monkeypatch: pytest.MonkeyPatch) -> Callable[[str], None]:
     """Apply worker-related environment variables."""
 
-    def _apply(raw_bucket: str, *, enable_gzip: bool = False, environment: str = "dev") -> None:
+    def _apply(
+        raw_bucket: str,
+        *,
+        enable_gzip: bool = False,
+        environment: str = "dev",
+        manifest_basename: str = "_batch",
+        manifest_suffix: str = ".manifest.json",
+    ) -> None:
         monkeypatch.setenv("RAW_BUCKET", raw_bucket)
         monkeypatch.setenv("ENABLE_GZIP", "true" if enable_gzip else "false")
         monkeypatch.setenv("ENVIRONMENT", environment)
+        monkeypatch.setenv("RAW_MANIFEST_BASENAME", manifest_basename)
+        monkeypatch.setenv("RAW_MANIFEST_SUFFIX", manifest_suffix)
 
     return _apply
 

@@ -7,6 +7,7 @@ from moto import mock_aws
 import boto3
 from tests.fixtures.data_builders import (
     build_ingestion_event,
+    build_raw_manifest_key,
     build_raw_s3_object_key,
     build_raw_s3_prefix,
 )
@@ -225,6 +226,16 @@ def test_e2e_basic_flow(
         listed_sym = s3.list_objects_v2(Bucket=bucket, Prefix=symbol_prefix)
         assert int(listed_sym.get("KeyCount", 0)) == 1
 
+    manifest_key = build_raw_manifest_key(
+        domain="market",
+        table_name="prices",
+        data_source="yahoo_finance",
+        interval="1d",
+        date=today_dt,
+    )
+    manifest_list = s3.list_objects_v2(Bucket=bucket, Prefix=manifest_key)
+    assert int(manifest_list.get("KeyCount", 0)) == 1
+
 
 @mock_aws
 def test_e2e_gzip(
@@ -265,11 +276,15 @@ def test_e2e_gzip(
         Bucket=bucket,
         Prefix="market/prices/interval=1d/data_source=yahoo_finance/",
     )
-    assert int(listed.get("KeyCount", 0)) == 1
-    key = listed["Contents"][0]["Key"]
-    assert key.endswith(".gz")
-    head = s3.head_object(Bucket=bucket, Key=key)
+    assert int(listed.get("KeyCount", 0)) == 2
+    keys = {obj["Key"] for obj in listed.get("Contents", [])}
+    gz_key = next(k for k in keys if k.endswith(".gz"))
+    manifest_key = next(k for k in keys if k.endswith(".manifest.json"))
+    head = s3.head_object(Bucket=bucket, Key=gz_key)
     assert head.get("ContentEncoding") == "gzip"
+    manifest_obj = s3.get_object(Bucket=bucket, Key=manifest_key)
+    manifest_body = json.loads(manifest_obj["Body"].read().decode("utf-8"))
+    assert manifest_body.get("objects")
 
 
 @mock_aws
@@ -309,7 +324,7 @@ def test_e2e_partial_batch_failure(monkeypatch, worker_env, yf_stub, make_queue,
         Bucket=bucket,
         Prefix="market/prices/interval=1d/data_source=yahoo_finance/",
     )
-    assert int(listed.get("KeyCount", 0)) == 1
+    assert int(listed.get("KeyCount", 0)) == 2
 
 
 @mock_aws
