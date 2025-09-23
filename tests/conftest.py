@@ -75,11 +75,15 @@ def orchestrator_env(monkeypatch: pytest.MonkeyPatch) -> Callable[[str], None]:
         chunk_size: int = 2,
         batch_size: int = 10,
         environment: str = "dev",
+        batch_table: str = "test-batch-tracker",
     ) -> None:
         monkeypatch.setenv("QUEUE_URL", queue_url)
         monkeypatch.setenv("CHUNK_SIZE", str(chunk_size))
         monkeypatch.setenv("SQS_SEND_BATCH_SIZE", str(batch_size))
         monkeypatch.setenv("ENVIRONMENT", environment)
+        monkeypatch.setenv("BATCH_TRACKING_TABLE", batch_table)
+        monkeypatch.setenv("BATCH_TRACKER_TTL_DAYS", "7")
+        _ensure_batch_tracker_table(batch_table)
 
     return _apply
 
@@ -95,12 +99,15 @@ def worker_env(monkeypatch: pytest.MonkeyPatch) -> Callable[[str], None]:
         environment: str = "dev",
         manifest_basename: str = "_batch",
         manifest_suffix: str = ".manifest.json",
+        batch_table: str = "test-batch-tracker",
     ) -> None:
         monkeypatch.setenv("RAW_BUCKET", raw_bucket)
         monkeypatch.setenv("ENABLE_GZIP", "true" if enable_gzip else "false")
         monkeypatch.setenv("ENVIRONMENT", environment)
         monkeypatch.setenv("RAW_MANIFEST_BASENAME", manifest_basename)
         monkeypatch.setenv("RAW_MANIFEST_SUFFIX", manifest_suffix)
+        monkeypatch.setenv("BATCH_TRACKING_TABLE", batch_table)
+        _ensure_batch_tracker_table(batch_table)
 
     return _apply
 
@@ -349,3 +356,18 @@ def yf_stub(monkeypatch):
         monkeypatch.setattr(YahooFinanceClient, "fetch_prices", mock_fetch_prices)
 
     return _stub_yahoo_finance
+
+
+def _ensure_batch_tracker_table(table_name: str) -> None:
+    if not table_name:
+        return
+    client = boto3.client("dynamodb", region_name=os.environ.get("AWS_REGION", "us-east-1"))
+    try:
+        client.describe_table(TableName=table_name)
+    except client.exceptions.ResourceNotFoundException:
+        client.create_table(
+            TableName=table_name,
+            AttributeDefinitions=[{"AttributeName": "pk", "AttributeType": "S"}],
+            KeySchema=[{"AttributeName": "pk", "KeyType": "HASH"}],
+            BillingMode="PAY_PER_REQUEST",
+        )

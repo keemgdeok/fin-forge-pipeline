@@ -202,6 +202,7 @@ def test_e2e_basic_flow(
     resp = mod_orc["main"](event, None)
     assert resp["published"] == 2
     assert resp["chunks"] == 2
+    batch_id = resp.get("batch_id")
 
     # Worker environment
     worker_env(bucket, enable_gzip=False)
@@ -236,6 +237,13 @@ def test_e2e_basic_flow(
     manifest_list = s3.list_objects_v2(Bucket=bucket, Prefix=manifest_key)
     assert int(manifest_list.get("KeyCount", 0)) == 1
 
+    if batch_id:
+        dynamodb = boto3.resource("dynamodb", region_name="us-east-1")
+        table = dynamodb.Table("test-batch-tracker")
+        item = table.get_item(Key={"pk": batch_id}).get("Item")
+        assert item is not None
+        assert item.get("status") == "complete"
+
 
 @mock_aws
 def test_e2e_gzip(
@@ -260,7 +268,8 @@ def test_e2e_gzip(
     mod_orc = load_module("src/lambda/functions/ingestion_orchestrator/handler.py")
 
     event = build_ingestion_event(symbols=["AAPL"])
-    mod_orc["main"](event, None)
+    resp = mod_orc["main"](event, None)
+    batch_id = resp.get("batch_id")
 
     # Worker with gzip enabled
     bucket = make_bucket("raw-bucket-dev")
@@ -285,6 +294,13 @@ def test_e2e_gzip(
     manifest_obj = s3.get_object(Bucket=bucket, Key=manifest_key)
     manifest_body = json.loads(manifest_obj["Body"].read().decode("utf-8"))
     assert manifest_body.get("objects")
+
+    if batch_id:
+        dynamodb = boto3.resource("dynamodb", region_name="us-east-1")
+        table = dynamodb.Table("test-batch-tracker")
+        item = table.get_item(Key={"pk": batch_id}).get("Item")
+        assert item is not None
+        assert item.get("status") == "complete"
 
 
 @mock_aws
@@ -313,7 +329,7 @@ def test_e2e_partial_batch_failure(monkeypatch, worker_env, yf_stub, make_queue,
     os.environ["ENVIRONMENT"] = "dev"
     bucket = make_bucket("raw-bucket-dev")
     s3 = boto3.client("s3", region_name="us-east-1")
-    worker_env(bucket, enable_gzip=False)
+    worker_env(bucket, enable_gzip=False, batch_table="")
     mod_wrk = load_module("src/lambda/functions/ingestion_worker/handler.py")
     yf_stub(["AAPL"])
 
@@ -350,7 +366,8 @@ def test_e2e_idempotency_skip(
     mod_orc = load_module("src/lambda/functions/ingestion_orchestrator/handler.py")
 
     event = build_ingestion_event(symbols=["AAPL", "MSFT"])
-    mod_orc["main"](event, None)
+    resp = mod_orc["main"](event, None)
+    batch_id = resp.get("batch_id")
 
     # Worker sees existing prefix for MSFT -> skip write for MSFT
     bucket = make_bucket("raw-bucket-dev")
@@ -386,3 +403,10 @@ def test_e2e_idempotency_skip(
     )
     listed_aapl = s3.list_objects_v2(Bucket=bucket, Prefix=aapl_key)
     assert int(listed_aapl.get("KeyCount", 0)) == 1
+
+    if batch_id:
+        dynamodb = boto3.resource("dynamodb", region_name="us-east-1")
+        table = dynamodb.Table("test-batch-tracker")
+        item = table.get_item(Key={"pk": batch_id}).get("Item")
+        assert item is not None
+        assert item.get("status") == "complete"
