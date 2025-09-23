@@ -101,13 +101,7 @@ def process_event(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
 
         processed_records = 0
         written_keys: List[str] = []
-        manifest_objects: Dict[date, List[Dict[str, Any]]] = defaultdict(list)
-
-        manifest_basename = (os.environ.get("RAW_MANIFEST_BASENAME") or "_batch").strip() or "_batch"
-        manifest_suffix = (os.environ.get("RAW_MANIFEST_SUFFIX") or ".manifest.json").strip()
-        if manifest_suffix and not manifest_suffix.startswith("."):
-            manifest_suffix = f".{manifest_suffix}"
-        manifest_filename_template = f"{manifest_basename}{manifest_suffix or '.manifest.json'}"
+        manifest_objects: Dict[date, Dict[str, Any]] = defaultdict(lambda: {"objects": [], "raw_prefix": ""})
 
         # Fetch data (currently only yahoo_finance supported; optional dependency)
         fetched: List[PriceRecord] = []
@@ -184,47 +178,31 @@ def process_event(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
 
                 s3.put_object(**put_kwargs)
                 written_keys.append(key)
-                manifest_objects[day_key].append(
+                manifest_summary = manifest_objects[day_key]
+                manifest_summary["objects"].append(
                     {
                         "symbol": symbol,
                         "key": key,
                         "records": len(rows),
                     }
                 )
-
-            # Create manifest files per day if new objects were written
-            for day_key, objects in manifest_objects.items():
-                if not objects:
-                    continue
-
-                manifest_key = (
+                manifest_summary["raw_prefix"] = (
                     f"{domain}/{table_name}/"
                     f"interval={interval}/"
                     f"data_source={data_source}/"
                     f"year={day_key.year:04d}/month={day_key.month:02d}/day={day_key.day:02d}/"
-                    f"{manifest_filename_template}"
                 )
-
-                manifest_body = {
-                    "environment": environment,
-                    "domain": domain,
-                    "table_name": table_name,
-                    "data_source": data_source,
-                    "interval": interval,
-                    "ds": day_key.isoformat(),
-                    "generated_at": datetime.now(timezone.utc).isoformat(),
-                    "objects": objects,
-                }
-
-                s3.put_object(
-                    Bucket=raw_bucket,
-                    Key=manifest_key,
-                    Body=json.dumps(manifest_body).encode("utf-8"),
-                    ContentType="application/json",
-                )
-                written_keys.append(manifest_key)
 
         # Response
+        partition_summaries = [
+            {
+                "ds": day_key.isoformat(),
+                "objects": summary["objects"],
+                "raw_prefix": summary["raw_prefix"],
+            }
+            for day_key, summary in manifest_objects.items()
+            if summary["objects"]
+        ]
         result = {
             "statusCode": 200,
             "body": {
@@ -243,6 +221,7 @@ def process_event(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                 "raw_bucket": raw_bucket,
                 "processed_records": processed_records,
                 "written_keys": written_keys,
+                "partition_summaries": partition_summaries,
             },
         }
 
