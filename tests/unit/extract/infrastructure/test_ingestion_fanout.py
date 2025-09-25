@@ -72,8 +72,8 @@ def test_symbol_universe_deployment(fake_python_function) -> None:
     cfg = {
         **_base_config(),
         "symbol_universe_asset_path": "data/symbols",
-        "symbol_universe_asset_file": "nasdaq_sp500.json",
-        "symbol_universe_s3_key": "market/universe/nasdaq_sp500.json",
+        "symbol_universe_asset_file": "all_equities.json",
+        "symbol_universe_s3_key": "market/universe/all_equities.json",
         "symbol_universe_s3_bucket": None,
     }
 
