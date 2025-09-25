@@ -8,8 +8,10 @@ graph LR
 
   subgraph Pipeline_Transform
     SFN["Step Functions<br/>Transform Workflow"]
-    PRE["Preflight Lambda<br/>(구성/멱등성/인수 구성)"]
-    GLUE["Glue ETL Job<br/>(PySpark/PyGlue)"]
+    PRE["Preflight Lambda<br/>(구성·멱등·인수 구성)"]
+    COMP["Glue Compaction Job<br/>(Raw → Parquet)"]
+    GUARD["Compaction Guard Lambda"]
+    GLUE["Glue ETL Job<br/>(Curated 변환)"]
     CRAWL["Glue Crawler<br/>(스키마 변경 시)"]
     ATH["Athena WorkGroup<br/>Ad-hoc Query"]
   end
@@ -19,10 +21,14 @@ graph LR
   GOV -->|DB/Table 참조| SFN
 
   SFN --> PRE
-  PRE --> GLUE
+  PRE --> COMP
+  COMP --> GUARD
+  GUARD --> GLUE
   GLUE --> CRAWL
   GLUE --> CUR[(S3 Curated)]
   GLUE --- RAW[(S3 Raw)]
+  COMP --- RAW
+  COMP --> CUR
   CRAWL --> CAT[(Glue Data Catalog)]
 
   %% Governance/Security notes
