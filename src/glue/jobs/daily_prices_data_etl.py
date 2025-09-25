@@ -8,6 +8,7 @@ from awsglue.job import Job
 from pyspark.context import SparkContext
 from pyspark.sql import functions as F
 from pyspark.sql import DataFrame
+from pyspark.sql.utils import AnalysisException
 
 # Optional import of shared fingerprint utilities. The Glue job environment may
 # not package the Common Layer; if unavailable, fall back to local implementations.
@@ -43,6 +44,8 @@ args = getResolvedOptions(
         "JOB_NAME",
         "raw_bucket",
         "raw_prefix",
+        "compacted_bucket",
+        "compacted_prefix",
         "curated_bucket",
         "curated_prefix",
         "environment",
@@ -83,19 +86,33 @@ if len(ds_parts) != 3:
 year, month, day = ds_parts
 
 raw_prefix = args["raw_prefix"].rstrip("/")
-if "year=" in raw_prefix and "month=" in raw_prefix and "day=" in raw_prefix:
-    raw_path = f"s3://{args['raw_bucket']}/{raw_prefix}/"
-else:
-    raw_path = f"s3://{args['raw_bucket']}/{raw_prefix}/" if raw_prefix else f"s3://{args['raw_bucket']}/"
-    raw_path = f"{raw_path.rstrip('/')}/year={year}/month={month}/day={day}/"
+raw_path = f"s3://{args['raw_bucket']}/{raw_prefix}/"
+if "year=" not in raw_prefix or "month=" not in raw_prefix or "day=" not in raw_prefix:
+    base = f"s3://{args['raw_bucket']}/{raw_prefix}/" if raw_prefix else f"s3://{args['raw_bucket']}/"
+    raw_path = f"{base.rstrip('/')}/year={year}/month={month}/day={day}/"
 
-ft = args["file_type"].lower()
-if ft == "json":
-    df = spark.read.json(raw_path)
-elif ft == "csv":
-    df = spark.read.option("header", True).option("inferSchema", True).csv(raw_path)
-else:
-    df = spark.read.parquet(raw_path)
+compacted_bucket = (args.get("compacted_bucket") or "").strip()
+compacted_prefix = (args.get("compacted_prefix") or "").strip()
+compacted_path = None
+if compacted_bucket and compacted_prefix:
+    compacted_path = f"s3://{compacted_bucket}/{compacted_prefix.rstrip('/')}/ds={args['ds']}"
+
+df = None
+if compacted_path:
+    try:
+        df = spark.read.parquet(compacted_path)
+        print(f"Loaded compacted input: {compacted_path}")
+    except AnalysisException:
+        print(f"Compacted input not found, falling back to RAW path {raw_path}")
+
+if df is None:
+    ft = args["file_type"].lower()
+    if ft == "json":
+        df = spark.read.json(raw_path)
+    elif ft == "csv":
+        df = spark.read.option("header", True).option("inferSchema", True).csv(raw_path)
+    else:
+        df = spark.read.parquet(raw_path)
 
 
 def _write_quarantine_and_fail(df_in: DataFrame, reason: str) -> None:
