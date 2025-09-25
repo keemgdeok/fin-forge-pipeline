@@ -45,6 +45,20 @@ prod_config = {
     "raw_manifest_suffix": ".manifest.json",
     "batch_tracker_table_name": "",
     "batch_tracker_ttl_days": 7,
+    "compaction_worker_type": "G.2X",
+    "compaction_number_workers": 4,
+    "compaction_timeout_minutes": 30,
+    "compaction_target_file_mb": 256,
+    "compaction_codec": "zstd",
+    "compaction_output_subdir": "compacted",
+    "monitored_glue_jobs": [
+        "daily-prices-compaction",
+        "daily-prices-data-etl",
+        "market-indicators-etl",
+    ],
+    "monitored_state_machines": [
+        "daily-prices-data-processing",
+    ],
     "max_retries": 6,
     # Enable full processing orchestration in production so Step Functions + Glue
     # assets are synthesized and deployable by default.

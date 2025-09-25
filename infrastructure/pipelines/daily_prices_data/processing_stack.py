@@ -41,12 +41,17 @@ class DailyPricesDataProcessingStack(Stack):
         self.lambda_execution_role_arn = lambda_execution_role_arn
         self.glue_execution_role_arn = glue_execution_role_arn
         self.step_functions_execution_role_arn = step_functions_execution_role_arn
+        self.compaction_output_subdir: str = str(self.config.get("compaction_output_subdir", "compacted"))
+        self.compaction_codec: str = str(self.config.get("compaction_codec", "zstd"))
 
         # Deterministic Glue job name used across resources (avoids Optional[str] typing)
         self.etl_job_name: str = f"{self.env_name}-daily-prices-data-etl"
 
         # Common Layer for shared modules
         self.common_layer = self._create_common_layer()
+
+        # Glue compaction job: RAW JSON -> Curated Parquet (pre-transform)
+        self.compaction_job = self._create_compaction_job()
 
         # Glue ETL job for daily prices data transformation
         self.etl_job = self._create_etl_job()
@@ -64,6 +69,57 @@ class DailyPricesDataProcessingStack(Stack):
             self.s3_to_sfn_rules = self._create_s3_to_sfn_rules()
 
         self._create_outputs()
+
+    def _create_compaction_job(self) -> glue.CfnJob:
+        """Create Glue job to compact RAW JSON into Curated Parquet."""
+
+        compaction_script_asset = s3_assets.Asset(
+            self,
+            "DailyPricesCompactionScriptAsset",
+            path="src/glue/jobs/raw_to_parquet_compaction.py",
+        )
+        glue_exec_role_ref = iam.Role.from_role_arn(
+            self,
+            "GlueExecRoleRefForCompaction",
+            self.glue_execution_role_arn,
+        )
+        compaction_script_asset.grant_read(glue_exec_role_ref)
+
+        domain: str = str(self.config.get("ingestion_domain", "market"))
+        table_name: str = str(self.config.get("ingestion_table_name", "prices"))
+
+        raw_prefix = f"{domain}/{table_name}/"
+        compacted_prefix = f"{domain}/{table_name}/{self.compaction_output_subdir}"
+
+        self.compaction_job_name = f"{self.env_name}-daily-prices-compaction"
+
+        return glue.CfnJob(
+            self,
+            "DailyPricesCompactionJob",
+            name=self.compaction_job_name,
+            role=self.glue_execution_role_arn,
+            command=glue.CfnJob.JobCommandProperty(
+                name="glueetl",
+                script_location=compaction_script_asset.s3_object_url,
+                python_version="3",
+            ),
+            default_arguments={
+                "--job-language": "python",
+                "--job-bookmark-option": "job-bookmark-disable",
+                "--TempDir": f"s3://{self.shared_storage.artifacts_bucket.bucket_name}/temp/",
+                "--raw_bucket": self.shared_storage.raw_bucket.bucket_name,
+                "--raw_prefix": raw_prefix,
+                "--compacted_bucket": self.shared_storage.curated_bucket.bucket_name,
+                "--compacted_prefix": compacted_prefix,
+                "--codec": self.compaction_codec,
+                "--target_file_mb": str(int(self.config.get("compaction_target_file_mb", 256))),
+            },
+            glue_version="5.0",
+            max_retries=1,
+            timeout=int(self.config.get("compaction_timeout_minutes", 15)),
+            worker_type=str(self.config.get("compaction_worker_type", "G.1X")),
+            number_of_workers=int(self.config.get("compaction_number_workers", 2)),
+        )
 
     def _create_etl_job(self) -> glue.CfnJob:
         """Create Glue ETL job for daily prices data processing."""
@@ -91,6 +147,7 @@ class DailyPricesDataProcessingStack(Stack):
 
         raw_prefix = f"{domain}/{table_name}/"
         curated_prefix = f"{domain}/{table_name}/"
+        compacted_prefix = f"{domain}/{table_name}/{self.compaction_output_subdir}"
 
         # Schema fingerprint artifacts path aligned to spec
         schema_fp_uri = (
@@ -118,6 +175,8 @@ class DailyPricesDataProcessingStack(Stack):
                 "--extra-py-files": shared_py_asset.s3_object_url,
                 "--raw_bucket": self.shared_storage.raw_bucket.bucket_name,
                 "--raw_prefix": raw_prefix,
+                "--compacted_bucket": self.shared_storage.curated_bucket.bucket_name,
+                "--compacted_prefix": compacted_prefix,
                 "--curated_bucket": self.shared_storage.curated_bucket.bucket_name,
                 "--curated_prefix": curated_prefix,
                 "--environment": self.env_name,
@@ -229,6 +288,8 @@ class DailyPricesDataProcessingStack(Stack):
             output_path="$.Payload",
         )
 
+        compaction_guard_fn = self._create_compaction_guard_function()
+
         # Common failure normalization: shape error payload and then fail once
         normalize_fail = sfn.Pass(
             self,
@@ -240,6 +301,37 @@ class DailyPricesDataProcessingStack(Stack):
         )
         fail_state = sfn.Fail(self, "ExecutionFailed", comment="Pipeline execution failed")
         fail_chain = normalize_fail.next(fail_state)
+
+        domain: str = str(self.config.get("ingestion_domain", "market"))
+        prices_table: str = str(self.config.get("ingestion_table_name", "prices"))
+
+        build_compaction_args = sfn.Pass(
+            self,
+            "BuildCompactionArgs",
+            parameters={
+                "--raw_bucket": sfn.JsonPath.string_at("$.glue_args['--raw_bucket']"),
+                "--raw_prefix": sfn.JsonPath.string_at("$.glue_args['--raw_prefix']"),
+                "--compacted_bucket": sfn.JsonPath.string_at("$.glue_args['--compacted_bucket']"),
+                "--compacted_prefix": sfn.JsonPath.string_at("$.glue_args['--compacted_prefix']"),
+                "--file_type": sfn.JsonPath.string_at("$.glue_args['--file_type']"),
+                "--interval": sfn.JsonPath.string_at("$.glue_args['--interval']"),
+                "--data_source": sfn.JsonPath.string_at("$.glue_args['--data_source']"),
+                "--ds": sfn.JsonPath.string_at("$.ds"),
+                "--codec": self.compaction_codec,
+                "--target_file_mb": str(int(self.config.get("compaction_target_file_mb", 256))),
+            },
+            result_path="$.compaction_args",
+        )
+
+        compaction_task = tasks.GlueStartJobRun(
+            self,
+            "CompactRawDailyPrices",
+            glue_job_name=self.compaction_job_name,
+            integration_pattern=sfn.IntegrationPattern.RUN_JOB,
+            arguments=sfn.TaskInput.from_json_path_at("$.compaction_args"),
+            result_path=sfn.JsonPath.DISCARD,
+        )
+        compaction_task.add_catch(handler=fail_chain, result_path="$.error")
 
         # Prices ETL job task (includes ALL data quality validation)
         etl_task = tasks.GlueStartJobRun(
@@ -254,8 +346,6 @@ class DailyPricesDataProcessingStack(Stack):
         etl_task.add_catch(handler=fail_chain, result_path="$.error")
 
         # Build indicators Glue args from Preflight context and stack constants
-        domain: str = str(self.config.get("ingestion_domain", "market"))
-        prices_table: str = str(self.config.get("ingestion_table_name", "prices"))
         indicators_table: str = str(self.config.get("indicators_table_name", "indicators"))
         indicators_fp = (
             f"s3://{self.shared_storage.artifacts_bucket.bucket_name}/{domain}/{indicators_table}/_schema/latest.json"
@@ -327,22 +417,51 @@ class DailyPricesDataProcessingStack(Stack):
             comment="Daily prices data processing completed successfully",
         )
 
+        crawler_decision = (
+            sfn.Choice(self, "ShouldRunCrawler")
+            .when(
+                sfn.Condition.boolean_equals("$.shouldRunCrawler", True),
+                start_crawler_task.next(success_task),
+            )
+            .otherwise(success_task)
+        )
+
+        processing_sequence = (
+            etl_task.next(build_indicators_args).next(indicators_task).next(decide_crawler_task).next(crawler_decision)
+        )
+
+        compaction_check_task = tasks.LambdaInvoke(
+            self,
+            "CheckCompactionOutput",
+            lambda_function=compaction_guard_fn,
+            payload=sfn.TaskInput.from_object(
+                {
+                    "bucket.$": "$.glue_args['--compacted_bucket']",
+                    "prefix.$": "$.glue_args['--compacted_prefix']",
+                    "ds.$": "$.ds",
+                }
+            ),
+            result_path="$.compaction_check",
+            output_path="$.Payload",
+        )
+        compaction_check_task.add_catch(handler=fail_chain, result_path="$.error")
+
+        has_compacted_data_choice = (
+            sfn.Choice(self, "HasCompactedData")
+            .when(
+                sfn.Condition.boolean_equals("$.compaction_check.shouldProcess", True),
+                processing_sequence,
+            )
+            .otherwise(success_task)
+        )
+
         # Create single day processing chain for standalone mode
-        # Single day processing: Prices -> Build Args -> Indicators -> Decide -> (Crawler?) -> Success
+        # Single day processing: Compaction -> (Transform pipeline?) -> Success
         single_day_processing = (
             sfn.Choice(self, "PreflightChoice")
             .when(
                 sfn.Condition.boolean_equals("$.proceed", True),
-                etl_task.next(build_indicators_args)
-                .next(indicators_task)
-                .next(decide_crawler_task)
-                .next(
-                    sfn.Choice(self, "ShouldRunCrawler")
-                    .when(
-                        sfn.Condition.boolean_equals("$.shouldRunCrawler", True), start_crawler_task.next(success_task)
-                    )
-                    .otherwise(success_task)
-                ),
+                build_compaction_args.next(compaction_task).next(compaction_check_task).next(has_compacted_data_choice),
             )
             .otherwise(
                 sfn.Choice(self, "PreflightSkipOrError")
@@ -364,85 +483,162 @@ class DailyPricesDataProcessingStack(Stack):
         backfill_fail_state = sfn.Fail(self, "BackfillExecutionFailed", comment="Backfill pipeline execution failed")
         backfill_fail_chain = backfill_normalize_fail.next(backfill_fail_state)
 
+        backfill_build_compaction_args = sfn.Pass(
+            self,
+            "BackfillBuildCompactionArgs",
+            parameters={
+                "--raw_bucket": sfn.JsonPath.string_at("$.glue_args['--raw_bucket']"),
+                "--raw_prefix": sfn.JsonPath.string_at("$.glue_args['--raw_prefix']"),
+                "--compacted_bucket": sfn.JsonPath.string_at("$.glue_args['--compacted_bucket']"),
+                "--compacted_prefix": sfn.JsonPath.string_at("$.glue_args['--compacted_prefix']"),
+                "--file_type": sfn.JsonPath.string_at("$.glue_args['--file_type']"),
+                "--interval": sfn.JsonPath.string_at("$.glue_args['--interval']"),
+                "--data_source": sfn.JsonPath.string_at("$.glue_args['--data_source']"),
+                "--ds": sfn.JsonPath.string_at("$.ds"),
+                "--codec": self.compaction_codec,
+                "--target_file_mb": str(int(self.config.get("compaction_target_file_mb", 256))),
+            },
+            result_path="$.compaction_args",
+        )
+
+        backfill_compaction_task = tasks.GlueStartJobRun(
+            self,
+            "BackfillCompactRawDailyPrices",
+            glue_job_name=self.compaction_job_name,
+            integration_pattern=sfn.IntegrationPattern.RUN_JOB,
+            arguments=sfn.TaskInput.from_json_path_at("$.compaction_args"),
+            result_path=sfn.JsonPath.DISCARD,
+        )
+        backfill_compaction_task.add_catch(handler=backfill_fail_chain, result_path="$.error")
+
+        backfill_etl_task = tasks.GlueStartJobRun(
+            self,
+            "BackfillProcessDailyPrices",
+            glue_job_name=self.etl_job_name,
+            integration_pattern=sfn.IntegrationPattern.RUN_JOB,
+            arguments=sfn.TaskInput.from_json_path_at("$.glue_args"),
+            result_path="$.prices_etl",
+        )
+        backfill_etl_task.add_catch(handler=backfill_fail_chain, result_path="$.error")
+
+        backfill_build_indicators_args = sfn.Pass(
+            self,
+            "BackfillBuildIndicatorsArgs",
+            parameters={
+                "--environment": self.env_name,
+                "--prices_curated_bucket": self.shared_storage.curated_bucket.bucket_name,
+                "--prices_prefix": f"{domain}/{prices_table}/",
+                "--output_bucket": self.shared_storage.curated_bucket.bucket_name,
+                "--output_prefix": f"{domain}/{indicators_table}/",
+                "--schema_fingerprint_s3_uri": indicators_fp,
+                "--codec": "zstd",
+                "--target_file_mb": "256",
+                "--lookback_days": str(int(self.config.get("indicators_lookback_days", 252))),
+                "--ds.$": "$.ds",
+            },
+            result_path="$.indicators_glue_args",
+        )
+
+        backfill_indicators_task = tasks.GlueStartJobRun(
+            self,
+            "BackfillComputeIndicators",
+            glue_job_name=self.indicators_job_name,
+            integration_pattern=sfn.IntegrationPattern.RUN_JOB,
+            arguments=sfn.TaskInput.from_json_path_at("$.indicators_glue_args"),
+            result_path="$.indicators_etl",
+        )
+        backfill_indicators_task.add_catch(handler=backfill_fail_chain, result_path="$.error")
+
+        backfill_decide_crawler_task = tasks.LambdaInvoke(
+            self,
+            "BackfillDecideCrawler",
+            lambda_function=decider_fn,
+            payload=sfn.TaskInput.from_object(
+                {
+                    "glue_args.$": "$.indicators_glue_args",
+                    "catalog_update.$": "$.catalog_update",
+                }
+            ),
+            output_path="$.Payload",
+        )
+        backfill_decide_crawler_task.add_catch(handler=backfill_fail_chain, result_path="$.error")
+
+        backfill_start_crawler = tasks.CallAwsService(
+            self,
+            "BackfillStartCrawler",
+            service="glue",
+            action="startCrawler",
+            parameters={"Name": crawler_name},
+            iam_resources=[f"arn:aws:glue:{Stack.of(self).region}:{Stack.of(self).account}:crawler/{crawler_name}"],
+            result_path=sfn.JsonPath.DISCARD,
+        )
+        backfill_start_crawler.add_catch(handler=backfill_fail_chain, result_path="$.error")
+
+        backfill_success = sfn.Succeed(
+            self,
+            "BackfillSuccess",
+            comment="Backfill processing completed successfully",
+        )
+        backfill_skip_crawler = sfn.Succeed(
+            self,
+            "BackfillSkipCrawler",
+            comment="Crawler skipped for backfill",
+        )
+
+        backfill_crawler_decision = (
+            sfn.Choice(self, "BackfillShouldRunCrawler")
+            .when(
+                sfn.Condition.boolean_equals("$.shouldRunCrawler", True), backfill_start_crawler.next(backfill_success)
+            )
+            .otherwise(backfill_skip_crawler)
+        )
+
+        backfill_processing_sequence = (
+            backfill_etl_task.next(backfill_build_indicators_args)
+            .next(backfill_indicators_task)
+            .next(backfill_decide_crawler_task)
+            .next(backfill_crawler_decision)
+        )
+
+        backfill_compaction_check = tasks.LambdaInvoke(
+            self,
+            "BackfillCheckCompactionOutput",
+            lambda_function=compaction_guard_fn,
+            payload=sfn.TaskInput.from_object(
+                {
+                    "bucket.$": "$.glue_args['--compacted_bucket']",
+                    "prefix.$": "$.glue_args['--compacted_prefix']",
+                    "ds.$": "$.ds",
+                }
+            ),
+            result_path="$.compaction_check",
+            output_path="$.Payload",
+        )
+        backfill_compaction_check.add_catch(handler=backfill_fail_chain, result_path="$.error")
+
+        backfill_no_data = sfn.Succeed(
+            self,
+            "BackfillNoData",
+            comment="No compacted output generated for backfill partition",
+        )
+
+        backfill_has_data_choice = (
+            sfn.Choice(self, "BackfillHasCompactedData")
+            .when(
+                sfn.Condition.boolean_equals("$.compaction_check.shouldProcess", True),
+                backfill_processing_sequence,
+            )
+            .otherwise(backfill_no_data)
+        )
+
         # Create separate processing chain for backfill map iterator (avoid state reuse)
         backfill_processing = (
             sfn.Choice(self, "BackfillPreflightChoice")
             .when(
                 sfn.Condition.boolean_equals("$.proceed", True),
-                tasks.GlueStartJobRun(
-                    self,
-                    "BackfillProcessDailyPrices",
-                    glue_job_name=self.etl_job_name,
-                    integration_pattern=sfn.IntegrationPattern.RUN_JOB,
-                    arguments=sfn.TaskInput.from_json_path_at("$.glue_args"),
-                    result_path="$.prices_etl",
-                )
-                .add_catch(handler=backfill_fail_chain, result_path="$.error")
-                .next(
-                    sfn.Pass(
-                        self,
-                        "BackfillBuildIndicatorsArgs",
-                        parameters={
-                            "--environment": self.env_name,
-                            "--prices_curated_bucket": self.shared_storage.curated_bucket.bucket_name,
-                            "--prices_prefix": f"{domain}/{prices_table}/",
-                            "--output_bucket": self.shared_storage.curated_bucket.bucket_name,
-                            "--output_prefix": f"{domain}/{indicators_table}/",
-                            "--schema_fingerprint_s3_uri": indicators_fp,
-                            "--codec": "zstd",
-                            "--target_file_mb": "256",
-                            "--lookback_days": str(int(self.config.get("indicators_lookback_days", 252))),
-                            "--ds.$": "$.ds",
-                        },
-                        result_path="$.indicators_glue_args",
-                    )
-                )
-                .next(
-                    tasks.GlueStartJobRun(
-                        self,
-                        "BackfillComputeIndicators",
-                        glue_job_name=self.indicators_job_name,
-                        integration_pattern=sfn.IntegrationPattern.RUN_JOB,
-                        arguments=sfn.TaskInput.from_json_path_at("$.indicators_glue_args"),
-                        result_path="$.indicators_etl",
-                    ).add_catch(handler=backfill_fail_chain, result_path="$.error")
-                )
-                .next(
-                    tasks.LambdaInvoke(
-                        self,
-                        "BackfillDecideCrawler",
-                        lambda_function=decider_fn,
-                        payload=sfn.TaskInput.from_object(
-                            {
-                                "glue_args.$": "$.indicators_glue_args",
-                                "catalog_update.$": "$.catalog_update",
-                            }
-                        ),
-                        output_path="$.Payload",
-                    ).add_catch(handler=backfill_fail_chain, result_path="$.error")
-                )
-                .next(
-                    sfn.Choice(self, "BackfillShouldRunCrawler")
-                    .when(
-                        sfn.Condition.boolean_equals("$.shouldRunCrawler", True),
-                        tasks.CallAwsService(
-                            self,
-                            "BackfillStartCrawler",
-                            service="glue",
-                            action="startCrawler",
-                            parameters={"Name": crawler_name},
-                            iam_resources=[
-                                f"arn:aws:glue:{Stack.of(self).region}:{Stack.of(self).account}:crawler/{crawler_name}"
-                            ],
-                            result_path=sfn.JsonPath.DISCARD,
-                        )
-                        .add_catch(handler=backfill_fail_chain, result_path="$.error")
-                        .next(
-                            sfn.Succeed(self, "BackfillSuccess", comment="Backfill processing completed successfully")
-                        ),
-                    )
-                    .otherwise(sfn.Succeed(self, "BackfillSkipCrawler", comment="Crawler skipped for backfill"))
-                ),
+                backfill_build_compaction_args.next(backfill_compaction_task)
+                .next(backfill_compaction_check)
+                .next(backfill_has_data_choice),
             )
             .otherwise(
                 sfn.Choice(self, "BackfillPreflightSkipOrError")
@@ -595,9 +791,31 @@ class DailyPricesDataProcessingStack(Stack):
                 "RAW_BUCKET": self.shared_storage.raw_bucket.bucket_name,
                 "CURATED_BUCKET": self.shared_storage.curated_bucket.bucket_name,
                 "ARTIFACTS_BUCKET": self.shared_storage.artifacts_bucket.bucket_name,
+                "COMPACTION_OUTPUT_SUBDIR": self.compaction_output_subdir,
             },
         )
         return function
+
+    def _create_compaction_guard_function(self) -> lambda_.IFunction:
+        """Create Lambda that inspects compacted partitions and reports readiness."""
+
+        return PythonFunction(
+            self,
+            "CompactionGuardFunction",
+            function_name=f"{self.env_name}-daily-prices-compaction-guard",
+            runtime=lambda_.Runtime.PYTHON_3_12,
+            entry="src/lambda/functions/compaction_guard",
+            index="handler.py",
+            handler="lambda_handler",
+            memory_size=256,
+            timeout=Duration.seconds(30),
+            log_retention=self._log_retention(),
+            role=iam.Role.from_role_arn(self, "CompactionGuardLambdaRole", self.lambda_execution_role_arn),
+            layers=[self.common_layer],
+            environment={
+                "CURATED_BUCKET": self.shared_storage.curated_bucket.bucket_name,
+            },
+        )
 
     def _create_schema_change_decider_function(self) -> lambda_.IFunction:
         """Create Lambda to decide if crawler should run based on schema change policy."""
