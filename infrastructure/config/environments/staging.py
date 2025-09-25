@@ -43,6 +43,20 @@ staging_config = {
     "raw_manifest_suffix": ".manifest.json",
     "batch_tracker_table_name": "",
     "batch_tracker_ttl_days": 7,
+    "compaction_worker_type": "G.1X",
+    "compaction_number_workers": 3,
+    "compaction_timeout_minutes": 20,
+    "compaction_target_file_mb": 256,
+    "compaction_codec": "zstd",
+    "compaction_output_subdir": "compacted",
+    "monitored_glue_jobs": [
+        "daily-prices-compaction",
+        "daily-prices-data-etl",
+        "market-indicators-etl",
+    ],
+    "monitored_state_machines": [
+        "daily-prices-data-processing",
+    ],
     "max_retries": 5,
     "enable_processing_orchestration": True,
     # Catalog update policy for crawler: on_schema_change|never|force

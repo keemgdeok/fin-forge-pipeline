@@ -166,6 +166,8 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
     else:
         date_range = event.get("date_range")
 
+    compaction_subdir = os.environ.get("COMPACTION_OUTPUT_SUBDIR", "compacted")
+
     if isinstance(date_range, dict) and date_range.get("start") and date_range.get("end"):
         catalog_update = str(event.get("catalog_update", "")).strip() or None
         start = str(date_range["start"]).strip()
@@ -202,11 +204,14 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
             schema_fp_uri_i = f"s3://{artifacts_bucket_env}/{domain}/{table_name}/_schema/latest.json"
 
             raw_prefix = f"{domain}/{table_name}/interval={interval_value}/" f"data_source={data_source_value}/"
+            compacted_prefix = f"{domain}/{table_name}/{compaction_subdir}"
 
             glue_args_i: Dict[str, str] = {
                 "--environment": os.environ.get("ENVIRONMENT", "dev"),
                 "--raw_bucket": os.environ.get("RAW_BUCKET", ""),
                 "--raw_prefix": raw_prefix,
+                "--compacted_bucket": os.environ.get("CURATED_BUCKET", ""),
+                "--compacted_prefix": compacted_prefix,
                 "--curated_bucket": os.environ.get("CURATED_BUCKET", ""),
                 "--curated_prefix": f"{domain}/{table_name}/",
                 "--schema_fingerprint_s3_uri": schema_fp_uri_i,
@@ -285,7 +290,6 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
     raw_bucket = os.environ.get("RAW_BUCKET", "")
     artifacts_bucket = os.environ.get("ARTIFACTS_BUCKET", "")
     environment = os.environ.get("ENVIRONMENT", "dev")
-
     if not curated_bucket or not raw_bucket or not artifacts_bucket:
         result = {
             "proceed": False,
@@ -317,11 +321,14 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
     # Build Glue args (merge with job defaults on StartJobRun)
     schema_fp_uri = f"s3://{artifacts_bucket}/{domain}/{table_name}/_schema/latest.json"
     raw_prefix = f"{domain}/{table_name}/interval={interval_value}/" f"data_source={data_source_value}/"
+    compacted_prefix = f"{domain}/{table_name}/{compaction_subdir}"
 
     glue_args: Dict[str, str] = {
         "--environment": environment,
         "--raw_bucket": raw_bucket,
         "--raw_prefix": raw_prefix,
+        "--compacted_bucket": curated_bucket,
+        "--compacted_prefix": compacted_prefix,
         "--curated_bucket": curated_bucket,
         "--curated_prefix": f"{domain}/{table_name}/",
         # Artifacts path aligned to spec: <domain>/<table>/_schema/latest.json

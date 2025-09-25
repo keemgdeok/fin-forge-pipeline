@@ -30,6 +30,19 @@ def _fake_python_function(scope, id, **kwargs):
     )
 
 
+def _find_transform_job(template: Template) -> dict:
+    jobs = template.find_resources("AWS::Glue::Job")
+    assert jobs, "Glue Job must exist"
+
+    for job in jobs.values():
+        props = job["Properties"]
+        default_args = props.get("DefaultArguments", {})
+        if default_args.get("--job-bookmark-option") == "job-bookmark-enable":
+            return props
+
+    raise AssertionError("Transform Glue job with job bookmarks enabled not found")
+
+
 def test_glue_job_defaults_and_schema_fingerprint_path(monkeypatch) -> None:
     app = App()
     cfg = _base_config()
@@ -50,11 +63,7 @@ def test_glue_job_defaults_and_schema_fingerprint_path(monkeypatch) -> None:
     )
 
     template = Template.from_stack(proc)
-    jobs = template.find_resources("AWS::Glue::Job")
-    assert jobs, "Glue Job must exist"
-    job = next(iter(jobs.values()))
-
-    props = job["Properties"]
+    props = _find_transform_job(template)
     assert props["Timeout"] == 30, "Timeout must be 30 minutes per spec"
     assert props["MaxRetries"] == 1, "MaxRetries must be 1 per spec"
     assert props["GlueVersion"] == "5.0", "Glue version must be 5.0"
@@ -108,10 +117,6 @@ def test_glue_job_includes_shared_package_via_extra_py_files(monkeypatch) -> Non
     )
 
     template = Template.from_stack(proc)
-    jobs = template.find_resources("AWS::Glue::Job")
-    assert jobs, "Glue Job must exist"
-    job = next(iter(jobs.values()))
-
-    props = job["Properties"]
+    props = _find_transform_job(template)
     default_args = props["DefaultArguments"]
     assert "--extra-py-files" in default_args, "Glue job must include extra py files for shared package"

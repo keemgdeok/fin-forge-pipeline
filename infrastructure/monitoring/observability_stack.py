@@ -8,7 +8,7 @@ from aws_cdk import (
     aws_kms as kms,
     RemovalPolicy,
     # aws_logs as logs,  # OPTIONAL: Only if custom log groups needed
-    # Duration,  # Not used in simplified version
+    Duration,
     CfnOutput,
 )
 from constructs import Construct
@@ -38,6 +38,8 @@ class ObservabilityStack(Stack):
 
         # Essential alarms only
         self._create_essential_alarms()
+        self._create_glue_job_alarms()
+        self._create_state_machine_alarms()
 
         # OPTIONAL: Custom log groups (AWS creates them automatically)
         # self.log_groups = self._create_log_groups()
@@ -133,6 +135,73 @@ class ObservabilityStack(Stack):
         )
 
         sf_failure_alarm.add_alarm_action(cw_actions.SnsAction(self.alerts_topic))
+
+    def _create_glue_job_alarms(self) -> None:
+        """Create CloudWatch alarms for monitored Glue jobs."""
+
+        job_suffixes = list(self.config.get("monitored_glue_jobs", []))
+        if not job_suffixes:
+            return
+
+        for suffix in job_suffixes:
+            job_suffix = str(suffix).strip()
+            if not job_suffix:
+                continue
+
+            job_name = f"{self.env_name}-{job_suffix}"
+            alarm = cloudwatch.Alarm(
+                self,
+                f"GlueJobFailures-{job_suffix}",
+                alarm_name=f"{job_name}-failures",
+                alarm_description=f"Glue job {job_name} failed",
+                metric=cloudwatch.Metric(
+                    namespace="Glue",
+                    metric_name="glue.jobrun.failed",
+                    statistic="Sum",
+                    dimensions_map={"JobName": job_name},
+                    period=Duration.minutes(5),
+                ),
+                threshold=1,
+                evaluation_periods=1,
+                comparison_operator=cloudwatch.ComparisonOperator.GREATER_THAN_OR_EQUAL_TO_THRESHOLD,
+            )
+            alarm.add_alarm_action(cw_actions.SnsAction(self.alerts_topic))
+
+    def _create_state_machine_alarms(self) -> None:
+        """Create targeted alarms for monitored Step Functions state machines."""
+
+        state_machines = list(self.config.get("monitored_state_machines", []))
+        if not state_machines:
+            return
+
+        account = Stack.of(self).account
+        region = Stack.of(self).region
+
+        for sm_suffix in state_machines:
+            suffix = str(sm_suffix).strip()
+            if not suffix:
+                continue
+
+            state_machine_name = f"{self.env_name}-{suffix}"
+            state_machine_arn = f"arn:aws:states:{region}:{account}:stateMachine:{state_machine_name}"
+
+            alarm = cloudwatch.Alarm(
+                self,
+                f"StateMachineFailures-{suffix}",
+                alarm_name=f"{state_machine_name}-failures",
+                alarm_description=f"State machine {state_machine_name} failures",
+                metric=cloudwatch.Metric(
+                    namespace="AWS/States",
+                    metric_name="ExecutionsFailed",
+                    statistic="Sum",
+                    dimensions_map={"StateMachineArn": state_machine_arn},
+                    period=Duration.minutes(5),
+                ),
+                threshold=1,
+                evaluation_periods=1,
+                comparison_operator=cloudwatch.ComparisonOperator.GREATER_THAN_OR_EQUAL_TO_THRESHOLD,
+            )
+            alarm.add_alarm_action(cw_actions.SnsAction(self.alerts_topic))
 
     # OPTIONAL: AWS automatically creates log groups with default retention
     # def _create_log_groups(self) -> dict:

@@ -7,7 +7,10 @@ flowchart TD
   end
 
   subgraph Read
-    R1["Resolve input partitions<br/>raw/<domain>/<table>/interval=.../data_source=.../year=YYYY/month=MM/day=DD/"] --> R2["Read as DataFrame<br/>(schema on read)"]
+    R1["Resolve compacted path<br/>curated/<domain>/<table>/<subdir>/ds"] --> R2{Available?}
+    R2 -->|Yes| R3["Read Parquet (compacted)"]
+    R2 -->|No| R4["Fallback to Raw path<br/>raw/<domain>/<table>/interval=.../data_source=.../year/month/day/"]
+    R4 --> R3
   end
 
   subgraph Transform
@@ -36,6 +39,8 @@ flowchart TD
 - Spark 설정: Glue 4/5, 오토스케일 on, 셔플 파티션 수는 데이터량에 맞춰 조정.
 - 데이터 품질: 치명 규칙 위반 시 커밋 차단(부분 결과 노출 방지). 경고 규칙은 통과 후 로그/메트릭 집계 가능.
 - 쓰기: 임시 경로 → 최종 경로 원자적 커밋. Parquet+ZSTD, 파일 크기 타깃 128–512MB.
+- Step Functions가 선행 컴팩션 Glue 잡을 실행해 Raw 소파일을 병합하고 Parquet으로 저장합니다.
+- Transform 잡은 `curated/<domain>/<table>/<compacted_subdir>/ds=` 경로를 우선 조회하고, 파티션이 아직 없는 경우에만 Raw 경로를 fallback 합니다.
 - RAW 파티션은 `interval/data_source/year/month/day` 5단 구성으로, 동일 심볼을 파일명(`{symbol}.{ext}[.gz]`) 단위로 저장 → 소스별/해상도별 재처리와 재수집 멱등성 보장.
 - 증분: Job Bookmark + 파티션 프루닝으로 스캔 최소화.
 

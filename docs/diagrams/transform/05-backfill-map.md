@@ -5,9 +5,12 @@ flowchart TD
 
   subgraph ItemProcessor
     I1["Preflight(ds_i)"] --> J{skip?}
-    J -->|true| SKIP(["Skip (no Glue)"])
-    J -->|false| G["Glue ETL (ds_i)"]
-    G --> CR["Start Crawler (스키마 변경 시)"]
+    J -->|true| SKIP(["Skip (no changes)"])
+    J -->|false| C["Compaction Glue (ds_i)"]
+    C --> G["Compaction Guard"]
+    G -->|자료 있음| T["Transform Glue"]
+    G -->|자료 없음| SKIP
+    T --> CR["Start Crawler (스키마 변경 시)"]
     
   end
 

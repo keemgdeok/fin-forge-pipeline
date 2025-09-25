@@ -1,6 +1,6 @@
 # Step Functions Transform State Machine — I/O 계약 명세
 
-본 문서는 Transform 상태 머신의 입력/출력 계약, 실패 코드, 재시도 정책을 정의합니다. 모든 예시는 UTC 기준이며, CDK가 생성한 리소스와 일관되게 유지해야 합니다.
+본 문서는 Transform 상태 머신의 입력/출력 계약, 실패 코드, 재시도 정책을 정의합니다. 모든 예시는 UTC 기준이며, CDK가 생성한 리소스와 일관되게 유지해야 합니다. 파이프라인은 `Preflight → Glue Compaction → Compaction Guard → Glue Transform → Glue Crawler` 순으로 실행됩니다.
 
 ## 입력(Inputs)
 
@@ -35,7 +35,16 @@
 |---|---|---|---|
 | proceed | boolean | `true` | 진행 여부(멱등 스킵 시 `false`) |
 | ds | string | `2025-09-07` | 도출된 파티션(UTC) |
-| glue_args | object | `{ "--ds": "2025-09-07", ... }` | Glue StartJobRun 인자 집합 |
+| glue_args | object | `{ "--ds": "2025-09-07", ... }` | Transform/Compaction에 공통으로 사용하는 Glue 인자 집합 |
+
+`glue_args`는 아래 Key를 최소 포함합니다.
+
+| 키 | 설명 |
+|---|---|
+| `--raw_bucket`, `--raw_prefix` | Fallback용 RAW 경로 |
+| `--compacted_bucket`, `--compacted_prefix` | 컴팩션 출력 경로 |
+| `--curated_bucket`, `--curated_prefix` | 최종 Curated 출력 |
+| `--interval`, `--data_source`, `--file_type`, `--ds` | 파티션 지정 |
 
 ## 출력(Outputs)
 
@@ -62,7 +71,7 @@
 | PRE_VALIDATION_FAILED | Preflight | 입력 누락/형식 불일치 등 | 지수 백오프 최대 2회 |
 | IDEMPOTENT_SKIP | Preflight | 이미 처리/잠금 중 → 스킵 | 재시도 없음(정상 종료 취급 가능) |
 | NO_RAW_DATA | Preflight | 대상 Raw 파티션 없음 | 재시도 없음 |
-| GLUE_JOB_FAILED | Glue | 애플리케이션 오류/리소스 부족 | 최대 1회 재시도 |
+| GLUE_JOB_FAILED | Glue | 컴팩션 또는 변환 Glue 잡 실패 | 최대 1회 재시도 |
 | DQ_FAILED | Glue | 데이터 품질 치명 규칙 위반 | 재시도 없음(수정 후 재실행) |
 | CRAWLER_FAILED | Crawler | 크롤러 실패/타임아웃 | 최대 2회 재시도(백오프) |
 | SCHEMA_CHECK_FAILED | Pre/Post | 스키마 지문 계산/비교 실패 | 1회 재시도 |
@@ -127,3 +136,4 @@
 
 - 최소권한 원칙: 프리픽스 단위 S3 접근, 로깅 저장소/KMS 권한은 필요한 범위로 한정.
 - Glue Catalog/Athena 권한은 IAM으로 관리합니다. 컬럼 수준 제한이 필요하면 Athena View/별도 테이블로 분리해 뷰 단위로 권한을 부여합니다.
+- Step Functions는 컴팩션 Guard가 `shouldProcess=false`를 반환하면 변환 단계를 건너뛰고 성공으로 종료합니다. 이 경우에도 DynamoDB 등 외부 상태 저장 구조는 변경되지 않습니다.
