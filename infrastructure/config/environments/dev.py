@@ -25,8 +25,8 @@ dev_config = {
     "ingestion_table_name": "prices",
     # Symbol universe asset (deployed via CDK into artifacts bucket)
     "symbol_universe_asset_path": "data/symbols",
-    "symbol_universe_asset_file": "nasdaq_sp500.json",
-    "symbol_universe_s3_key": "market/universe/nasdaq_sp500.json",
+    "symbol_universe_asset_file": "all_equities.json",
+    "symbol_universe_s3_key": "market/universe/all_equities.json",
     "symbol_universe_s3_bucket": "",
     # Indicators
     "indicators_table_name": "indicators",
