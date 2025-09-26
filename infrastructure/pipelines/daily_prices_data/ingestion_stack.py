@@ -274,7 +274,8 @@ class DailyPricesDataIngestionStack(Stack):
             rule_name=f"{self.env_name}-daily-prices-ingestion-schedule",
             schedule=events.Schedule.cron(
                 minute="0",
-                hour="22",  # Daily at 7 AM (KST)
+                hour="22",  # Weekdays at 7 AM (KST)
+                week_day="MON-FRI",
             ),
         )
 
