@@ -101,7 +101,6 @@ jobs:
         run: |
           source .venv/bin/activate
           pip install -r requirements.txt
-          pip install bandit safety
 
       - name: Cache market data Lambda layer
         id: market-layer-cache
@@ -158,9 +157,63 @@ jobs:
         if: steps.mode.outputs.full_pipeline == 'true'
         run: |
           source .venv/bin/activate
-          echo "🔒 Security scanning..."
-          bandit -r infrastructure/ src/ -f json || echo "⚠️ Bandit warnings (non-blocking)"
-          safety check || echo "⚠️ Safety warnings (non-blocking)"
+          echo "🔒 Security scanning (non-blocking summary)..."
+          bandit_status=0
+          safety_status=0
+
+          bandit -c bandit.yaml --severity-level medium --confidence-level medium -r src infrastructure scripts -f json -o bandit-report.json || bandit_status=$?
+          python - <<'PY' > bandit-report.md
+          import json
+          import pathlib
+
+          report_path = pathlib.Path('bandit-report.json')
+          if not report_path.exists():
+              print('### Bandit Security Audit (deploy pipeline)\n\n보고서를 생성하지 못했습니다.')
+              raise SystemExit(0)
+
+          data = json.loads(report_path.read_text())
+          issues = data.get('results', [])
+          severity_counts = {}
+          for item in issues:
+              severity = item.get('issue_severity', 'UNDEFINED')
+              severity_counts[severity] = severity_counts.get(severity, 0) + 1
+
+          severity_order = {"CRITICAL": 0, "HIGH": 1, "MEDIUM": 2, "LOW": 3, "UNDEFINED": 4}
+          ordered_counts = sorted(
+              severity_counts.items(),
+              key=lambda kv: severity_order.get(kv[0], 99)
+          )
+
+          print('### Bandit Security Audit (deploy pipeline)')
+          print()
+          if not issues:
+              print('✅ No findings with medium severity or higher.')
+          else:
+              total = len(issues)
+              summary = ', '.join(f"{level}: {count}" for level, count in ordered_counts)
+              print(f'⚠️ {total} issue(s) detected (severity counts → {summary}). Review PR scan results before proceeding.')
+
+          PY
+
+          safety check --full-report --output text > safety-report.txt || safety_status=$?
+
+          {
+            cat bandit-report.md
+            echo
+            echo '### Safety Dependency Scan (deploy pipeline)'
+            echo
+            if [ -s safety-report.txt ]; then
+              cat safety-report.txt
+            else
+              echo '보고서를 생성하지 못했습니다.'
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          if [ $bandit_status -ne 0 ] || [ $safety_status -ne 0 ]; then
+            echo '⚠️ Security findings detected. PR workflow blocks merges; deploy summary is informational only.'
+          else
+            echo '✅ No blocking findings detected in deploy summary scan.'
+          fi
 
       - name: CDK synth and diff
         run: |
