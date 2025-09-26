@@ -12,6 +12,8 @@ ruff>=0.6.9
 boto3>=1.26.0
 moto>=4.2.0
 pre-commit
+bandit==1.7.10
+safety==2.3.5
 
 # Utility libraries
 python-dotenv>=1.0.0

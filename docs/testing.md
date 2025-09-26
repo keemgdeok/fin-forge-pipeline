@@ -50,6 +50,7 @@
   - Ruff Formatter: 자동 포맷(`ruff format`)
   - Ruff: 린트/자동수정(`ruff check --fix`)
   - mypy: `--ignore-missing-imports`
+  - Bandit: `bandit-security-audit`가 `src/`, `infrastructure/`, `scripts/`를 검사합니다. 세부 운영 지침은 `docs/security/scanning.md`를 참고하세요.
 - 사용법
   - 설치: `pip install pre-commit`
   - 활성화: `pre-commit install`
