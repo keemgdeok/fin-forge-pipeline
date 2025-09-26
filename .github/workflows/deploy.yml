@@ -13,13 +13,17 @@ on:
         type: choice
         options: [dev, staging, prod]
         default: dev
+      full_pipeline:
+        description: 'Run ingestion → transform → load validation after deploy'
+        type: boolean
+        default: false
 
 permissions:
   contents: read
   id-token: write
 
 concurrency:
-  group: deploy-${{ github.workflow }}-${{ github.event.inputs.environment || (github.ref == 'refs/heads/main' && 'prod' || (github.ref == 'refs/heads/develop' && 'staging' || 'dev')) }}
+  group: deploy-${{ github.workflow }}-${{ github.event_name == 'workflow_dispatch' && (github.event.inputs.environment || 'dev') || (github.ref == 'refs/heads/main' && 'prod' || (github.ref == 'refs/heads/develop' && 'dev' || 'dev')) }}
   cancel-in-progress: true
 
 env:
@@ -31,12 +35,38 @@ jobs:
   deploy:
     runs-on: ubuntu-latest
     timeout-minutes: 15
-    environment: ${{ github.event.inputs.environment || (github.ref == 'refs/heads/main' && 'prod' || (github.ref == 'refs/heads/develop' && 'staging' || 'dev')) }}
-    
+    environment: ${{ github.event_name == 'workflow_dispatch' && (github.event.inputs.environment || 'dev') || (github.ref == 'refs/heads/main' && 'prod' || (github.ref == 'refs/heads/develop' && 'dev' || 'dev')) }}
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
-      
+
+      - name: Resolve deployment target
+        id: target
+        shell: bash
+        run: |
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            TARGET="${{ github.event.inputs.environment }}"
+            [[ -z "$TARGET" ]] && TARGET="dev"
+          elif [[ "${{ github.ref }}" == "refs/heads/main" ]]; then
+            TARGET="prod"
+          else
+            TARGET="dev"
+          fi
+          echo "TARGET_ENV=$TARGET" >> "$GITHUB_ENV"
+          echo "target_env=$TARGET" >> "$GITHUB_OUTPUT"
+
+      - name: Resolve pipeline mode
+        id: mode
+        shell: bash
+        run: |
+          FULL="false"
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            FULL="${{ github.event.inputs.full_pipeline || 'false' }}"
+          fi
+          echo "FULL_PIPELINE=$FULL" >> "$GITHUB_ENV"
+          echo "full_pipeline=$FULL" >> "$GITHUB_OUTPUT"
+
       - name: Setup Python
         uses: actions/setup-python@v5
         with:
@@ -112,42 +142,35 @@ jobs:
           role-session-name: GithubActionsDeployment
           aws-region: ${{ env.AWS_REGION }}
       
-      - name: Full validation
-        env:
-          TARGET_ENV: ${{ github.event.inputs.environment || (github.ref == 'refs/heads/main' && 'prod' || (github.ref == 'refs/heads/develop' && 'staging' || 'dev')) }}
+      - name: Quality checks and tests
         run: |
-          echo "🔍 Running full validation for $TARGET_ENV..."
-          
-          # Code quality
-          echo "🐍 Code quality checks..."
-          black --check --diff --line-length 120 src/ infrastructure/
-          flake8 src/ infrastructure/ tests/ --max-line-length=120 --extend-ignore=E203,W503,W293,W291,W292,E128
-          
-          # Security scan
-          echo "🔒 Security scanning..."
-          bandit -r infrastructure/ src/ -f json || echo "⚠️ Bandit warnings (non-blocking)"
-          safety check || echo "⚠️ Safety warnings (non-blocking)"
-          
-          # Tests
-          echo "🧪 Running tests..."
+          source .venv/bin/activate
+          echo "🔍 Running style and test checks..."
+          ruff format --check src infrastructure tests
+          ruff check src infrastructure tests
           if [ -d "tests/" ] && find tests/ -name "test_*.py" -type f | head -1 | grep -q .; then
             pytest tests/ -v --tb=short
           else
             echo "No tests found - skipping"
           fi
-          
-          # CDK validation
+
+      - name: Security scan (optional)
+        if: steps.mode.outputs.full_pipeline == 'true'
+        run: |
+          source .venv/bin/activate
+          echo "🔒 Security scanning..."
+          bandit -r infrastructure/ src/ -f json || echo "⚠️ Bandit warnings (non-blocking)"
+          safety check || echo "⚠️ Safety warnings (non-blocking)"
+
+      - name: CDK synth and diff
+        run: |
+          source .venv/bin/activate
           echo "🏗️ CDK syntax and diff check..."
           npx cdk synth --context environment=$TARGET_ENV
-          
           echo "📋 Infrastructure changes:"
           npx cdk diff --context environment=$TARGET_ENV || echo "No changes detected"
-          
-          echo "✅ Validation complete!"
-      
+
       - name: Deploy infrastructure
-        env:
-          TARGET_ENV: ${{ github.event.inputs.environment || (github.ref == 'refs/heads/main' && 'prod' || (github.ref == 'refs/heads/develop' && 'staging' || 'dev')) }}
         run: |
           echo "🚀 Deploying to $TARGET_ENV environment..."
           
@@ -161,3 +184,20 @@ jobs:
           echo "✅ Deployment completed!"
           echo "🎯 Environment: $TARGET_ENV"
           echo "📅 Deployed at: $(date)"
+
+      - name: Run end-to-end pipeline validation
+        if: steps.mode.outputs.full_pipeline == 'true'
+        run: |
+          source .venv/bin/activate
+          python scripts/validate/validate_pipeline.py --environment "$TARGET_ENV"
+
+      - name: Publish validation summary
+        if: steps.mode.outputs.full_pipeline == 'true'
+        run: |
+          {
+            echo '### Pipeline Validation Summary'
+            echo
+            cat pipeline_validation_summary.txt
+            echo
+            echo '> 재실행이 필요한 경우 `scripts/deploy/deploy.py` 또는 `scripts/validate/validate_pipeline.py`를 활용하세요.'
+          } >> "$GITHUB_STEP_SUMMARY"
