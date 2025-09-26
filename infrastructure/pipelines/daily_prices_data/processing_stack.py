@@ -733,10 +733,18 @@ class DailyPricesDataProcessingStack(Stack):
         """Create a single EventBridge rule for a specific domain/table and suffix set."""
         prefix = f"{domain}/{table_name}/"
 
-        # Only filter by prefix in EventBridge; suffix validation happens in Preflight Lambda.
+        # Normalize suffix list; empty values fall back to prefix-only filtering.
         sanitized_suffixes = [str(s).strip() for s in suffixes if str(s).strip()]
 
         rule_id = f"RawObjectCreated-{domain}-{table_name}".replace("/", "-")
+        # EventBridge now filters by both prefix and suffix, ensuring only manifest
+        # files (or other explicitly allowed suffixes) invoke the state machine.
+        key_patterns: list[dict[str, str]]
+        if sanitized_suffixes:
+            key_patterns = [{"prefix": prefix, "suffix": suffix} for suffix in sanitized_suffixes]
+        else:
+            key_patterns = [{"prefix": prefix}]
+
         rule = events.Rule(
             self,
             rule_id,
@@ -746,7 +754,7 @@ class DailyPricesDataProcessingStack(Stack):
                 detail_type=["Object Created"],
                 detail={
                     "bucket": {"name": [self.shared_storage.raw_bucket.bucket_name]},
-                    "object": {"key": [{"prefix": prefix}]},
+                    "object": {"key": key_patterns},
                 },
             ),
         )
