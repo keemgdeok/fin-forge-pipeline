@@ -68,12 +68,6 @@ staging_config = {
             "file_type": "json",
             "suffixes": [".manifest.json"],
         },
-        {
-            "domain": "market",
-            "table_name": "indicators",
-            "file_type": "parquet",
-            "suffixes": [".parquet"],
-        },
     ],
     "processing_suffixes": [".manifest.json"],
     "load_min_file_size_bytes": 1024,
