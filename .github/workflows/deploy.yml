@@ -189,7 +189,7 @@ jobs:
         if: steps.mode.outputs.full_pipeline == 'true'
         run: |
           source .venv/bin/activate
-          python scripts/validate_pipeline.py --environment "$TARGET_ENV"
+          python scripts/validate/validate_pipeline.py --environment "$TARGET_ENV"
 
       - name: Publish validation summary
         if: steps.mode.outputs.full_pipeline == 'true'
@@ -199,5 +199,5 @@ jobs:
             echo
             cat pipeline_validation_summary.txt
             echo
-            echo '> 재실행이 필요한 경우 `scripts/deploy/deploy.py` 또는 `scripts/validate_pipeline.py`를 활용하세요.'
+            echo '> 재실행이 필요한 경우 `scripts/deploy/deploy.py` 또는 `scripts/validate/validate_pipeline.py`를 활용하세요.'
           } >> "$GITHUB_STEP_SUMMARY"
