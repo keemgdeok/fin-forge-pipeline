@@ -70,12 +70,6 @@ dev_config = {
             "file_type": "json",
             "suffixes": [".manifest.json"],
         },
-        {
-            "domain": "market",
-            "table_name": "indicators",
-            "file_type": "parquet",
-            "suffixes": [".parquet"],
-        },
     ],
     # Default suffixes when processing_triggers not specified
     "processing_suffixes": [".manifest.json"],
