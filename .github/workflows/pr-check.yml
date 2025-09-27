@@ -22,6 +22,8 @@ jobs:
   validate:
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    outputs:
+      python_any_changed: ${{ steps.changed-files.outputs.python_any_changed }}
 
     steps:
       - name: Checkout code
@@ -61,64 +63,6 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
-      - name: Security audit (bandit)
-        if: ${{ steps.changed-files.outputs.python_any_changed == 'true' || steps.changed-files.outputs.infra_any_changed == 'true' }}
-        run: |
-          set -o pipefail
-          echo "🔐 Running Bandit security audit (src, infrastructure, scripts)..."
-          bandit -c bandit.yaml --severity-level medium --confidence-level medium -r src infrastructure scripts -f json -o bandit-report.json
-          bandit_exit=$?
-          python - <<'PY' > bandit-report.md
-          import json
-          import pathlib
-
-          report_path = pathlib.Path('bandit-report.json')
-          if not report_path.exists():
-              print('### Bandit Security Audit\n\n보고서를 생성하지 못했습니다.')
-              raise SystemExit(0)
-
-          data = json.loads(report_path.read_text())
-          issues = data.get('results', [])
-
-          severity_counts = {}
-          for item in issues:
-              severity = item.get('issue_severity', 'UNDEFINED')
-              severity_counts[severity] = severity_counts.get(severity, 0) + 1
-
-          severity_order = {"CRITICAL": 0, "HIGH": 1, "MEDIUM": 2, "LOW": 3, "UNDEFINED": 4}
-          ordered_counts = sorted(
-              severity_counts.items(),
-              key=lambda kv: severity_order.get(kv[0], 99)
-          )
-
-          print('### Bandit Security Audit')
-          print()
-          if not issues:
-              print('✅ No findings with medium severity or higher.')
-          else:
-              total = len(issues)
-              summary = ', '.join(f"{level}: {count}" for level, count in ordered_counts)
-              print(f'❌ {total} issue(s) detected (severity counts → {summary}).')
-              print()
-              print('| Severity | Confidence | Location | Test | Message |')
-              print('| --- | --- | --- | --- | --- |')
-              for item in issues[:10]:
-                  severity = item.get('issue_severity', 'NA')
-                  confidence = item.get('issue_confidence', 'NA')
-                  fname = item.get('filename', 'NA')
-                  line = item.get('line_number', 'NA')
-                  test_id = item.get('test_id', 'NA')
-                  text = item.get('issue_text', '').replace('\n', ' ')
-                  location = f"{fname}:{line}"
-                  print(f"| {severity} | {confidence} | `{location}` | {test_id} | {text} |")
-              if total > 10:
-                  print()
-                  print(f'_Showing first 10 of {total} findings. Review `bandit-report.json` for the full report._')
-
-          PY
-          cat bandit-report.md >> "$GITHUB_STEP_SUMMARY"
-          exit $bandit_exit
-
       - name: Dependency vulnerability scan (safety)
         if: ${{ steps.changed-files.outputs.python_any_changed == 'true' || steps.changed-files.outputs.infra_any_changed == 'true' }}
         run: |
@@ -136,54 +80,6 @@ jobs:
             fi
           } >> "$GITHUB_STEP_SUMMARY"
           exit $safety_exit
-
-      - name: Prepare Python file list
-        if: ${{ steps.changed-files.outputs.python_any_changed == 'true' }}
-        env:
-          PY_FILES: ${{ steps.changed-files.outputs.python_files }}
-        run: |
-          python - <<'PY' > .changed-python-files
-          import json
-          import os
-          import sys
-
-          raw_payload = os.environ.get('PY_FILES', '').strip()
-          if not raw_payload:
-            files = []
-          else:
-            try:
-              files = json.loads(raw_payload)
-            except json.JSONDecodeError as exc:
-              raise SystemExit(f"Failed to parse PY_FILES JSON: {exc}; payload={raw_payload!r}") from exc
-
-          sys.stdout.write("\n".join(files))
-          PY
-
-      - name: Run pre-commit on changed Python files
-        if: ${{ steps.changed-files.outputs.python_any_changed == 'true' }}
-        run: |
-          if [ ! -s .changed-python-files ]; then
-            exit 0
-          fi
-          mapfile -t PY_CHANGED < .changed-python-files
-          if [ ${#PY_CHANGED[@]} -eq 0 ]; then
-            exit 0
-          fi
-          pre-commit run --files --show-diff-on-failure "${PY_CHANGED[@]}"
-
-      - name: Type check (mypy)
-        if: ${{ steps.changed-files.outputs.python_any_changed == 'true' }}
-        run: |
-          if [ ! -s .changed-python-files ]; then
-            echo "No changed Python files. Skipping mypy."
-            exit 0
-          fi
-          mapfile -t PY_CHANGED < .changed-python-files
-          if [ ${#PY_CHANGED[@]} -eq 0 ]; then
-            echo "No changed Python files. Skipping mypy."
-            exit 0
-          fi
-          python -m mypy "${PY_CHANGED[@]}"
 
       - name: Setup Node.js (infra changed, cache)
         if: ${{ steps.changed-files.outputs.infra_any_changed == 'true' && hashFiles('**/package-lock.json', '**/npm-shrinkwrap.json', '**/yarn.lock') != '' }}
@@ -212,9 +108,10 @@ jobs:
           echo "🏗️ Validating CDK infrastructure..."
           npx cdk synth --context environment=dev
 
-  tests:
+  ci:
+    needs: validate
     uses: ./.github/workflows/ci.yml
     with:
       python-version: *python_version
-      run-precommit: false
+      python-any-changed: ${{ needs.validate.outputs.python_any_changed }}
     secrets: inherit
