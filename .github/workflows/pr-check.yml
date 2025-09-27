@@ -22,6 +22,8 @@ jobs:
   validate:
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    outputs:
+      python_any_changed: ${{ steps.changed-files.outputs.python_any_changed }}
 
     steps:
       - name: Checkout code
@@ -159,18 +161,6 @@ jobs:
           sys.stdout.write("\n".join(files))
           PY
 
-      - name: Run pre-commit on changed Python files
-        if: ${{ steps.changed-files.outputs.python_any_changed == 'true' }}
-        run: |
-          if [ ! -s .changed-python-files ]; then
-            exit 0
-          fi
-          mapfile -t PY_CHANGED < .changed-python-files
-          if [ ${#PY_CHANGED[@]} -eq 0 ]; then
-            exit 0
-          fi
-          pre-commit run --files --show-diff-on-failure "${PY_CHANGED[@]}"
-
       - name: Type check (mypy)
         if: ${{ steps.changed-files.outputs.python_any_changed == 'true' }}
         run: |
@@ -212,9 +202,10 @@ jobs:
           echo "🏗️ Validating CDK infrastructure..."
           npx cdk synth --context environment=dev
 
-  tests:
+  ci:
+    needs: validate
     uses: ./.github/workflows/ci.yml
     with:
       python-version: *python_version
-      run-precommit: false
+      python-any-changed: ${{ needs.validate.outputs.python_any_changed }}
     secrets: inherit

@@ -8,20 +8,58 @@ on:
         required: false
         type: string
         default: '3.12'
-      run-precommit:
-        description: 'Whether to run pre-commit checks (true/false)'
+      python-any-changed:
+        description: 'Set to "true" when Python files changed in the caller'
         required: false
-        type: boolean
-        default: true
+        type: string
+        default: 'false'
   push:
     branches: [main, develop]
 
 jobs:
-  tests:
+  quality:
+    name: Quality checks
+    if: github.event_name != 'workflow_call' || github.event.inputs.python-any-changed == 'true'
     runs-on: ubuntu-latest
     env:
       PY_VERSION: ${{ (github.event_name == 'workflow_call' && inputs['python-version']) || '3.12' }}
-      RUN_PRECOMMIT: ${{ (github.event_name == 'workflow_call' && (inputs['run-precommit'] && 'true' || 'false')) || 'true' }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python ${{ env.PY_VERSION }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PY_VERSION }}
+
+      - name: Cache pip
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pip
+          key: ${{ runner.os }}-pip-${{ hashFiles('**/requirements.txt') }}
+          restore-keys: |
+            ${{ runner.os }}-pip-
+
+      - name: Prepare virtual environment
+        shell: bash
+        run: |
+          python -m venv .venv
+          echo "VIRTUAL_ENV=$(pwd)/.venv" >> $GITHUB_ENV
+          echo "$(pwd)/.venv/bin" >> $GITHUB_PATH
+          echo "CDK_PYTHON=$(pwd)/.venv/bin/python" >> $GITHUB_ENV
+          source .venv/bin/activate
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Run pre-commit checks
+        run: pre-commit run --all-files --show-diff-on-failure
+
+  tests:
+    name: Test suite
+    runs-on: ubuntu-latest
+    env:
+      PY_VERSION: ${{ (github.event_name == 'workflow_call' && inputs['python-version']) || '3.12' }}
 
     steps:
       - name: Checkout
@@ -56,10 +94,6 @@ jobs:
           source .venv/bin/activate
           python -m pip install --upgrade pip
           pip install -r requirements.txt
-
-      - name: Run pre-commit checks
-        if: ${{ env.RUN_PRECOMMIT == 'true' }}
-        run: pre-commit run --all-files --show-diff-on-failure
 
       - name: Run unit + integration tests with coverage
         env:
