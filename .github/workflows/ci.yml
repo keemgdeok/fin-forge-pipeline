@@ -52,7 +52,7 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
-      - name: Run pre-commit checks
+      - name: Run pre-commit (ruff/bandit/mypy)
         run: pre-commit run --all-files --show-diff-on-failure
 
   tests:
