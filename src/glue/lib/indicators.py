@@ -460,6 +460,7 @@ def compute_indicators_pandas(pdf: pd.DataFrame) -> pd.DataFrame:
 
     violation_masks: Dict[str, pd.Series] = {}
 
+    # Columns that must be zero or positive per table specification
     non_negative_fields = [
         "sma_20",
         "sma_60",
@@ -472,6 +473,11 @@ def compute_indicators_pandas(pdf: pd.DataFrame) -> pd.DataFrame:
         "bollinger_middle_20_2",
         "bollinger_upper_20_2",
         "bollinger_lower_20_2",
+        "ichimoku_tenkan",
+        "ichimoku_kijun",
+        "ichimoku_senkou_a",
+        "ichimoku_senkou_b",
+        "ichimoku_chikou",
         "atr_14",
         "atrp_14",
         "bb_width_20_2",

@@ -127,3 +127,19 @@ def test_expected_columns_present() -> None:
     }
     missing = expected_columns.difference(out.columns)
     assert not missing
+
+
+def test_ichimoku_is_non_negative() -> None:
+    pdf = _make_series()
+    out = compute_indicators_pandas(pdf)
+    tail = out.iloc[-1]
+    ichimoku_columns = [
+        "ichimoku_tenkan",
+        "ichimoku_kijun",
+        "ichimoku_senkou_a",
+        "ichimoku_senkou_b",
+        "ichimoku_chikou",
+    ]
+    for column in ichimoku_columns:
+        value = tail[column]
+        assert (pd.isna(value)) or (value >= 0.0)
