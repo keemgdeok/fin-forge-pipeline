@@ -313,6 +313,7 @@ def yf_stub(monkeypatch):
         class MockPriceRecord:
             symbol: str
             timestamp: datetime
+            adjusted_close: Optional[float] = None
             open: Optional[float] = None
             high: Optional[float] = None
             low: Optional[float] = None
@@ -323,6 +324,7 @@ def yf_stub(monkeypatch):
                 return {
                     "symbol": self.symbol,
                     "timestamp": self.timestamp.isoformat(),
+                    "adjusted_close": self.adjusted_close,
                     "open": self.open,
                     "high": self.high,
                     "low": self.low,
@@ -335,6 +337,7 @@ def yf_stub(monkeypatch):
                 MockPriceRecord(
                     symbol=sym,
                     timestamp=datetime.now(timezone.utc),
+                    adjusted_close=103.0 + hash(sym) % 50,
                     open=100.0 + hash(sym) % 50,
                     high=105.0 + hash(sym) % 50,
                     low=95.0 + hash(sym) % 50,

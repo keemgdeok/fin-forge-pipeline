@@ -29,15 +29,45 @@ def test_indicators_etl_skeleton() -> None:
     # Prepare minimal curated prices partition for ds=2025-09-07
     ds = "2025-09-07"
     data = [
-        {"symbol": "AAA", "open": 100.0, "high": 101.0, "low": 99.0, "close": 100.5, "volume": 1000, "ds": ds},
-        {"symbol": "BBB", "open": 50.0, "high": 51.0, "low": 49.0, "close": 50.2, "volume": 500, "ds": ds},
+        {
+            "symbol": "AAA",
+            "open": 100.0,
+            "high": 101.0,
+            "low": 99.0,
+            "close": 100.5,
+            "adjusted_close": 100.5,
+            "volume": 1000,
+            "raw_open": 100.0,
+            "raw_high": 101.0,
+            "raw_low": 99.0,
+            "raw_close": 100.5,
+            "raw_volume": 1000,
+            "adjustment_factor": 1.0,
+            "ds": ds,
+        },
+        {
+            "symbol": "BBB",
+            "open": 50.0,
+            "high": 51.0,
+            "low": 49.0,
+            "close": 50.2,
+            "adjusted_close": 50.2,
+            "volume": 500,
+            "raw_open": 50.0,
+            "raw_high": 51.0,
+            "raw_low": 49.0,
+            "raw_close": 50.2,
+            "raw_volume": 500,
+            "adjustment_factor": 1.0,
+            "ds": ds,
+        },
     ]
     df = pd.DataFrame(data)
     buf = BytesIO()
     df.to_parquet(buf, engine="pyarrow", index=False)
     s3.put_object(
         Bucket=curated_bucket,
-        Key=f"market/prices/ds={ds}/data.parquet",
+        Key=f"market/prices/adjusted/ds={ds}/data.parquet",
         Body=buf.getvalue(),
         ContentType="application/octet-stream",
     )
@@ -46,10 +76,10 @@ def test_indicators_etl_skeleton() -> None:
     glue_args: Dict[str, str] = {
         "--environment": "test",
         "--prices_curated_bucket": curated_bucket,
-        "--prices_prefix": "market/prices/",
+        "--prices_prefix": "market/prices/adjusted/",
         "--output_bucket": curated_bucket,
-        "--output_prefix": "market/indicators/",
-        "--schema_fingerprint_s3_uri": f"s3://{artifacts_bucket}/market/indicators/_schema/latest.json",
+        "--output_prefix": "market/prices/indicators/",
+        "--schema_fingerprint_s3_uri": f"s3://{artifacts_bucket}/market/prices/indicators/_schema/latest.json",
         "--codec": "zstd",
         "--target_file_mb": "256",
         "--ds": ds,
@@ -57,5 +87,5 @@ def test_indicators_etl_skeleton() -> None:
     }
 
     # Example placeholder assertion to indicate setup works
-    assert glue_args["--prices_prefix"].startswith("market/")
+    assert glue_args["--prices_prefix"].endswith("adjusted/")
     # NOTE: Actual Glue job submission is environment dependent and omitted here.
