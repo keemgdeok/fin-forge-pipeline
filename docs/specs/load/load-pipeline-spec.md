@@ -60,12 +60,14 @@
 | Output Field | Input Path | Data Type | Required | Example |
 |--------------|------------|-----------|----------|---------|
 | **bucket** | `$.detail.bucket.name` | string | ✅ | `data-pipeline-curated-dev` |
-| **key** | `$.detail.object.key` | string | ✅ | `market/prices/ds=2025-09-10/part-001.parquet` |
+| **key** | `$.detail.object.key` | string | ✅ | `market/prices/adjusted/ds=2025-09-10/part-001.parquet` |
 | **domain** | Parsed from key | string | ✅ | `market` |
 | **table_name** | Parsed from key | string | ✅ | `prices` |
 | **partition** | Parsed from key | string | ✅ | `ds=2025-09-10` |
 | **file_size** | `$.detail.object.size` | integer | ❌ | `1048576` |
 | **correlation_id** | Generated UUID | string | ✅ | `550e8400-e29b-41d4-a716-446655440000` |
+
+> ℹ️ 기술적 지표 파티션은 `market/prices/indicators/ds=<YYYY-MM-DD>/` 경로를 사용합니다. Load 파이프라인이 지표 데이터를 처리하도록 구성된 경우 동일한 규칙(도메인/테이블/파티션)을 적용해 S3 키를 파싱하면 됩니다.
 
 ## Error Handling
 
