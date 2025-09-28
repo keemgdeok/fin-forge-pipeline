@@ -125,6 +125,62 @@ def _write_quarantine_and_fail(df_in: DataFrame, reason: str) -> None:
     raise RuntimeError(f"DQ_FAILED: {reason}")
 
 
+def _apply_price_adjustments(df_in: DataFrame) -> DataFrame:
+    """Return DataFrame with OHLCV adjusted using adjusted_close when present."""
+
+    if "adjusted_close" not in df_in.columns or "close" not in df_in.columns:
+        return df_in
+
+    has_required_cols = all(col in df_in.columns for col in ("open", "high", "low"))
+    df_out = df_in
+
+    # Preserve raw values for downstream auditing before overwriting
+    df_out = df_out.withColumn("raw_close", F.col("close"))
+    if "open" in df_out.columns:
+        df_out = df_out.withColumn("raw_open", F.col("open"))
+    if "high" in df_out.columns:
+        df_out = df_out.withColumn("raw_high", F.col("high"))
+    if "low" in df_out.columns:
+        df_out = df_out.withColumn("raw_low", F.col("low"))
+    if "volume" in df_out.columns:
+        df_out = df_out.withColumn("raw_volume", F.col("volume"))
+
+    factor = F.when(
+        (F.col("adjusted_close").isNotNull()) & (F.col("close").isNotNull()) & (F.col("close") != F.lit(0.0)),
+        F.col("adjusted_close") / F.col("close"),
+    )
+
+    df_out = df_out.withColumn("adjustment_factor", factor)
+
+    if has_required_cols:
+        for price_col in ("open", "high", "low"):
+            df_out = df_out.withColumn(
+                price_col,
+                F.when(
+                    F.col(price_col).isNotNull() & F.col("adjustment_factor").isNotNull(),
+                    F.col(price_col) * F.col("adjustment_factor"),
+                ).otherwise(F.col(price_col)),
+            )
+
+    df_out = df_out.withColumn(
+        "close",
+        F.when(F.col("adjusted_close").isNotNull(), F.col("adjusted_close")).otherwise(F.col("close")),
+    )
+
+    if "volume" in df_out.columns:
+        df_out = df_out.withColumn(
+            "volume",
+            F.when(
+                F.col("volume").isNotNull()
+                & F.col("adjustment_factor").isNotNull()
+                & (F.col("adjustment_factor") != F.lit(0.0)),
+                F.col("volume") / F.col("adjustment_factor"),
+            ).otherwise(F.col("volume")),
+        )
+
+    return df_out
+
+
 """==== COMPREHENSIVE DATA QUALITY VALIDATION ===="""
 df = df.cache()
 
@@ -137,6 +193,8 @@ print(f"Starting DQ validation for {args['ds']} - total records: {record_count}"
 # Collect metrics (single-pass style where possible)
 null_symbol_count = 0
 negative_price_count = 0
+negative_adjusted_close_count = 0
+negative_close_count = 0
 duplicate_groups = 0
 invalid_numeric_type_issues = 0
 
@@ -148,12 +206,29 @@ if "price" in df.columns:
     agg_exprs.append(
         F.sum(F.when(F.col("price") < F.lit(0), F.lit(1)).otherwise(F.lit(0))).alias("__negative_price_count")
     )
+if "close" in df.columns:
+    agg_exprs.append(
+        F.sum(F.when(F.col("close") < F.lit(0), F.lit(1)).otherwise(F.lit(0))).alias("__negative_close_count")
+    )
+if "adjusted_close" in df.columns:
+    agg_exprs.append(
+        F.sum(F.when(F.col("adjusted_close") < F.lit(0), F.lit(1)).otherwise(F.lit(0))).alias(
+            "__negative_adjusted_close_count"
+        )
+    )
 if agg_exprs:
     agg_row = df.agg(*agg_exprs).collect()[0]
     if "__null_symbol_count" in agg_row.asDict():
         null_symbol_count = int(agg_row["__null_symbol_count"])  # type: ignore[index]
     if "__negative_price_count" in agg_row.asDict():
         negative_price_count = int(agg_row["__negative_price_count"])  # type: ignore[index]
+    if "__negative_close_count" in agg_row.asDict():
+        negative_close_count = int(agg_row["__negative_close_count"])  # type: ignore[index]
+    if "__negative_adjusted_close_count" in agg_row.asDict():
+        negative_adjusted_close_count = int(agg_row["__negative_adjusted_close_count"])  # type: ignore[index]
+
+negative_price_count += negative_close_count
+negative_price_count += negative_adjusted_close_count
 
 key_col = None
 if "id" in df.columns:
@@ -238,6 +313,9 @@ else:
             print("⚠️  DQ issues within acceptable threshold, proceeding with warnings")
     else:
         print("✅ All DQ validations passed successfully")
+
+# Apply adjusted close derived values before writing curated dataset
+df = _apply_price_adjustments(df)
 
 # Add ds column, write to curated partitioned path in Parquet
 spark.conf.set("spark.sql.parquet.compression.codec", args["codec"])  # zstd
