@@ -43,11 +43,12 @@ def _serialize_records(records: List[PriceRecord], file_format: str) -> Tuple[by
     if fmt == "csv":
         buf = io.StringIO()
         # header
-        buf.write("symbol,timestamp,open,high,low,close,volume\n")
+        buf.write("symbol,timestamp,open,high,low,close,adjusted_close,volume\n")
         for r in records:
             buf.write(
                 f"{r.symbol},{r.timestamp.isoformat()},{_none_to_empty(r.open)},{_none_to_empty(r.high)},"
-                f"{_none_to_empty(r.low)},{_none_to_empty(r.close)},{_none_to_empty(r.volume)}\n"
+                f"{_none_to_empty(r.low)},{_none_to_empty(r.close)},{_none_to_empty(r.adjusted_close)},"
+                f"{_none_to_empty(r.volume)}\n"
             )
         return buf.getvalue().encode("utf-8"), "csv"
 
