@@ -33,12 +33,42 @@ def test_indicators_etl_with_file_scheme() -> None:
     ds = "2025-09-07"
     with TemporaryDirectory() as tmp:
         # Prepare local curated prices partition
-        in_dir = os.path.join(tmp, "market", "prices", f"ds={ds}")
+        in_dir = os.path.join(tmp, "market", "prices", "adjusted", f"ds={ds}")
         os.makedirs(in_dir, exist_ok=True)
         df = pd.DataFrame(
             [
-                {"symbol": "AAA", "open": 100.0, "high": 101.0, "low": 99.0, "close": 100.5, "volume": 1000, "ds": ds},
-                {"symbol": "BBB", "open": 50.0, "high": 51.0, "low": 49.0, "close": 50.2, "volume": 500, "ds": ds},
+                {
+                    "symbol": "AAA",
+                    "open": 100.0,
+                    "high": 101.0,
+                    "low": 99.0,
+                    "close": 100.5,
+                    "adjusted_close": 100.5,
+                    "volume": 1000,
+                    "raw_open": 100.0,
+                    "raw_high": 101.0,
+                    "raw_low": 99.0,
+                    "raw_close": 100.5,
+                    "raw_volume": 1000,
+                    "adjustment_factor": 1.0,
+                    "ds": ds,
+                },
+                {
+                    "symbol": "BBB",
+                    "open": 50.0,
+                    "high": 51.0,
+                    "low": 49.0,
+                    "close": 50.2,
+                    "adjusted_close": 50.2,
+                    "volume": 500,
+                    "raw_open": 50.0,
+                    "raw_high": 51.0,
+                    "raw_low": 49.0,
+                    "raw_close": 50.2,
+                    "raw_volume": 500,
+                    "adjustment_factor": 1.0,
+                    "ds": ds,
+                },
             ]
         )
         in_file = os.path.join(in_dir, "data.parquet")
@@ -54,13 +84,13 @@ def test_indicators_etl_with_file_scheme() -> None:
             "--prices_curated_bucket",
             tmp,
             "--prices_prefix",
-            "market/prices/",
+            "market/prices/adjusted/",
             "--output_bucket",
             tmp,
             "--output_prefix",
-            "market/indicators/",
+            "market/prices/indicators/",
             "--schema_fingerprint_s3_uri",
-            f"s3://{artifacts_bucket}/market/indicators/_schema/latest.json",
+            f"s3://{artifacts_bucket}/market/prices/indicators/_schema/latest.json",
             "--codec",
             "zstd",
             "--target_file_mb",
@@ -84,7 +114,7 @@ def test_indicators_etl_with_file_scheme() -> None:
             _sys.argv = prev_argv
 
         # Verify output partition exists
-        out_dir = os.path.join(tmp, "market", "indicators", f"ds={ds}")
+        out_dir = os.path.join(tmp, "market", "prices", "indicators", f"ds={ds}")
         files = []
         for root, _dirs, filenames in os.walk(out_dir):
             for f in filenames:
@@ -92,5 +122,5 @@ def test_indicators_etl_with_file_scheme() -> None:
         assert any(f.endswith(".parquet") for f in files), "Indicators parquet should be written"
 
         # Verify fingerprint written to moto S3
-        obj = s3.get_object(Bucket=artifacts_bucket, Key="market/indicators/_schema/latest.json")
+        obj = s3.get_object(Bucket=artifacts_bucket, Key="market/prices/indicators/_schema/latest.json")
         assert obj["ResponseMetadata"]["HTTPStatusCode"] == 200

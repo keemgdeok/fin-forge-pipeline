@@ -146,7 +146,7 @@ class DailyPricesDataProcessingStack(Stack):
         table_name: str = str(self.config.get("ingestion_table_name", "prices"))
 
         raw_prefix = f"{domain}/{table_name}/"
-        curated_prefix = f"{domain}/{table_name}/"
+        curated_prefix = f"{domain}/{table_name}/adjusted"
         compacted_prefix = f"{domain}/{table_name}/{self.compaction_output_subdir}"
 
         # Schema fingerprint artifacts path aligned to spec
@@ -220,12 +220,10 @@ class DailyPricesDataProcessingStack(Stack):
         prices_table: str = str(self.config.get("ingestion_table_name", "prices"))
         indicators_table: str = str(self.config.get("indicators_table_name", "indicators"))
 
-        prices_prefix = f"{domain}/{prices_table}/"
-        indicators_prefix = f"{domain}/{indicators_table}/"
+        prices_prefix = f"{domain}/{prices_table}/adjusted"
+        indicators_prefix = f"{domain}/{prices_table}/{indicators_table}"
 
-        schema_fp_uri = (
-            f"s3://{self.shared_storage.artifacts_bucket.bucket_name}/{domain}/{indicators_table}/_schema/latest.json"
-        )
+        schema_fp_uri = f"s3://{self.shared_storage.artifacts_bucket.bucket_name}/{domain}/{prices_table}/{indicators_table}/_schema/latest.json"
 
         # Deterministic name for the indicators job
         self.indicators_job_name: str = f"{self.env_name}-market-indicators-etl"
@@ -347,9 +345,7 @@ class DailyPricesDataProcessingStack(Stack):
 
         # Build indicators Glue args from Preflight context and stack constants
         indicators_table: str = str(self.config.get("indicators_table_name", "indicators"))
-        indicators_fp = (
-            f"s3://{self.shared_storage.artifacts_bucket.bucket_name}/{domain}/{indicators_table}/_schema/latest.json"
-        )
+        indicators_fp = f"s3://{self.shared_storage.artifacts_bucket.bucket_name}/{domain}/{prices_table}/{indicators_table}/_schema/latest.json"
 
         build_indicators_args = sfn.Pass(
             self,
@@ -357,9 +353,9 @@ class DailyPricesDataProcessingStack(Stack):
             parameters={
                 "--environment": self.env_name,
                 "--prices_curated_bucket": self.shared_storage.curated_bucket.bucket_name,
-                "--prices_prefix": f"{domain}/{prices_table}/",
+                "--prices_prefix": f"{domain}/{prices_table}/adjusted",
                 "--output_bucket": self.shared_storage.curated_bucket.bucket_name,
-                "--output_prefix": f"{domain}/{indicators_table}/",
+                "--output_prefix": f"{domain}/{prices_table}/{indicators_table}",
                 "--schema_fingerprint_s3_uri": indicators_fp,
                 "--codec": "zstd",
                 "--target_file_mb": "256",
@@ -527,9 +523,9 @@ class DailyPricesDataProcessingStack(Stack):
             parameters={
                 "--environment": self.env_name,
                 "--prices_curated_bucket": self.shared_storage.curated_bucket.bucket_name,
-                "--prices_prefix": f"{domain}/{prices_table}/",
+                "--prices_prefix": f"{domain}/{prices_table}/adjusted",
                 "--output_bucket": self.shared_storage.curated_bucket.bucket_name,
-                "--output_prefix": f"{domain}/{indicators_table}/",
+                "--output_prefix": f"{domain}/{prices_table}/{indicators_table}",
                 "--schema_fingerprint_s3_uri": indicators_fp,
                 "--codec": "zstd",
                 "--target_file_mb": "256",

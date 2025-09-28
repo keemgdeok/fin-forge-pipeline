@@ -302,8 +302,8 @@ def main() -> None:
         if state != "SUCCEEDED":
             raise RuntimeError(f"Glue {name} job run did not succeed (state={state})")
 
-    curated_prefix = f"{domain}/{table_name}/ds={batch_ds}/"
-    indicators_prefix = f"{domain}/{indicators_table}/ds={batch_ds}/"
+    curated_prefix = f"{domain}/{table_name}/adjusted/ds={batch_ds}/"
+    indicators_prefix = f"{domain}/{table_name}/{indicators_table}/ds={batch_ds}/"
     curated_ready = _prefix_has_objects(s3_client, curated_bucket, curated_prefix)
     indicators_ready = _prefix_has_objects(s3_client, curated_bucket, indicators_prefix)
     if not curated_ready:

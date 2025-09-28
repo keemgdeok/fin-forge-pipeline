@@ -1,6 +1,6 @@
 # Step Functions Transform State Machine — I/O 계약 명세
 
-본 문서는 Transform 상태 머신의 입력/출력 계약, 실패 코드, 재시도 정책을 정의합니다. 모든 예시는 UTC 기준이며, CDK가 생성한 리소스와 일관되게 유지해야 합니다. 파이프라인은 `Preflight → Glue Compaction → Compaction Guard → Glue Transform → Glue Crawler` 순으로 실행됩니다.
+본 문서는 Transform 상태 머신의 입력/출력 계약, 실패 코드, 재시도 정책을 정의합니다. 모든 예시는 UTC 기준이며, CDK가 생성한 리소스와 일관되게 유지해야 합니다. 파이프라인은 `Preflight → Glue Compaction → Compaction Guard → Prices ETL (조정) → Indicators ETL → Glue Crawler` 순으로 실행됩니다.
 
 ## 입력(Inputs)
 
@@ -129,7 +129,8 @@
 ## 멱등성/상관키
 
 - `correlationId = domain:table:ds`(단일) 또는 `execution_id` 기반.
-- 현재 구현: Curated 경로 `/<domain>/<table>/ds=<ds>/`에 출력 존재 시 스킵(멱등).
+- 현재 구현: 조정된 가격 Curated 경로 `/<domain>/<table>/adjusted/ds=<ds>/`에 출력 존재 시 스킵(멱등).
+- 지표 산출물은 `/<domain>/<table>/indicators/ds=<ds>/`에 기록되며, 동일한 패턴으로 재처리 시 존재 여부를 확인할 수 있습니다.
 - 선택적 고도화: DynamoDB 기반 실행 락/상태 추적을 추가 가능.
 
 ## 보안

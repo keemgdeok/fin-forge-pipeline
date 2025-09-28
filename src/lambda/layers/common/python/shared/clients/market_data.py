@@ -16,6 +16,7 @@ class PriceRecord:
     symbol: str
     timestamp: datetime
     close: Optional[float]
+    adjusted_close: Optional[float] = None
     open: Optional[float] = None
     high: Optional[float] = None
     low: Optional[float] = None
@@ -25,6 +26,7 @@ class PriceRecord:
         return {
             "symbol": self.symbol,
             "timestamp": self.timestamp.isoformat(),
+            "adjusted_close": self.adjusted_close,
             "open": self.open,
             "high": self.high,
             "low": self.low,
@@ -96,6 +98,7 @@ class YahooFinanceClient:
                                                 if hasattr(ts, "to_pydatetime")
                                                 else datetime.fromisoformat(str(ts))
                                             ),
+                                            adjusted_close=_safe_float(row, "Adj Close"),
                                             open=_safe_float(row, "Open"),
                                             high=_safe_float(row, "High"),
                                             low=_safe_float(row, "Low"),
@@ -128,6 +131,7 @@ class YahooFinanceClient:
                             timestamp=(
                                 ts.to_pydatetime() if hasattr(ts, "to_pydatetime") else datetime.fromisoformat(str(ts))
                             ),
+                            adjusted_close=_safe_float(row, "Adj Close"),
                             open=_safe_float(row, "Open"),
                             high=_safe_float(row, "High"),
                             low=_safe_float(row, "Low"),

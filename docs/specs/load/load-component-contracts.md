@@ -9,7 +9,7 @@ Load 파이프라인의 Pull 아키텍처 구성요소 계약입니다. SQS, 온
 | Field | Type | Required | Format | Example |
 |-------|------|:--------:|--------|---------|
 | **bucket** | string | ✅ | S3 bucket name | `data-pipeline-curated-dev` |
-| **key** | string | ✅ | S3 object key | `market/prices/ds=2025-09-10/part-001.parquet` |
+| **key** | string | ✅ | S3 object key | `market/prices/adjusted/ds=2025-09-10/part-001.parquet` |
 | **domain** | string | ✅ | [a-z0-9-]{1,50} | `market` |
 | **table_name** | string | ✅ | [a-z0-9_]{1,50} | `prices` |
 | **partition** | string | ✅ | ds=YYYY-MM-DD | `ds=2025-09-10` |
