@@ -6,7 +6,7 @@
 - 변경 사항 커밋 전:
   - `pre-commit run --all-files` (처음 1회 `pre-commit install` 필요)
   - 인프라 변경 시: `npx cdk synth --context environment=dev`로 합성 확인
-  - 테스트가 있다면: `pytest -q`
+- 테스트가 있다면: `pytest -q`
 - 커밋 후: 일반 커밋은 훅이 자동 실행됩니다. Ruff Formatter 또는 Ruff가 파일을 수정하면 재-`git add` 후 커밋하세요.
 
 ## CI 규칙(자동 검사)
@@ -39,10 +39,13 @@
   - `ruff check .`
   - `mypy --ignore-missing-imports .`
   - `pre-commit run --all-files`
-- 인프라 합성
+- 인프라 합성/의존성 값
   - `export CDK_DEFAULT_ACCOUNT=<12자리계정ID>`
   - `export CDK_DEFAULT_REGION=ap-northeast-2` (또는 환경에 맞게)
   - `npx cdk synth --context environment=dev`
+- Step Functions / Glue 동시 실행 대응
+  - 환경 설정(`infrastructure/config/environments/`)에서 `glue_max_concurrent_runs`, `glue_retry_*`, `sfn_max_concurrency`를 조정해 병렬도와 재시도를 제어합니다.
+  - CDK는 Glue StartJobRun 태스크에 `Glue.ConcurrentRunsExceededException` 재시도 로직을 기본 제공(30초 대기, 2배 백오프, 최대 5회)하므로 상황에 맞게 값만 조정하면 됩니다.
 
 ## pre-commit 훅(권장)
 - 설정 파일: `.pre-commit-config.yaml`
