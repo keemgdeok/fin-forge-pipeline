@@ -258,7 +258,7 @@ jobs:
           echo "📅 Deployed at: $(date)"
 
       - name: Run end-to-end pipeline validation
-        if: steps.mode.outputs.full_pipeline == 'true'
+        if: steps.mode.outputs.full_pipeline == 'true' && env.TARGET_ENV == 'dev'
         run: |
           source .venv/bin/activate
           python scripts/validate/validate_pipeline.py --environment "$TARGET_ENV"

@@ -36,7 +36,6 @@ class QueueSnapshot:
     visible: int
     not_visible: int
     delayed: int
-    oldest_age: int
 
 
 def _now() -> datetime:
@@ -50,7 +49,6 @@ def _read_queue_metrics(sqs_client, queue_url: str) -> QueueSnapshot:
             "ApproximateNumberOfMessages",
             "ApproximateNumberOfMessagesNotVisible",
             "ApproximateNumberOfMessagesDelayed",
-            "ApproximateAgeOfOldestMessage",
         ],
     )
     attrs = resp.get("Attributes", {})
@@ -58,7 +56,6 @@ def _read_queue_metrics(sqs_client, queue_url: str) -> QueueSnapshot:
         visible=int(attrs.get("ApproximateNumberOfMessages", "0")),
         not_visible=int(attrs.get("ApproximateNumberOfMessagesNotVisible", "0")),
         delayed=int(attrs.get("ApproximateNumberOfMessagesDelayed", "0")),
-        oldest_age=int(attrs.get("ApproximateAgeOfOldestMessage", "0")),
     )
 
 
