@@ -143,18 +143,18 @@ jobs:
           export TOKEN
           echo "OIDC token payload:"
           python - <<'PY'
-            import base64
-            import json
-            import os
+          import base64
+          import json
+          import os
 
-            token = os.environ["TOKEN"]
-            payload = token.split(".")[1]
-            padding = "=" * (-len(payload) % 4)
-            decoded = base64.urlsafe_b64decode(payload + padding)
-            data = json.loads(decoded)
-            keys_to_show = ("sub", "aud", "repository", "ref", "job_workflow_ref")
-            print(json.dumps({k: data.get(k) for k in keys_to_show}, indent=2))
-            PY
+          token = os.environ["TOKEN"]
+          payload = token.split(".")[1]
+          padding = "=" * (-len(payload) % 4)
+          decoded = base64.urlsafe_b64decode(payload + padding)
+          data = json.loads(decoded)
+          keys_to_show = ("sub", "aud", "repository", "ref", "job_workflow_ref")
+          print(json.dumps({k: data.get(k) for k in keys_to_show}, indent=2))
+          PY
 
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
