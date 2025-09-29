@@ -11,6 +11,8 @@ import boto3
 import pytest
 from moto import mock_aws
 
+from shared.paths import build_curated_layer_path
+
 
 @pytest.fixture(autouse=True)
 def aws_env(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -42,9 +44,17 @@ def test_date_range_expands_items_with_idempotency_and_glue_args(monkeypatch: py
     _set_pipeline_env(monkeypatch, raw=raw_b, curated=curated_b, artifacts=artifacts_b)
 
     # Pre-create a curated object for 2025-09-02 to trigger idempotent skip for that date
+    existing_prefix = build_curated_layer_path(
+        domain="market",
+        table="prices",
+        interval="1d",
+        data_source="yahoo_finance",
+        ds="2025-09-02",
+        layer="adjusted",
+    )
     s3.put_object(
         Bucket=curated_b,
-        Key="market/prices/ds=2025-09-02/_SUCCESS",
+        Key=f"{existing_prefix}/_SUCCESS",
         Body=b"",
         ContentType="text/plain",
     )
@@ -74,6 +84,8 @@ def test_date_range_expands_items_with_idempotency_and_glue_args(monkeypatch: py
         assert gargs["--ds"] == d
         assert gargs["--raw_bucket"] == raw_b
         assert gargs["--curated_bucket"] == curated_b
+        assert gargs["--curated_layer"] == "adjusted"
+        assert gargs["--compacted_layer"] == "compacted"
         assert gargs["--schema_fingerprint_s3_uri"].startswith(
             f"s3://{artifacts_b}/market/prices/_schema/latest.json".rsplit("/latest.json", 1)[0]
         )

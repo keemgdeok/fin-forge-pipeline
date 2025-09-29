@@ -18,13 +18,15 @@ def _base_args(file_type: str = "json") -> Dict[str, str]:
         "raw_bucket": "raw-bucket",
         "raw_prefix": "market/prices/interval=1d/data_source=yahoo/",
         "compacted_bucket": "curated-bucket",
-        "compacted_prefix": "market/prices/compacted",
+        "domain": "market",
+        "table_name": "prices",
         "ds": "2024-01-15",
         "file_type": file_type,
         "codec": "zstd",
         "target_file_mb": "128",
         "interval": "1d",
         "data_source": "yahoo",
+        "layer": "compacted",
     }
 
 
@@ -134,7 +136,9 @@ def test_compaction_writes_parquet(monkeypatch):
     mock_conf.set.assert_any_call("spark.sql.parquet.compression.codec", "zstd")
     mock_conf.set.assert_any_call("spark.sql.files.maxPartitionBytes", str(128 * 1024 * 1024))
 
-    mock_writer.save.assert_called_once_with("s3://curated-bucket/market/prices/compacted/ds=2024-01-15")
+    mock_writer.save.assert_called_once_with(
+        "s3://curated-bucket/market/prices/interval=1d/data_source=yahoo/year=2024/month=01/day=15/layer=compacted"
+    )
     mock_job.commit.assert_called_once()
 
 

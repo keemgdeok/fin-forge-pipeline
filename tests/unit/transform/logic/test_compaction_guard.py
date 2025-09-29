@@ -26,14 +26,20 @@ def test_guard_detects_compacted_output(monkeypatch):
     client.list_objects_v2.return_value = {"KeyCount": 3}
 
     with patch.object(guard.boto3, "client", return_value=client):
-        result = guard.lambda_handler(
-            {"bucket": "curated-bucket", "prefix": "market/prices/compacted", "ds": "2024-01-15"},
-            None,
-        )
+        event = {
+            "bucket": "curated-bucket",
+            "domain": "market",
+            "table_name": "prices",
+            "interval": "1d",
+            "data_source": "yahoo",
+            "layer": "compacted",
+            "ds": "2024-01-15",
+        }
+        result = guard.lambda_handler(event, None)
 
     assert result["shouldProcess"] is True
     assert result["objectCount"] == 3
-    assert result["partitionPrefix"].endswith("ds=2024-01-15/")
+    assert result["partitionPrefix"].endswith("layer=compacted")
 
 
 def test_guard_handles_empty_output(monkeypatch):
@@ -42,10 +48,16 @@ def test_guard_handles_empty_output(monkeypatch):
     client.list_objects_v2.return_value = {"KeyCount": 0}
 
     with patch.object(guard.boto3, "client", return_value=client):
-        result = guard.lambda_handler(
-            {"bucket": "curated-bucket", "prefix": "market/prices/compacted", "ds": "2024-01-15"},
-            None,
-        )
+        event = {
+            "bucket": "curated-bucket",
+            "domain": "market",
+            "table_name": "prices",
+            "interval": "1d",
+            "data_source": "yahoo",
+            "layer": "compacted",
+            "ds": "2024-01-15",
+        }
+        result = guard.lambda_handler(event, None)
 
     assert result["shouldProcess"] is False
     assert result["objectCount"] == 0
@@ -55,13 +67,24 @@ def test_guard_requires_bucket_and_ds(monkeypatch):
     guard = _load_guard_module()
     client = MagicMock()
     client.list_objects_v2.return_value = {"KeyCount": 1}
-    with patch.object(guard.boto3, "client", return_value=client):
-        with pytest.raises(ValueError):
-            guard.lambda_handler({"prefix": "market/prices/compacted", "ds": "2024-01-15"}, None)
+    base_event = {
+        "domain": "market",
+        "table_name": "prices",
+        "interval": "1d",
+        "data_source": "yahoo",
+        "layer": "compacted",
+        "ds": "2024-01-15",
+    }
 
     with patch.object(guard.boto3, "client", return_value=client):
         with pytest.raises(ValueError):
-            guard.lambda_handler({"bucket": "curated", "prefix": "market/prices/compacted"}, None)
+            guard.lambda_handler(base_event, None)
+
+    with patch.object(guard.boto3, "client", return_value=client):
+        with pytest.raises(ValueError):
+            event = {**base_event, "bucket": "curated"}
+            event.pop("ds")
+            guard.lambda_handler(event, None)
 
 
 def test_guard_surfaces_s3_errors():
@@ -72,7 +95,13 @@ def test_guard_surfaces_s3_errors():
 
     with patch.object(guard.boto3, "client", return_value=client):
         with pytest.raises(RuntimeError, match="Failed to inspect compaction output"):
-            guard.lambda_handler(
-                {"bucket": "curated-bucket", "prefix": "market/prices/compacted", "ds": "2024-01-15"},
-                None,
-            )
+            event = {
+                "bucket": "curated-bucket",
+                "domain": "market",
+                "table_name": "prices",
+                "interval": "1d",
+                "data_source": "yahoo",
+                "layer": "compacted",
+                "ds": "2024-01-15",
+            }
+            guard.lambda_handler(event, None)
