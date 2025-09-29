@@ -733,13 +733,10 @@ class DailyPricesDataProcessingStack(Stack):
         sanitized_suffixes = [str(s).strip() for s in suffixes if str(s).strip()]
 
         rule_id = f"RawObjectCreated-{domain}-{table_name}".replace("/", "-")
-        # EventBridge now filters by both prefix and suffix, ensuring only manifest
-        # files (or other explicitly allowed suffixes) invoke the state machine.
-        key_patterns: list[dict[str, str]]
-        if sanitized_suffixes:
-            key_patterns = [{"prefix": prefix, "suffix": suffix} for suffix in sanitized_suffixes]
-        else:
-            key_patterns = [{"prefix": prefix}]
+        # EventBridge only supports a single matching operator (prefix/suffix/wildcard)
+        # per entry. Prefix filtering keeps noise low, while suffix enforcement is
+        # handled inside the preflight Lambda using the allowed_suffixes payload.
+        key_patterns: list[dict[str, str]] = [{"prefix": prefix}]
 
         rule = events.Rule(
             self,
