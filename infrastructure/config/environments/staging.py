@@ -8,6 +8,7 @@ staging_config = {
     "lambda_memory": 512,
     "lambda_timeout": 600,
     "glue_max_capacity": 2,
+    "glue_max_concurrent_runs": 5,
     "step_function_timeout_hours": 4,
     "s3_retention_days": 90,
     "log_retention_days": 30,
@@ -49,11 +50,15 @@ staging_config = {
     "compaction_target_file_mb": 256,
     "compaction_codec": "zstd",
     "compaction_output_subdir": "compacted",
+    "glue_retry_interval_seconds": 30,
+    "glue_retry_backoff_rate": 2.0,
+    "glue_retry_max_attempts": 5,
     "monitored_glue_jobs": [
         "daily-prices-compaction",
         "daily-prices-data-etl",
         "market-indicators-etl",
     ],
+    "sfn_max_concurrency": 1,
     "monitored_state_machines": [
         "daily-prices-data-processing",
     ],
