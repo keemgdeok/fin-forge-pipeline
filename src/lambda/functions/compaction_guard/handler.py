@@ -2,51 +2,54 @@
 
 from __future__ import annotations
 
-import os
-from typing import Any, Dict
+from typing import Any, Dict, Optional
 
 import boto3
 from botocore.exceptions import ClientError
 
-
-def _normalize_prefix(prefix: str) -> str:
-    """Strip leading/trailing slashes from S3 key prefixes."""
-
-    return prefix.strip("/")
-
-
-def _build_partition_prefix(base_prefix: str, ds: str) -> str:
-    """Compose the compacted partition key prefix for the provided date."""
-
-    normalized = _normalize_prefix(base_prefix)
-    if normalized:
-        return f"{normalized}/ds={ds}/"
-    return f"ds={ds}/"
+from shared.paths import build_curated_layer_path
 
 
 def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
     """Return whether compacted parquet output exists for the requested partition."""
 
-    raw_bucket = event.get("bucket")
-    bucket = str(raw_bucket).strip() if raw_bucket is not None else ""
+    bucket_raw = event.get("bucket")
+    bucket = str(bucket_raw or "").strip()
     if not bucket:
         raise ValueError("Compaction guard requires an S3 bucket input")
 
-    raw_prefix = event.get("prefix")
-    if raw_prefix is None or str(raw_prefix).strip() == "":
-        raw_prefix = os.environ.get("DEFAULT_COMPACTED_PREFIX", "")
-    prefix = str(raw_prefix).strip()
+    domain = str(event.get("domain") or "").strip()
+    table_name = str(event.get("table_name") or "").strip()
+    interval = str(event.get("interval") or "").strip()
+    if not domain or not table_name or not interval:
+        raise ValueError("Compaction guard requires domain, table_name, and interval")
 
-    raw_ds = event.get("ds")
-    ds = str(raw_ds).strip() if raw_ds is not None else ""
+    data_source_raw: Optional[str] = event.get("data_source")
+    data_source = str(data_source_raw or "").strip() or None
+
+    layer = str(event.get("layer") or "").strip()
+    if not layer:
+        raise ValueError("Compaction guard requires a layer parameter")
+
+    ds_raw = event.get("ds")
+    ds = str(ds_raw or "").strip()
     if not ds:
         raise ValueError("Compaction guard requires a ds parameter")
 
-    partition_prefix = _build_partition_prefix(prefix, ds)
+    partition_prefix = build_curated_layer_path(
+        domain=domain,
+        table=table_name,
+        interval=interval,
+        data_source=data_source,
+        ds=ds,
+        layer=layer,
+    )
+    search_prefix = f"{partition_prefix.rstrip('/')}/"
+
     client = boto3.client("s3")
 
     try:
-        response = client.list_objects_v2(Bucket=bucket, Prefix=partition_prefix, MaxKeys=1)
+        response = client.list_objects_v2(Bucket=bucket, Prefix=search_prefix, MaxKeys=1)
     except ClientError as error:  # pragma: no cover - surfaced to Step Functions fail chain
         raise RuntimeError("Failed to inspect compaction output") from error
 

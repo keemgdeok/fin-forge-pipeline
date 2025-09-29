@@ -45,6 +45,8 @@ class DailyPricesDataProcessingStack(Stack):
         self.glue_retry_interval_seconds: int = int(self.config.get("glue_retry_interval_seconds", 30))
         self.glue_retry_backoff_rate: float = float(self.config.get("glue_retry_backoff_rate", 2.0))
         self.glue_retry_max_attempts: int = int(self.config.get("glue_retry_max_attempts", 5))
+        self.curated_layer: str = str(self.config.get("curated_layer_name", "adjusted"))
+        self.indicators_layer: str = str(self.config.get("indicators_layer", "technical_indicator"))
 
         # Deterministic Glue job name used across resources (avoids Optional[str] typing)
         self.etl_job_name: str = f"{self.env_name}-daily-prices-data-etl"
@@ -81,11 +83,17 @@ class DailyPricesDataProcessingStack(Stack):
         )
         compaction_script_asset.grant_read(glue_exec_role_ref)
 
+        shared_py_asset = s3_assets.Asset(
+            self,
+            "CompactionSharedPythonAsset",
+            path="src/lambda/layers/common/python",
+        )
+        shared_py_asset.grant_read(glue_exec_role_ref)
+
         domain: str = str(self.config.get("ingestion_domain", "market"))
         table_name: str = str(self.config.get("ingestion_table_name", "prices"))
 
         raw_prefix = f"{domain}/{table_name}/"
-        compacted_prefix = f"{domain}/{table_name}/{self.compaction_output_subdir}"
 
         self.compaction_job_name = f"{self.env_name}-daily-prices-compaction"
 
@@ -106,9 +114,9 @@ class DailyPricesDataProcessingStack(Stack):
                 "--raw_bucket": self.shared_storage.raw_bucket.bucket_name,
                 "--raw_prefix": raw_prefix,
                 "--compacted_bucket": self.shared_storage.curated_bucket.bucket_name,
-                "--compacted_prefix": compacted_prefix,
                 "--codec": self.compaction_codec,
                 "--target_file_mb": str(int(self.config.get("compaction_target_file_mb", 256))),
+                "--extra-py-files": shared_py_asset.s3_object_url,
             },
             glue_version="5.0",
             max_retries=1,
@@ -143,8 +151,6 @@ class DailyPricesDataProcessingStack(Stack):
         table_name: str = str(self.config.get("ingestion_table_name", "prices"))
 
         raw_prefix = f"{domain}/{table_name}/"
-        curated_prefix = f"{domain}/{table_name}/adjusted"
-        compacted_prefix = f"{domain}/{table_name}/{self.compaction_output_subdir}"
 
         # Schema fingerprint artifacts path aligned to spec
         schema_fp_uri = (
@@ -173,9 +179,13 @@ class DailyPricesDataProcessingStack(Stack):
                 "--raw_bucket": self.shared_storage.raw_bucket.bucket_name,
                 "--raw_prefix": raw_prefix,
                 "--compacted_bucket": self.shared_storage.curated_bucket.bucket_name,
-                "--compacted_prefix": compacted_prefix,
                 "--curated_bucket": self.shared_storage.curated_bucket.bucket_name,
-                "--curated_prefix": curated_prefix,
+                "--domain": domain,
+                "--table_name": table_name,
+                "--curated_layer": self.curated_layer,
+                "--compacted_layer": self.compaction_output_subdir,
+                "--interval": str(self.config.get("ingestion_interval", "1d")),
+                "--data_source": str(self.config.get("ingestion_data_source", "yahoo_finance")),
                 "--environment": self.env_name,
                 "--schema_fingerprint_s3_uri": schema_fp_uri,
             },
@@ -218,9 +228,6 @@ class DailyPricesDataProcessingStack(Stack):
         prices_table: str = str(self.config.get("ingestion_table_name", "prices"))
         indicators_table: str = str(self.config.get("indicators_table_name", "indicators"))
 
-        prices_prefix = f"{domain}/{prices_table}/adjusted"
-        indicators_prefix = f"{domain}/{prices_table}/{indicators_table}"
-
         schema_fp_uri = f"s3://{self.shared_storage.artifacts_bucket.bucket_name}/{domain}/{prices_table}/{indicators_table}/_schema/latest.json"
 
         # Deterministic name for the indicators job
@@ -246,10 +253,14 @@ class DailyPricesDataProcessingStack(Stack):
                 "--extra-py-files": f"{shared_py_asset.s3_object_url},{indicators_lib_asset.s3_object_url}",
                 # Inputs/outputs
                 "--environment": self.env_name,
+                "--domain": domain,
+                "--table_name": prices_table,
+                "--interval": str(self.config.get("ingestion_interval", "1d")),
+                "--data_source": str(self.config.get("ingestion_data_source", "yahoo_finance")),
                 "--prices_curated_bucket": self.shared_storage.curated_bucket.bucket_name,
-                "--prices_prefix": prices_prefix,
+                "--prices_layer": self.curated_layer,
                 "--output_bucket": self.shared_storage.curated_bucket.bucket_name,
-                "--output_prefix": indicators_prefix,
+                "--output_layer": self.indicators_layer,
                 "--schema_fingerprint_s3_uri": schema_fp_uri,
                 # Window size
                 "--lookback_days": str(int(self.config.get("indicators_lookback_days", 252))),
@@ -310,11 +321,13 @@ class DailyPricesDataProcessingStack(Stack):
                 "--raw_bucket": sfn.JsonPath.string_at("$.glue_args['--raw_bucket']"),
                 "--raw_prefix": sfn.JsonPath.string_at("$.glue_args['--raw_prefix']"),
                 "--compacted_bucket": sfn.JsonPath.string_at("$.glue_args['--compacted_bucket']"),
-                "--compacted_prefix": sfn.JsonPath.string_at("$.glue_args['--compacted_prefix']"),
                 "--file_type": sfn.JsonPath.string_at("$.glue_args['--file_type']"),
                 "--interval": sfn.JsonPath.string_at("$.glue_args['--interval']"),
                 "--data_source": sfn.JsonPath.string_at("$.glue_args['--data_source']"),
                 "--ds": sfn.JsonPath.string_at("$.ds"),
+                "--domain": domain,
+                "--table_name": prices_table,
+                "--layer": self.compaction_output_subdir,
                 "--codec": self.compaction_codec,
                 "--target_file_mb": str(int(self.config.get("compaction_target_file_mb", 256))),
             },
@@ -357,10 +370,14 @@ class DailyPricesDataProcessingStack(Stack):
             "BuildIndicatorsArgs",
             parameters={
                 "--environment": self.env_name,
+                "--domain": domain,
+                "--table_name": prices_table,
+                "--interval": sfn.JsonPath.string_at("$.glue_args['--interval']"),
+                "--data_source": sfn.JsonPath.string_at("$.glue_args['--data_source']"),
                 "--prices_curated_bucket": self.shared_storage.curated_bucket.bucket_name,
-                "--prices_prefix": f"{domain}/{prices_table}/adjusted",
+                "--prices_layer": self.curated_layer,
                 "--output_bucket": self.shared_storage.curated_bucket.bucket_name,
-                "--output_prefix": f"{domain}/{prices_table}/{indicators_table}",
+                "--output_layer": self.indicators_layer,
                 "--schema_fingerprint_s3_uri": indicators_fp,
                 "--codec": "zstd",
                 "--target_file_mb": "256",
@@ -438,7 +455,11 @@ class DailyPricesDataProcessingStack(Stack):
             payload=sfn.TaskInput.from_object(
                 {
                     "bucket.$": "$.glue_args['--compacted_bucket']",
-                    "prefix.$": "$.glue_args['--compacted_prefix']",
+                    "domain": domain,
+                    "table_name": prices_table,
+                    "interval.$": "$.glue_args['--interval']",
+                    "data_source.$": "$.glue_args['--data_source']",
+                    "layer": self.compaction_output_subdir,
                     "ds.$": "$.ds",
                 }
             ),

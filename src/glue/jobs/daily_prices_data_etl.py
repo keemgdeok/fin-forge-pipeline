@@ -10,6 +10,8 @@ from pyspark.sql import functions as F
 from pyspark.sql import DataFrame
 from pyspark.sql.utils import AnalysisException
 
+from shared.paths import build_curated_layer_path
+
 # Optional import of shared fingerprint utilities. The Glue job environment may
 # not package the Common Layer; if unavailable, fall back to local implementations.
 try:  # pragma: no cover - optional path
@@ -45,9 +47,7 @@ args = getResolvedOptions(
         "raw_bucket",
         "raw_prefix",
         "compacted_bucket",
-        "compacted_prefix",
         "curated_bucket",
-        "curated_prefix",
         "environment",
         "schema_fingerprint_s3_uri",
         "codec",
@@ -58,6 +58,10 @@ args = getResolvedOptions(
         "max_critical_error_rate",
         "interval",
         "data_source",
+        "domain",
+        "table_name",
+        "curated_layer",
+        "compacted_layer",
     ],
 )
 
@@ -80,6 +84,14 @@ data_source = args.get("data_source")
 if not interval or not data_source:
     raise ValueError("Glue job requires --interval and --data_source arguments")
 
+domain = str(args.get("domain") or "").strip()
+table_name = str(args.get("table_name") or "").strip()
+if not domain or not table_name:
+    raise ValueError("Glue job requires --domain and --table_name arguments")
+
+curated_layer = str(args.get("curated_layer") or "adjusted").strip()
+compacted_layer = str(args.get("compacted_layer") or "compacted").strip()
+
 ds_parts = args["ds"].split("-")
 if len(ds_parts) != 3:
     raise ValueError(f"Invalid ds format: {args['ds']}")
@@ -92,10 +104,17 @@ if "year=" not in raw_prefix or "month=" not in raw_prefix or "day=" not in raw_
     raw_path = f"{base.rstrip('/')}/year={year}/month={month}/day={day}/"
 
 compacted_bucket = (args.get("compacted_bucket") or "").strip()
-compacted_prefix = (args.get("compacted_prefix") or "").strip()
 compacted_path = None
-if compacted_bucket and compacted_prefix:
-    compacted_path = f"s3://{compacted_bucket}/{compacted_prefix.rstrip('/')}/ds={args['ds']}"
+if compacted_bucket:
+    compacted_key = build_curated_layer_path(
+        domain=domain,
+        table=table_name,
+        interval=interval,
+        data_source=data_source,
+        ds=args["ds"],
+        layer=compacted_layer,
+    )
+    compacted_path = f"s3://{compacted_bucket}/{compacted_key}"
 
 df = None
 if compacted_path:
@@ -117,8 +136,15 @@ if df is None:
 
 def _write_quarantine_and_fail(df_in: DataFrame, reason: str) -> None:
     """Write dataset to quarantine path and raise DQ failure."""
-    curated_path_base = f"s3://{args['curated_bucket']}/{args['curated_prefix']}"
-    quarantine_path = f"{curated_path_base}quarantine/ds={args['ds']}"
+    quarantine_key = build_curated_layer_path(
+        domain=domain,
+        table=table_name,
+        interval=interval,
+        data_source=data_source,
+        ds=args["ds"],
+        layer="quarantine",
+    )
+    quarantine_path = f"s3://{args['curated_bucket']}/{quarantine_key}"
     # Write as Parquet with same compression settings
     spark.conf.set("spark.sql.parquet.compression.codec", args["codec"])  # zstd
     df_in.coalesce(1).write.mode("overwrite").format("parquet").save(quarantine_path)
@@ -320,8 +346,18 @@ df = _apply_price_adjustments(df)
 # Add ds column, write to curated partitioned path in Parquet
 spark.conf.set("spark.sql.parquet.compression.codec", args["codec"])  # zstd
 df_out = df.withColumn("ds", F.lit(args["ds"]))
-curated_path = f"s3://{args['curated_bucket']}/{args['curated_prefix']}"
-df_out.coalesce(1).write.mode("append").partitionBy("ds").format("parquet").save(curated_path)
+df_out = df_out.withColumn("layer", F.lit(curated_layer))
+
+curated_key = build_curated_layer_path(
+    domain=domain,
+    table=table_name,
+    interval=interval,
+    data_source=data_source,
+    ds=args["ds"],
+    layer=curated_layer,
+)
+curated_path = f"s3://{args['curated_bucket']}/{curated_key}"
+df_out.coalesce(1).write.mode("overwrite").format("parquet").save(curated_path)
 
 # Produce schema fingerprint from DataFrame schema
 cols = [{"name": f.name, "type": f.dataType.simpleString()} for f in df_out.schema.fields if f.name != "ds"]

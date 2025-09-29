@@ -32,12 +32,14 @@ from infrastructure.config.environments import get_environment_config
 
 try:
     from shared.ingestion.manifests import ManifestEntry, collect_manifest_entries
+    from shared.paths import build_curated_layer_path
 except ModuleNotFoundError:  # pragma: no cover - local CLI fallback
     repo_root = Path(__file__).resolve().parents[2]
     shared_layer_path = repo_root / "src" / "lambda" / "layers" / "common" / "python"
     if str(shared_layer_path) not in sys.path:
         sys.path.append(str(shared_layer_path))
-    from shared.ingestion.manifests import ManifestEntry, collect_manifest_entries
+    from shared.ingestion.manifests import ManifestEntry, collect_manifest_entries  # type: ignore  # noqa: E402
+    from shared.paths import build_curated_layer_path  # type: ignore  # noqa: E402
 
 
 @dataclass
@@ -164,7 +166,6 @@ def main() -> None:
     config = get_environment_config(args.environment)
     domain = str(config.get("ingestion_domain", "market"))
     table_name = str(config.get("ingestion_table_name", "prices"))
-    indicators_table = str(config.get("indicators_table_name", "indicators"))
     period = str(config.get("ingestion_period", "1mo"))
     interval_value = str(config.get("ingestion_interval", "1d"))
     file_format = str(config.get("ingestion_file_format", "json"))
@@ -317,14 +318,29 @@ def main() -> None:
         if state != "SUCCEEDED":
             raise RuntimeError(f"Glue {name} job run did not succeed (state={state})")
 
-    curated_prefix = f"{domain}/{table_name}/adjusted/ds={batch_ds}/"
-    indicators_prefix = f"{domain}/{table_name}/{indicators_table}/ds={batch_ds}/"
-    curated_ready = _prefix_has_objects(s3_client, curated_bucket, curated_prefix)
-    indicators_ready = _prefix_has_objects(s3_client, curated_bucket, indicators_prefix)
+    curated_key = build_curated_layer_path(
+        domain=domain,
+        table=table_name,
+        interval=interval_value,
+        data_source=data_source or None,
+        ds=batch_ds,
+        layer="adjusted",
+    )
+    indicators_layer = str(config.get("indicators_layer", "technical_indicator"))
+    indicators_key = build_curated_layer_path(
+        domain=domain,
+        table=table_name,
+        interval=interval_value,
+        data_source=data_source or None,
+        ds=batch_ds,
+        layer=indicators_layer,
+    )
+    curated_ready = _prefix_has_objects(s3_client, curated_bucket, curated_key)
+    indicators_ready = _prefix_has_objects(s3_client, curated_bucket, indicators_key)
     if not curated_ready:
-        raise RuntimeError(f"Curated data prefix missing objects: s3://{curated_bucket}/{curated_prefix}")
+        raise RuntimeError(f"Curated data prefix missing objects: s3://{curated_bucket}/{curated_key}")
     if not indicators_ready:
-        raise RuntimeError(f"Indicators prefix missing objects: s3://{curated_bucket}/{indicators_prefix}")
+        raise RuntimeError(f"Indicators prefix missing objects: s3://{curated_bucket}/{indicators_key}")
 
     print("Waiting for load queue to accumulate new messages...")
     post_queue = _wait_for_queue_growth(
@@ -366,8 +382,8 @@ def main() -> None:
             "indicators": {"run_id": indicators_run.get("Id"), "state": indicators_run.get("JobRunState")},
         },
         "s3_checks": {
-            "curated_prefix": f"s3://{curated_bucket}/{curated_prefix}",
-            "indicators_prefix": f"s3://{curated_bucket}/{indicators_prefix}",
+            "curated_prefix": f"s3://{curated_bucket}/{curated_key}",
+            "indicators_prefix": f"s3://{curated_bucket}/{indicators_key}",
             "curated_has_objects": curated_ready,
             "indicators_has_objects": indicators_ready,
         },
@@ -395,8 +411,8 @@ def main() -> None:
         f"  compaction={compaction_run.get('Id')}",
         f"  etl={etl_run.get('Id')}",
         f"  indicators={indicators_run.get('Id')}",
-        f"Curated data prefix: s3://{curated_bucket}/{curated_prefix}",
-        f"Indicators prefix: s3://{curated_bucket}/{indicators_prefix}",
+        f"Curated data prefix: s3://{curated_bucket}/{curated_key}",
+        f"Indicators prefix: s3://{curated_bucket}/{indicators_key}",
         f"Load queue visible messages: {pre_queue.visible} -> {post_queue.visible}",
         f"Load DLQ visible messages: {pre_dlq.visible} -> {post_dlq.visible}",
     ]

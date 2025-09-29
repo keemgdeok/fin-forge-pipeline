@@ -41,6 +41,8 @@ from typing import Any, Dict, Optional, Tuple
 import boto3
 from botocore.exceptions import ClientError
 
+from shared.paths import build_curated_layer_path
+
 # Optional import of typed event models from Common Layer. Fallback to dict-based
 # parsing if the layer is not packaged for local tests.
 try:  # pragma: no cover
@@ -78,7 +80,9 @@ def _extract_interval_and_source(key: str) -> Tuple[Optional[str], Optional[str]
 
 def _curated_partition_exists(s3_client, bucket: str, prefix: str) -> bool:
     try:
-        resp = s3_client.list_objects_v2(Bucket=bucket, Prefix=prefix, MaxKeys=1)
+        normalized = prefix.strip("/")
+        search_prefix = f"{normalized}/" if normalized else ""
+        resp = s3_client.list_objects_v2(Bucket=bucket, Prefix=search_prefix, MaxKeys=1)
         return int(resp.get("KeyCount", 0)) > 0
     except ClientError:
         return False
@@ -193,27 +197,36 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
         items: list[Dict[str, Any]] = []
         for i in range(total_days):
             ds_i = (d0 + timedelta(days=i)).strftime("%Y-%m-%d")
-            curated_prefix = f"{domain}/{table_name}/adjusted/ds={ds_i}/"
+            curated_bucket_env = os.environ.get("CURATED_BUCKET", "")
+            curated_day_prefix = build_curated_layer_path(
+                domain=domain,
+                table=table_name,
+                interval=interval_value,
+                data_source=data_source_value or None,
+                ds=ds_i,
+                layer="adjusted",
+            )
             exists = _curated_partition_exists(
                 s3,
-                os.environ.get("CURATED_BUCKET", ""),
-                curated_prefix,
+                curated_bucket_env,
+                curated_day_prefix,
             )
 
             artifacts_bucket_env = os.environ.get("ARTIFACTS_BUCKET", "")
             schema_fp_uri_i = f"s3://{artifacts_bucket_env}/{domain}/{table_name}/_schema/latest.json"
 
             raw_prefix = f"{domain}/{table_name}/interval={interval_value}/data_source={data_source_value}/"
-            compacted_prefix = f"{domain}/{table_name}/{compaction_subdir}"
 
             glue_args_i: Dict[str, str] = {
                 "--environment": os.environ.get("ENVIRONMENT", "dev"),
+                "--domain": domain,
+                "--table_name": table_name,
                 "--raw_bucket": os.environ.get("RAW_BUCKET", ""),
                 "--raw_prefix": raw_prefix,
-                "--compacted_bucket": os.environ.get("CURATED_BUCKET", ""),
-                "--compacted_prefix": compacted_prefix,
-                "--curated_bucket": os.environ.get("CURATED_BUCKET", ""),
-                "--curated_prefix": f"{domain}/{table_name}/adjusted",
+                "--compacted_bucket": curated_bucket_env,
+                "--curated_bucket": curated_bucket_env,
+                "--curated_layer": "adjusted",
+                "--compacted_layer": compaction_subdir,
                 "--schema_fingerprint_s3_uri": schema_fp_uri_i,
                 "--codec": "zstd",
                 "--target_file_mb": "256",
@@ -305,8 +318,15 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
     s3 = boto3.client("s3")
 
     # Idempotency: skip if curated ds partition already exists
-    curated_prefix = f"{domain}/{table_name}/adjusted/ds={ds}/"
-    if _curated_partition_exists(s3, curated_bucket, curated_prefix):
+    curated_day_prefix = build_curated_layer_path(
+        domain=domain,
+        table=table_name,
+        interval=interval_value,
+        data_source=data_source_value or None,
+        ds=ds,
+        layer="adjusted",
+    )
+    if _curated_partition_exists(s3, curated_bucket, curated_day_prefix):
         result = {
             "proceed": False,
             "reason": "Already processed",
@@ -321,16 +341,17 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
     # Build Glue args (merge with job defaults on StartJobRun)
     schema_fp_uri = f"s3://{artifacts_bucket}/{domain}/{table_name}/_schema/latest.json"
     raw_prefix = f"{domain}/{table_name}/interval={interval_value}/data_source={data_source_value}/"
-    compacted_prefix = f"{domain}/{table_name}/{compaction_subdir}"
 
     glue_args: Dict[str, str] = {
         "--environment": environment,
+        "--domain": domain,
+        "--table_name": table_name,
         "--raw_bucket": raw_bucket,
         "--raw_prefix": raw_prefix,
         "--compacted_bucket": curated_bucket,
-        "--compacted_prefix": compacted_prefix,
         "--curated_bucket": curated_bucket,
-        "--curated_prefix": f"{domain}/{table_name}/adjusted",
+        "--curated_layer": "adjusted",
+        "--compacted_layer": compaction_subdir,
         # Artifacts path aligned to spec: <domain>/<table>/_schema/latest.json
         "--schema_fingerprint_s3_uri": schema_fp_uri,
         "--codec": "zstd",
