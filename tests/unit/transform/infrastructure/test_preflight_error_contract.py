@@ -80,7 +80,7 @@ def test_missing_bucket_env_returns_pre_validation_failed(monkeypatch) -> None:
 
     event = {
         "source_bucket": "raw-bucket-dev",
-        "source_key": ("market/prices/interval=1d/data_source=yahoo_finance/" "year=2025/month=09/day=07/AAPL.json"),
+        "source_key": ("market/prices/interval=1d/data_source=yahoo_finance/year=2025/month=09/day=07/AAPL.json"),
         "domain": "market",
         "table_name": "prices",
         "file_type": "json",
@@ -103,7 +103,7 @@ def test_idempotent_skip_returns_expected_code_and_ds(monkeypatch) -> None:
 
     event = {
         "source_bucket": "raw-bucket-dev",
-        "source_key": ("market/prices/interval=1d/data_source=yahoo_finance/" "year=2025/month=09/day=07/AAPL.json"),
+        "source_key": ("market/prices/interval=1d/data_source=yahoo_finance/year=2025/month=09/day=07/AAPL.json"),
         "domain": "market",
         "table_name": "prices",
         "file_type": "json",
@@ -126,7 +126,7 @@ def test_valid_builds_glue_args_with_schema_path(monkeypatch) -> None:
 
     event = {
         "source_bucket": "raw-bucket-dev",
-        "source_key": ("market/prices/interval=1d/data_source=yahoo_finance/" "year=2025/month=09/day=07/AAPL.json"),
+        "source_key": ("market/prices/interval=1d/data_source=yahoo_finance/year=2025/month=09/day=07/AAPL.json"),
         "domain": "market",
         "table_name": "prices",
         "file_type": "json",
@@ -153,7 +153,7 @@ def test_valid_includes_threshold_args(monkeypatch) -> None:
 
     event = {
         "source_bucket": "raw-bucket-dev",
-        "source_key": ("market/prices/interval=1d/data_source=yahoo_finance/" "year=2025/month=09/day=07/AAPL.json"),
+        "source_key": ("market/prices/interval=1d/data_source=yahoo_finance/year=2025/month=09/day=07/AAPL.json"),
         "domain": "market",
         "table_name": "prices",
         "file_type": "json",

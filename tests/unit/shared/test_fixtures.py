@@ -446,8 +446,7 @@ def assert_glue_args_valid(
     assert glue_args["--raw_bucket"] == aws_env.raw_bucket
     assert glue_args["--curated_bucket"] == aws_env.curated_bucket
     expected_raw_prefix = (
-        f"{partition.domain}/{partition.table_name}/interval={partition.interval}/"
-        f"data_source={partition.data_source}/"
+        f"{partition.domain}/{partition.table_name}/interval={partition.interval}/data_source={partition.data_source}/"
     )
     assert glue_args["--raw_prefix"] == expected_raw_prefix
     assert glue_args["--curated_prefix"] == f"{partition.domain}/{partition.table_name}/"

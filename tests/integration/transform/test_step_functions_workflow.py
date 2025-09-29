@@ -217,7 +217,7 @@ class TestStepFunctionsWorkflow:
             execution_input = {
                 "source_bucket": "test-raw-bucket",
                 "source_key": (
-                    "market/prices/interval=1d/data_source=yahoo_finance/" "year=2025/month=09/day=07/AAPL.json"
+                    "market/prices/interval=1d/data_source=yahoo_finance/year=2025/month=09/day=07/AAPL.json"
                 ),
                 "domain": "market",
                 "table_name": "prices",
@@ -295,7 +295,7 @@ class TestStepFunctionsWorkflow:
             execution_input = {
                 "source_bucket": "test-raw-bucket",
                 "source_key": (
-                    "market/prices/interval=1d/data_source=yahoo_finance/" "year=2025/month=09/day=07/AAPL.json"
+                    "market/prices/interval=1d/data_source=yahoo_finance/year=2025/month=09/day=07/AAPL.json"
                 ),
                 "domain": "market",
                 "table_name": "prices",
@@ -388,7 +388,7 @@ class TestStepFunctionsWorkflow:
             execution_input = {
                 "source_bucket": "test-raw-bucket",
                 "source_key": (
-                    "market/prices/interval=1d/data_source=yahoo_finance/" "year=2025/month=09/day=07/AAPL.json"
+                    "market/prices/interval=1d/data_source=yahoo_finance/year=2025/month=09/day=07/AAPL.json"
                 ),
                 "domain": "market",
                 "table_name": "prices",
@@ -552,7 +552,7 @@ class TestStepFunctionsWorkflow:
             execution_input = {
                 "source_bucket": "test-raw-bucket",
                 "source_key": (
-                    "market/prices/interval=1d/data_source=yahoo_finance/" "year=2025/month=09/day=07/AAPL.json"
+                    "market/prices/interval=1d/data_source=yahoo_finance/year=2025/month=09/day=07/AAPL.json"
                 ),
                 "table_name": "prices",
                 "file_type": "json",

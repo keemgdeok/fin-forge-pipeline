@@ -311,7 +311,7 @@ def test_etl_happy_path_json_processing(mock_environment, monkeypatch):
 
         # Simulate reading data
         df = mock_spark.read.json(
-            "s3://test-raw-bucket/market/prices/interval=1d/data_source=yahoo_finance/" "year=2025/month=09/day=07/"
+            "s3://test-raw-bucket/market/prices/interval=1d/data_source=yahoo_finance/year=2025/month=09/day=07/"
         )
 
         # Verify non-empty dataset check
@@ -393,7 +393,7 @@ def test_etl_data_quality_failure_negative_price(mock_environment, monkeypatch):
 
     mock_spark = _MockSparkSession(raw_data, schema_fields)
     df = mock_spark.read.json(
-        "s3://test-raw-bucket/market/prices/interval=1d/data_source=yahoo_finance/" "year=2025/month=09/day=07/"
+        "s3://test-raw-bucket/market/prices/interval=1d/data_source=yahoo_finance/year=2025/month=09/day=07/"
     )
 
     # Override filter to simulate negative price detection
@@ -421,7 +421,7 @@ def test_etl_no_raw_data_failure(mock_environment, monkeypatch):
     # Empty dataset
     mock_spark = _MockSparkSession([], [])
     df = mock_spark.read.json(
-        "s3://test-raw-bucket/market/prices/interval=1d/data_source=yahoo_finance/" "year=2025/month=09/day=07/"
+        "s3://test-raw-bucket/market/prices/interval=1d/data_source=yahoo_finance/year=2025/month=09/day=07/"
     )
 
     # Test empty dataset check
@@ -445,7 +445,7 @@ def test_etl_csv_file_type_processing(mock_environment, monkeypatch):
     # Simulate CSV reading with headers
     reader = mock_spark.read.option("header", True).option("inferSchema", True)
     df = reader.csv(
-        "s3://test-raw-bucket/market/prices/interval=1d/data_source=yahoo_finance/" "year=2025/month=09/day=07/"
+        "s3://test-raw-bucket/market/prices/interval=1d/data_source=yahoo_finance/year=2025/month=09/day=07/"
     )
 
     # Verify CSV-specific options were set
@@ -465,7 +465,7 @@ def test_etl_parquet_file_type_processing(mock_environment, monkeypatch):
 
     mock_spark = _MockSparkSession(raw_data, schema_fields)
     df = mock_spark.read.parquet(
-        "s3://test-raw-bucket/market/prices/interval=1d/data_source=yahoo_finance/" "year=2025/month=09/day=07/"
+        "s3://test-raw-bucket/market/prices/interval=1d/data_source=yahoo_finance/year=2025/month=09/day=07/"
     )
 
     assert df.count() > 0

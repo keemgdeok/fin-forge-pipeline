@@ -203,7 +203,7 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
             artifacts_bucket_env = os.environ.get("ARTIFACTS_BUCKET", "")
             schema_fp_uri_i = f"s3://{artifacts_bucket_env}/{domain}/{table_name}/_schema/latest.json"
 
-            raw_prefix = f"{domain}/{table_name}/interval={interval_value}/" f"data_source={data_source_value}/"
+            raw_prefix = f"{domain}/{table_name}/interval={interval_value}/data_source={data_source_value}/"
             compacted_prefix = f"{domain}/{table_name}/{compaction_subdir}"
 
             glue_args_i: Dict[str, str] = {
@@ -320,7 +320,7 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
 
     # Build Glue args (merge with job defaults on StartJobRun)
     schema_fp_uri = f"s3://{artifacts_bucket}/{domain}/{table_name}/_schema/latest.json"
-    raw_prefix = f"{domain}/{table_name}/interval={interval_value}/" f"data_source={data_source_value}/"
+    raw_prefix = f"{domain}/{table_name}/interval={interval_value}/data_source={data_source_value}/"
     compacted_prefix = f"{domain}/{table_name}/{compaction_subdir}"
 
     glue_args: Dict[str, str] = {
