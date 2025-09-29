@@ -134,28 +134,6 @@ jobs:
         if: hashFiles('**/package-lock.json') == ''
         run: npm install --no-save aws-cdk@latest
       
-      - name: Debug OIDC subject
-        run: |
-          set -euo pipefail
-          RESPONSE=$(curl -s -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" \
-            "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=sts.amazonaws.com")
-          TOKEN=$(echo "$RESPONSE" | jq -r '.value')
-          export TOKEN
-          echo "OIDC token payload:"
-          python - <<'PY'
-          import base64
-          import json
-          import os
-
-          token = os.environ["TOKEN"]
-          payload = token.split(".")[1]
-          padding = "=" * (-len(payload) % 4)
-          decoded = base64.urlsafe_b64decode(payload + padding)
-          data = json.loads(decoded)
-          keys_to_show = ("sub", "aud", "repository", "ref", "job_workflow_ref")
-          print(json.dumps({k: data.get(k) for k in keys_to_show}, indent=2))
-          PY
-
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
