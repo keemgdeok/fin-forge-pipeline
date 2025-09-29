@@ -43,6 +43,10 @@ class DailyPricesDataProcessingStack(Stack):
         self.step_functions_execution_role_arn = step_functions_execution_role_arn
         self.compaction_output_subdir: str = str(self.config.get("compaction_output_subdir", "compacted"))
         self.compaction_codec: str = str(self.config.get("compaction_codec", "zstd"))
+        self.glue_max_concurrent_runs: int = int(self.config.get("glue_max_concurrent_runs", 1))
+        self.glue_retry_interval_seconds: int = int(self.config.get("glue_retry_interval_seconds", 30))
+        self.glue_retry_backoff_rate: float = float(self.config.get("glue_retry_backoff_rate", 2.0))
+        self.glue_retry_max_attempts: int = int(self.config.get("glue_retry_max_attempts", 5))
 
         # Deterministic Glue job name used across resources (avoids Optional[str] typing)
         self.etl_job_name: str = f"{self.env_name}-daily-prices-data-etl"
@@ -119,6 +123,7 @@ class DailyPricesDataProcessingStack(Stack):
             timeout=int(self.config.get("compaction_timeout_minutes", 15)),
             worker_type=str(self.config.get("compaction_worker_type", "G.1X")),
             number_of_workers=int(self.config.get("compaction_number_workers", 2)),
+            execution_property=glue.CfnJob.ExecutionPropertyProperty(max_concurrent_runs=self.glue_max_concurrent_runs),
         )
 
     def _create_etl_job(self) -> glue.CfnJob:
@@ -188,6 +193,7 @@ class DailyPricesDataProcessingStack(Stack):
             timeout=30,  # Spec: 30 minutes
             worker_type="G.1X",
             number_of_workers=int(self.config.get("glue_max_capacity", 2)),
+            execution_property=glue.CfnJob.ExecutionPropertyProperty(max_concurrent_runs=self.glue_max_concurrent_runs),
         )
 
     def _create_indicators_job(self) -> glue.CfnJob:
@@ -262,6 +268,7 @@ class DailyPricesDataProcessingStack(Stack):
             timeout=30,
             worker_type="G.1X",
             number_of_workers=int(self.config.get("glue_max_capacity", 2)),
+            execution_property=glue.CfnJob.ExecutionPropertyProperty(max_concurrent_runs=self.glue_max_concurrent_runs),
         )
 
     def _create_processing_workflow(self) -> sfn.StateMachine:
@@ -340,6 +347,12 @@ class DailyPricesDataProcessingStack(Stack):
             arguments=sfn.TaskInput.from_json_path_at("$.glue_args"),
             result_path="$.prices_etl",
         )
+        etl_task.add_retry(
+            errors=["Glue.ConcurrentRunsExceededException"],
+            interval=Duration.seconds(self.glue_retry_interval_seconds),
+            max_attempts=self.glue_retry_max_attempts,
+            backoff_rate=self.glue_retry_backoff_rate,
+        )
         # Catch Glue task failures (includes DQ failures) and route to normalized fail chain
         etl_task.add_catch(handler=fail_chain, result_path="$.error")
 
@@ -373,6 +386,12 @@ class DailyPricesDataProcessingStack(Stack):
             integration_pattern=sfn.IntegrationPattern.RUN_JOB,
             arguments=sfn.TaskInput.from_json_path_at("$.indicators_glue_args"),
             result_path="$.indicators_etl",
+        )
+        indicators_task.add_retry(
+            errors=["Glue.ConcurrentRunsExceededException"],
+            interval=Duration.seconds(self.glue_retry_interval_seconds),
+            max_attempts=self.glue_retry_max_attempts,
+            backoff_rate=self.glue_retry_backoff_rate,
         )
         indicators_task.add_catch(handler=fail_chain, result_path="$.error")
 
@@ -505,6 +524,12 @@ class DailyPricesDataProcessingStack(Stack):
             arguments=sfn.TaskInput.from_json_path_at("$.compaction_args"),
             result_path=sfn.JsonPath.DISCARD,
         )
+        backfill_compaction_task.add_retry(
+            errors=["Glue.ConcurrentRunsExceededException"],
+            interval=Duration.seconds(self.glue_retry_interval_seconds),
+            max_attempts=self.glue_retry_max_attempts,
+            backoff_rate=self.glue_retry_backoff_rate,
+        )
         backfill_compaction_task.add_catch(handler=backfill_fail_chain, result_path="$.error")
 
         backfill_etl_task = tasks.GlueStartJobRun(
@@ -514,6 +539,12 @@ class DailyPricesDataProcessingStack(Stack):
             integration_pattern=sfn.IntegrationPattern.RUN_JOB,
             arguments=sfn.TaskInput.from_json_path_at("$.glue_args"),
             result_path="$.prices_etl",
+        )
+        backfill_etl_task.add_retry(
+            errors=["Glue.ConcurrentRunsExceededException"],
+            interval=Duration.seconds(self.glue_retry_interval_seconds),
+            max_attempts=self.glue_retry_max_attempts,
+            backoff_rate=self.glue_retry_backoff_rate,
         )
         backfill_etl_task.add_catch(handler=backfill_fail_chain, result_path="$.error")
 
@@ -542,6 +573,12 @@ class DailyPricesDataProcessingStack(Stack):
             integration_pattern=sfn.IntegrationPattern.RUN_JOB,
             arguments=sfn.TaskInput.from_json_path_at("$.indicators_glue_args"),
             result_path="$.indicators_etl",
+        )
+        backfill_indicators_task.add_retry(
+            errors=["Glue.ConcurrentRunsExceededException"],
+            interval=Duration.seconds(self.glue_retry_interval_seconds),
+            max_attempts=self.glue_retry_max_attempts,
+            backoff_rate=self.glue_retry_backoff_rate,
         )
         backfill_indicators_task.add_catch(handler=backfill_fail_chain, result_path="$.error")
 
@@ -654,7 +691,7 @@ class DailyPricesDataProcessingStack(Stack):
         backfill_map = sfn.Map(
             self,
             "BackfillMap",
-            max_concurrency=3,
+            max_concurrency=int(self.config.get("sfn_max_concurrency", 1)),
             items_path="$.dates",
         )
         # Use the modern itemProcessor API instead of deprecated iterator
