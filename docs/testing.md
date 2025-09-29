@@ -47,6 +47,7 @@
   - 환경 설정(`infrastructure/config/environments/`)에서 `glue_max_concurrent_runs`, `glue_retry_*`, `sfn_max_concurrency`를 조정해 병렬도와 재시도를 제어합니다.
   - CDK는 Glue StartJobRun 태스크에 `Glue.ConcurrentRunsExceededException` 재시도 로직을 기본 제공(30초 대기, 2배 백오프, 최대 5회)하므로 상황에 맞게 값만 조정하면 됩니다.
   - Transform 상태 머신은 이제 매니페스트 목록을 입력으로 받아 단일 실행에서 순차 처리합니다. `scripts/validate/validate_pipeline.py`가 DynamoDB/S3에서 매니페스트를 수집해 `manifest_keys` 배열과 `raw_bucket` 정보를 포함한 입력을 전달합니다.
+  - Curated S3 레이아웃은 `domain/table/interval=<interval>/data_source=<source>/year=YYYY/month=MM/day=DD/layer=<stage>/` 형태로 정규화되었습니다. Glue 잡은 `layer=compacted`, `layer=adjusted`, `layer=technical_indicator` 등 레이어 파티션을 사용하므로, Athena/Glue Crawler에서도 `layer` 파티션 필터를 활용하세요.
 
 ## pre-commit 훅(권장)
 - 설정 파일: `.pre-commit-config.yaml`
