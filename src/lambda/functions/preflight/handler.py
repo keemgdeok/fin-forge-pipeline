@@ -193,7 +193,7 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
         items: list[Dict[str, Any]] = []
         for i in range(total_days):
             ds_i = (d0 + timedelta(days=i)).strftime("%Y-%m-%d")
-            curated_prefix = f"{domain}/{table_name}/ds={ds_i}/"
+            curated_prefix = f"{domain}/{table_name}/adjusted/ds={ds_i}/"
             exists = _curated_partition_exists(
                 s3,
                 os.environ.get("CURATED_BUCKET", ""),
@@ -213,7 +213,7 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                 "--compacted_bucket": os.environ.get("CURATED_BUCKET", ""),
                 "--compacted_prefix": compacted_prefix,
                 "--curated_bucket": os.environ.get("CURATED_BUCKET", ""),
-                "--curated_prefix": f"{domain}/{table_name}/",
+                "--curated_prefix": f"{domain}/{table_name}/adjusted",
                 "--schema_fingerprint_s3_uri": schema_fp_uri_i,
                 "--codec": "zstd",
                 "--target_file_mb": "256",
@@ -305,7 +305,7 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
     s3 = boto3.client("s3")
 
     # Idempotency: skip if curated ds partition already exists
-    curated_prefix = f"{domain}/{table_name}/ds={ds}/"
+    curated_prefix = f"{domain}/{table_name}/adjusted/ds={ds}/"
     if _curated_partition_exists(s3, curated_bucket, curated_prefix):
         result = {
             "proceed": False,
@@ -330,7 +330,7 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
         "--compacted_bucket": curated_bucket,
         "--compacted_prefix": compacted_prefix,
         "--curated_bucket": curated_bucket,
-        "--curated_prefix": f"{domain}/{table_name}/",
+        "--curated_prefix": f"{domain}/{table_name}/adjusted",
         # Artifacts path aligned to spec: <domain>/<table>/_schema/latest.json
         "--schema_fingerprint_s3_uri": schema_fp_uri,
         "--codec": "zstd",

@@ -11,7 +11,6 @@ from __future__ import annotations
 
 import json
 import os
-import uuid
 from datetime import datetime, timezone
 from decimal import Decimal
 from typing import Any, Dict, List, Tuple, cast
@@ -19,14 +18,16 @@ from typing import Any, Dict, List, Tuple, cast
 import boto3
 from botocore.exceptions import ClientError
 
-from shared.utils.logger import get_logger, extract_correlation_id
+from shared.ingestion.manifests import (
+    cleanup_chunk_summaries as _cleanup_chunk_summaries,
+    load_chunk_summaries as _load_chunk_summaries,
+    persist_chunk_summary as _persist_chunk_summary,
+)
 from shared.ingestion.service import process_event
+from shared.utils.logger import get_logger, extract_correlation_id
 
 
 logger = get_logger(__name__)
-
-
-_CHUNK_SUMMARY_ROOT = "manifests/tmp"
 
 
 def _now_iso() -> str:
@@ -158,104 +159,6 @@ def _update_batch_tracker(
             raise
 
     return False, attrs
-
-
-def _chunk_summary_prefix(batch_id: str) -> str:
-    return f"{_CHUNK_SUMMARY_ROOT}/{batch_id}/"
-
-
-def _persist_chunk_summary(
-    *, raw_bucket: str, batch_id: str, partition_summaries: List[Dict[str, Any]], log: Any
-) -> None:
-    if not raw_bucket or not partition_summaries:
-        return
-
-    key = f"{_chunk_summary_prefix(batch_id)}{uuid.uuid4()}.json"
-    s3 = boto3.client("s3")
-    try:
-        s3.put_object(
-            Bucket=raw_bucket,
-            Key=key,
-            Body=json.dumps(partition_summaries, ensure_ascii=False).encode("utf-8"),
-            ContentType="application/json",
-        )
-        log.debug("Persisted chunk summary", extra={"batch_id": batch_id, "key": key})
-    except Exception:
-        log.exception(
-            "Failed to persist chunk summary",
-            extra={"batch_id": batch_id, "key": key},
-        )
-
-
-def _load_chunk_summaries(*, raw_bucket: str, batch_id: str, log: Any) -> Tuple[List[Dict[str, Any]], List[str]]:
-    if not raw_bucket or not batch_id:
-        return [], []
-
-    s3 = boto3.client("s3")
-    prefix = _chunk_summary_prefix(batch_id)
-    paginator = s3.get_paginator("list_objects_v2")
-
-    aggregated: Dict[str, Dict[str, Any]] = {}
-    keys: List[str] = []
-
-    try:
-        for page in paginator.paginate(Bucket=raw_bucket, Prefix=prefix):
-            for obj in page.get("Contents", []):
-                key = obj.get("Key")
-                if not key:
-                    continue
-                keys.append(key)
-                try:
-                    response = s3.get_object(Bucket=raw_bucket, Key=key)
-                    data = json.loads(response["Body"].read().decode("utf-8"))
-                except Exception:
-                    log.exception(
-                        "Failed to load chunk summary",
-                        extra={"batch_id": batch_id, "key": key},
-                    )
-                    continue
-
-                for entry in data or []:
-                    ds = entry.get("ds")
-                    if not ds:
-                        continue
-                    bucket = aggregated.setdefault(
-                        ds,
-                        {
-                            "raw_prefix": entry.get("raw_prefix", ""),
-                            "objects": [],
-                        },
-                    )
-                    bucket.setdefault("objects", []).extend(entry.get("objects", []))
-    except Exception:
-        log.exception("Failed to enumerate chunk summaries", extra={"batch_id": batch_id})
-        return [], keys
-
-    combined = [
-        {
-            "ds": ds,
-            "raw_prefix": values.get("raw_prefix", ""),
-            "objects": values.get("objects", []),
-        }
-        for ds, values in aggregated.items()
-    ]
-
-    return combined, keys
-
-
-def _cleanup_chunk_summaries(*, raw_bucket: str, keys: List[str], log: Any) -> None:
-    if not raw_bucket or not keys:
-        return
-
-    s3 = boto3.client("s3")
-    for key in keys:
-        try:
-            s3.delete_object(Bucket=raw_bucket, Key=key)
-        except Exception:
-            log.exception(
-                "Failed to delete chunk summary",
-                extra={"bucket": raw_bucket, "key": key},
-            )
 
 
 def _write_manifest_for_partition(
