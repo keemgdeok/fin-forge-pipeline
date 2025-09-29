@@ -67,7 +67,7 @@ prod_config = {
     "max_retries": 6,
     # Enable full processing orchestration in production so Step Functions + Glue
     # assets are synthesized and deployable by default.
-    "enable_processing_orchestration": True,
+    "enable_processing_orchestration": False,
     # Catalog update policy for crawler: on_schema_change|never|force
     "catalog_update": "on_schema_change",
     "processing_triggers": [

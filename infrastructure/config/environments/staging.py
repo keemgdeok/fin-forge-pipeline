@@ -63,7 +63,7 @@ staging_config = {
         "daily-prices-data-processing",
     ],
     "max_retries": 5,
-    "enable_processing_orchestration": True,
+    "enable_processing_orchestration": False,
     # Catalog update policy for crawler: on_schema_change|never|force
     "catalog_update": "on_schema_change",
     "processing_triggers": [

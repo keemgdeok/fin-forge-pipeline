@@ -74,7 +74,7 @@ def test_glue_job_defaults_and_schema_fingerprint_path(monkeypatch) -> None:
 
     default_args = props["DefaultArguments"]
     schema_uri = default_args["--schema_fingerprint_s3_uri"]
-    assert default_args.get("--enable-s3-parquet-optimized-committer") == "1"
+    assert default_args.get("--enable-s3-parquet-optimized-committer") == "true"
     assert default_args.get("--job-bookmark-option") == "job-bookmark-enable"
 
     # Handle CloudFormation references (Fn::Join, Fn::Sub, etc.)
