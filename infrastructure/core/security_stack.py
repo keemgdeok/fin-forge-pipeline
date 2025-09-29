@@ -395,6 +395,7 @@ class SecurityStack(Stack):
                         "glue:*",
                         "kms:*",
                         "cloudwatch:*",
+                        "iam:ListOpenIDConnectProviders",
                     ],
                     resources=["*"],
                 ),
