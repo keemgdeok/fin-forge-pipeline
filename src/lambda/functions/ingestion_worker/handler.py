@@ -11,9 +11,10 @@ from __future__ import annotations
 
 import json
 import os
+import uuid
 from datetime import datetime, timezone
 from decimal import Decimal
-from typing import Any, Dict, List, Tuple
+from typing import Any, Dict, List, Tuple, cast
 
 import boto3
 from botocore.exceptions import ClientError
@@ -25,19 +26,36 @@ from shared.ingestion.service import process_event
 logger = get_logger(__name__)
 
 
+_CHUNK_SUMMARY_ROOT = "manifests/tmp"
+
+
 def _now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
 def _combine_partition_entries(entries: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
-    combined: Dict[str, List[Dict[str, Any]]] = {}
+    combined: Dict[str, Dict[str, Any]] = {}
     for entry in entries or []:
         ds = str(entry.get("ds")) if entry.get("ds") else None
         if not ds:
             continue
-        combined.setdefault(ds, []).extend(entry.get("objects", []))
+        bucket = combined.setdefault(
+            ds,
+            {
+                "raw_prefix": entry.get("raw_prefix", ""),
+                "object_count": 0,
+            },
+        )
+        bucket["object_count"] += int(entry.get("object_count", 0))
 
-    return [{"ds": ds, "objects": objects} for ds, objects in combined.items()]
+    return [
+        {
+            "ds": ds,
+            "raw_prefix": values.get("raw_prefix", ""),
+            "object_count": values.get("object_count", 0),
+        }
+        for ds, values in combined.items()
+    ]
 
 
 def _to_json_safe(value: Any) -> Any:
@@ -80,7 +98,8 @@ def _update_batch_tracker(
     partition_entries = [
         {
             "ds": summary.get("ds"),
-            "objects": summary.get("objects", []),
+            "raw_prefix": summary.get("raw_prefix"),
+            "object_count": len(summary.get("objects", [])),
         }
         for summary in partition_summaries
         if summary.get("ds")
@@ -139,6 +158,104 @@ def _update_batch_tracker(
             raise
 
     return False, attrs
+
+
+def _chunk_summary_prefix(batch_id: str) -> str:
+    return f"{_CHUNK_SUMMARY_ROOT}/{batch_id}/"
+
+
+def _persist_chunk_summary(
+    *, raw_bucket: str, batch_id: str, partition_summaries: List[Dict[str, Any]], log: Any
+) -> None:
+    if not raw_bucket or not partition_summaries:
+        return
+
+    key = f"{_chunk_summary_prefix(batch_id)}{uuid.uuid4()}.json"
+    s3 = boto3.client("s3")
+    try:
+        s3.put_object(
+            Bucket=raw_bucket,
+            Key=key,
+            Body=json.dumps(partition_summaries, ensure_ascii=False).encode("utf-8"),
+            ContentType="application/json",
+        )
+        log.debug("Persisted chunk summary", extra={"batch_id": batch_id, "key": key})
+    except Exception:
+        log.exception(
+            "Failed to persist chunk summary",
+            extra={"batch_id": batch_id, "key": key},
+        )
+
+
+def _load_chunk_summaries(*, raw_bucket: str, batch_id: str, log: Any) -> Tuple[List[Dict[str, Any]], List[str]]:
+    if not raw_bucket or not batch_id:
+        return [], []
+
+    s3 = boto3.client("s3")
+    prefix = _chunk_summary_prefix(batch_id)
+    paginator = s3.get_paginator("list_objects_v2")
+
+    aggregated: Dict[str, Dict[str, Any]] = {}
+    keys: List[str] = []
+
+    try:
+        for page in paginator.paginate(Bucket=raw_bucket, Prefix=prefix):
+            for obj in page.get("Contents", []):
+                key = obj.get("Key")
+                if not key:
+                    continue
+                keys.append(key)
+                try:
+                    response = s3.get_object(Bucket=raw_bucket, Key=key)
+                    data = json.loads(response["Body"].read().decode("utf-8"))
+                except Exception:
+                    log.exception(
+                        "Failed to load chunk summary",
+                        extra={"batch_id": batch_id, "key": key},
+                    )
+                    continue
+
+                for entry in data or []:
+                    ds = entry.get("ds")
+                    if not ds:
+                        continue
+                    bucket = aggregated.setdefault(
+                        ds,
+                        {
+                            "raw_prefix": entry.get("raw_prefix", ""),
+                            "objects": [],
+                        },
+                    )
+                    bucket.setdefault("objects", []).extend(entry.get("objects", []))
+    except Exception:
+        log.exception("Failed to enumerate chunk summaries", extra={"batch_id": batch_id})
+        return [], keys
+
+    combined = [
+        {
+            "ds": ds,
+            "raw_prefix": values.get("raw_prefix", ""),
+            "objects": values.get("objects", []),
+        }
+        for ds, values in aggregated.items()
+    ]
+
+    return combined, keys
+
+
+def _cleanup_chunk_summaries(*, raw_bucket: str, keys: List[str], log: Any) -> None:
+    if not raw_bucket or not keys:
+        return
+
+    s3 = boto3.client("s3")
+    for key in keys:
+        try:
+            s3.delete_object(Bucket=raw_bucket, Key=key)
+        except Exception:
+            log.exception(
+                "Failed to delete chunk summary",
+                extra={"bucket": raw_bucket, "key": key},
+            )
 
 
 def _write_manifest_for_partition(
@@ -238,9 +355,19 @@ def _emit_manifests(
     partition_entries: List[Dict[str, Any]],
     log: Any,
 ) -> List[str]:
-    combined = tracker_attrs.get("combined_partition_summaries")
-    if combined is None:
-        combined = _combine_partition_entries(tracker_attrs.get("partition_payload") or partition_entries)
+    combined, chunk_keys = _load_chunk_summaries(
+        raw_bucket=raw_bucket,
+        batch_id=batch_id,
+        log=log,
+    )
+
+    if not combined:
+        combined_raw = tracker_attrs.get("combined_partition_summaries")
+        if combined_raw is not None:
+            combined = cast(List[Dict[str, Any]], combined_raw)
+        else:
+            combined = _combine_partition_entries(tracker_attrs.get("partition_payload") or partition_entries)
+
     if not combined or not raw_bucket:
         return []
 
@@ -251,6 +378,23 @@ def _emit_manifests(
 
     manifest_keys: List[str] = []
     for summary in combined:
+        objects = summary.get("objects")
+        if not objects:
+            raw_prefix = summary.get("raw_prefix", "")
+            if raw_prefix:
+                objects = []
+                s3 = boto3.client("s3")
+                paginator = s3.get_paginator("list_objects_v2")
+                for page in paginator.paginate(Bucket=raw_bucket, Prefix=raw_prefix):
+                    for obj in page.get("Contents", []):
+                        key = obj.get("Key")
+                        if key:
+                            objects.append({"key": key})
+
+        manifest_summary = {
+            "ds": summary.get("ds"),
+            "objects": objects or [],
+        }
         manifest_key = _write_manifest_for_partition(
             raw_bucket=raw_bucket,
             domain=domain,
@@ -261,7 +405,7 @@ def _emit_manifests(
             batch_id=batch_id or tracker_attrs.get("pk", ""),
             manifest_basename=manifest_basename,
             manifest_suffix=manifest_suffix,
-            summary=summary,
+            summary=manifest_summary,
         )
         manifest_keys.append(manifest_key)
 
@@ -269,6 +413,7 @@ def _emit_manifests(
         "Emitted manifests",
         extra={"batch_id": batch_id, "manifest_keys": manifest_keys},
     )
+    _cleanup_chunk_summaries(raw_bucket=raw_bucket, keys=chunk_keys, log=log)
     return manifest_keys
 
 
@@ -313,8 +458,31 @@ def main(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
         body = result.get("body", {}) if isinstance(result, dict) else {}
 
         partition_summaries: List[Dict[str, Any]] = list(body.get("partition_summaries", []))
+        partition_entries_reduced: List[Dict[str, Any]] = [
+            {
+                "ds": summary.get("ds"),
+                "raw_prefix": summary.get("raw_prefix"),
+                "object_count": len(summary.get("objects", [])),
+            }
+            for summary in partition_summaries
+            if summary.get("ds")
+        ]
         batch_id = str(payload.get("batch_id") or "")
         batch_ds = str(payload.get("batch_ds") or body.get("ds") or "")
+
+        if partition_summaries:
+            try:
+                _persist_chunk_summary(
+                    raw_bucket=raw_bucket,
+                    batch_id=batch_id,
+                    partition_summaries=partition_summaries,
+                    log=log,
+                )
+            except Exception:
+                log.exception(
+                    "Failed to store chunk summary",
+                    extra={"batch_id": batch_id},
+                )
 
         tracker_attrs: Dict[str, Any] = {}
         should_finalize = False
@@ -348,7 +516,7 @@ def main(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                 batch_id=batch_id,
                 payload=payload,
                 tracker_attrs=tracker_attrs,
-                partition_entries=partition_summaries,
+                partition_entries=partition_entries_reduced,
                 log=log,
             )
 

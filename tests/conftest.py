@@ -33,8 +33,8 @@ def aws_env(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
     Also removes external symbol source envs to prevent test cross contamination
     between integration and unit tests.
     """
-    monkeypatch.setenv("AWS_REGION", os.environ.get("AWS_REGION", "us-east-1"))
-    monkeypatch.setenv("AWS_DEFAULT_REGION", os.environ.get("AWS_DEFAULT_REGION", "us-east-1"))
+    monkeypatch.setenv("AWS_REGION", "us-east-1")
+    monkeypatch.setenv("AWS_DEFAULT_REGION", "us-east-1")
     # Provide dummy credentials so botocore signing doesn't fail under moto
     monkeypatch.setenv("AWS_ACCESS_KEY_ID", os.environ.get("AWS_ACCESS_KEY_ID", "testing"))
     monkeypatch.setenv(
