@@ -435,9 +435,9 @@ class TestEndToEndPipeline:
         for date in test_dates:
             raw_prefix = _raw_day_prefix(date)
             raw_objects = s3_client.list_objects_v2(Bucket=pipeline_buckets["raw"], Prefix=raw_prefix)
-            assert (
-                raw_objects["KeyCount"] == expected_symbol_count
-            ), f"Raw partition {date} should contain per-symbol objects"
+            assert raw_objects["KeyCount"] == expected_symbol_count, (
+                f"Raw partition {date} should contain per-symbol objects"
+            )
 
         # Verify all curated partitions were created
         for date in test_dates:

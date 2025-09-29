@@ -167,9 +167,9 @@ class TestETLHashConsistency:
         # Then: 모든 해시가 일치해야 함 (sort_keys=True로 인해)
         assert hash1_run1 == hash1_run2, "Same schema should produce same hash"
         assert hash2_run1 == hash2_run2, "Same schema should produce same hash"
-        assert (
-            hash1_run1 == hash2_run1
-        ), f"Different order schemas should produce same hash: {hash1_run1} vs {hash2_run1}"
+        assert hash1_run1 == hash2_run1, (
+            f"Different order schemas should produce same hash: {hash1_run1} vs {hash2_run1}"
+        )
 
         # 해시 형식 검증
         assert len(hash1_run1) == 64, "SHA256 hash should be 64 characters"

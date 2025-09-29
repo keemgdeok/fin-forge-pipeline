@@ -400,9 +400,9 @@ def assert_error_contract(
     """Assert that a response follows the error contract specification."""
     assert "error" in response, "Response should contain error field"
     assert "code" in response["error"], "Error should contain code field"
-    assert (
-        response["error"]["code"] == expected_code
-    ), f"Expected error code {expected_code}, got {response['error']['code']}"
+    assert response["error"]["code"] == expected_code, (
+        f"Expected error code {expected_code}, got {response['error']['code']}"
+    )
     assert "message" in response["error"], "Error should contain message field"
 
     if expected_fields:

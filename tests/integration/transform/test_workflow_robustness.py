@@ -595,9 +595,9 @@ class TestWorkflowRobustness:
             raw_objects = s3_client.list_objects_v2(Bucket=robustness_test_config["buckets"]["raw"], Prefix=raw_prefix)
 
             assert raw_objects["KeyCount"] > 0, "Should have processed some data despite constraints"
-            assert (
-                processing_time <= resource_constraints["max_processing_time"] + 5
-            ), "Should respect timeout constraint"
+            assert processing_time <= resource_constraints["max_processing_time"] + 5, (
+                "Should respect timeout constraint"
+            )
 
             # Verify critical functionality maintained (data not corrupted)
             sample_response = s3_client.get_object(
