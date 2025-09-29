@@ -142,6 +142,9 @@ jobs:
           aws-region: ${{ env.AWS_REGION }}
       
       - name: Quality checks and tests
+        env:
+          AWS_REGION: us-east-1
+          AWS_DEFAULT_REGION: us-east-1
         run: |
           source .venv/bin/activate
           echo "🔍 Running style and test checks..."
