@@ -1,5 +1,8 @@
 """Security foundation stack for serverless data platform."""
 
+import os
+from typing import Optional
+
 from aws_cdk import (
     Stack,
     aws_iam as iam,
@@ -293,19 +296,50 @@ class SecurityStack(Stack):
             description="GitHub Actions OIDC deploy role ARN",
         )
 
-    def _create_github_oidc_provider(self) -> iam.OpenIdConnectProvider:
-        """Create (or define) the GitHub OIDC provider.
+    def _create_github_oidc_provider(self) -> iam.IOpenIdConnectProvider:
+        """Import an existing GitHub OIDC provider or create a new one.
 
-        Note: OIDC providers are global in IAM. Creating this via CDK will
-        manage it in this account; if one already exists with the same URL,
-        consider importing instead.
+        OIDC providers are account-wide resources. When one already exists, re-use it
+        to avoid ``EntityAlreadyExistsException`` during deployments. Resolution order:
+
+        1. Explicit config value ``config["github_oidc_provider_arn"]``
+        2. CDK context value ``githubOidcProviderArn``
+        3. Environment variable ``GITHUB_OIDC_PROVIDER_ARN``
+
+        If no ARN is supplied, a new provider is created (fresh accounts).
         """
+
+        existing_provider_arn = self._resolve_github_oidc_provider_arn()
+        if existing_provider_arn:
+            return iam.OpenIdConnectProvider.from_open_id_connect_provider_arn(
+                self,
+                "GitHubOidcProvider",
+                existing_provider_arn,
+            )
+
         return iam.OpenIdConnectProvider(
             self,
             "GitHubOidcProvider",
             url="https://token.actions.githubusercontent.com",
             client_ids=["sts.amazonaws.com"],
         )
+
+    def _resolve_github_oidc_provider_arn(self) -> Optional[str]:
+        """Resolve GitHub OIDC provider ARN from config, context, or environment."""
+
+        config_arn_raw = self.config.get("github_oidc_provider_arn")
+        if isinstance(config_arn_raw, str) and config_arn_raw.strip():
+            return config_arn_raw.strip()
+
+        context_arn = self.node.try_get_context("githubOidcProviderArn")
+        if isinstance(context_arn, str) and context_arn.strip():
+            return context_arn.strip()
+
+        env_arn = os.getenv("GITHUB_OIDC_PROVIDER_ARN", "")
+        if env_arn.strip():
+            return env_arn.strip()
+
+        return None
 
     def _create_github_actions_deploy_role(self) -> iam.Role:
         """Role assumed by GitHub Actions via OIDC for deployments.

@@ -140,6 +140,22 @@ jobs:
           role-to-assume: ${{ secrets.AWS_ROLE_TO_ASSUME }}
           role-session-name: GithubActionsDeployment
           aws-region: ${{ env.AWS_REGION }}
+
+      - name: Discover GitHub OIDC provider ARN
+        id: oidc
+        shell: bash
+        run: |
+          set -euo pipefail
+          arn=$(aws iam list-open-id-connect-providers \
+            --query 'OpenIDConnectProviderList[?contains(Arn, `token.actions.githubusercontent.com`)].Arn' \
+            --output text)
+          if [[ -n "$arn" && "$arn" != "None" ]]; then
+            echo "GITHUB_OIDC_PROVIDER_ARN=$arn" >> "$GITHUB_ENV"
+            echo "github_oidc_provider_arn=$arn" >> "$GITHUB_OUTPUT"
+            echo "Found existing GitHub OIDC provider: $arn"
+          else
+            echo "No existing GitHub OIDC provider found; stack will create one."
+          fi
       
       - name: Quality checks and tests
         env:
