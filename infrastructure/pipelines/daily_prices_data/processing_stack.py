@@ -47,6 +47,7 @@ class DailyPricesDataProcessingStack(Stack):
         self.glue_retry_max_attempts: int = int(self.config.get("glue_retry_max_attempts", 5))
         self.curated_layer: str = str(self.config.get("curated_layer_name", "adjusted"))
         self.indicators_layer: str = str(self.config.get("indicators_layer", "technical_indicator"))
+        self.map_max_concurrency: int = int(self.config.get("sfn_max_concurrency", 1))
 
         # Deterministic Glue job name used across resources (avoids Optional[str] typing)
         self.etl_job_name: str = f"{self.env_name}-daily-prices-data-etl"
@@ -495,7 +496,7 @@ class DailyPricesDataProcessingStack(Stack):
             self,
             "ProcessManifestList",
             items_path="$.manifest_keys",
-            max_concurrency=1,
+            max_concurrency=self.map_max_concurrency,
             result_path=sfn.JsonPath.DISCARD,
         )
         manifest_map.item_processor(preflight_task.next(preflight_decision))

@@ -71,6 +71,7 @@ def _configure_spark(spark: SparkSession, codec: str, target_file_mb: int) -> No
     # Align output file sizing with requested MB target (avoid single huge file).
     target_bytes = max(32, target_file_mb) * _MEGABYTE
     spark.conf.set("spark.sql.files.maxPartitionBytes", str(target_bytes))
+    spark.conf.set("spark.sql.shuffle.partitions", "1")
 
 
 def main() -> None:
@@ -130,6 +131,8 @@ def main() -> None:
         print(f"Raw dataset empty for {raw_key_prefix}, skipping output write")
         job.commit()
         return
+
+    df = df.coalesce(1)
 
     print(f"Compacting {record_count} records from {raw_path} to {compacted_path}")
     (df.write.mode("overwrite").format("parquet").option("compression", args["codec"]).save(compacted_path))
