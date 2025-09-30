@@ -268,6 +268,7 @@ def main() -> None:
     manifest_payload: List[Dict[str, Any]] = [
         {"ds": entry.ds, "manifest_key": entry.manifest_key, "source": entry.source} for entry in manifest_entries
     ]
+    processed_dates: List[str] = sorted({entry.ds for entry in manifest_entries})
     print(f"Batch tracker status: {batch_record.get('status')} (manifests discovered: {len(manifest_payload)})")
 
     if not manifest_payload:
@@ -318,29 +319,33 @@ def main() -> None:
         if state != "SUCCEEDED":
             raise RuntimeError(f"Glue {name} job run did not succeed (state={state})")
 
-    curated_key = build_curated_layer_path(
-        domain=domain,
-        table=table_name,
-        interval=interval_value,
-        data_source=data_source or None,
-        ds=batch_ds,
-        layer="adjusted",
-    )
     indicators_layer = str(config.get("indicators_layer", "technical_indicator"))
-    indicators_key = build_curated_layer_path(
-        domain=domain,
-        table=table_name,
-        interval=interval_value,
-        data_source=data_source or None,
-        ds=batch_ds,
-        layer=indicators_layer,
-    )
-    curated_ready = _prefix_has_objects(s3_client, curated_bucket, curated_key)
-    indicators_ready = _prefix_has_objects(s3_client, curated_bucket, indicators_key)
-    if not curated_ready:
-        raise RuntimeError(f"Curated data prefix missing objects: s3://{curated_bucket}/{curated_key}")
-    if not indicators_ready:
-        raise RuntimeError(f"Indicators prefix missing objects: s3://{curated_bucket}/{indicators_key}")
+    curated_prefixes: List[str] = []
+    indicator_prefixes: List[str] = []
+    for ds_value in processed_dates or [batch_ds]:
+        curated_key = build_curated_layer_path(
+            domain=domain,
+            table=table_name,
+            interval=interval_value,
+            data_source=data_source or None,
+            ds=ds_value,
+            layer="adjusted",
+        )
+        indicators_key = build_curated_layer_path(
+            domain=domain,
+            table=table_name,
+            interval=interval_value,
+            data_source=data_source or None,
+            ds=ds_value,
+            layer=indicators_layer,
+        )
+        curated_prefixes.append(curated_key)
+        indicator_prefixes.append(indicators_key)
+
+        if not _prefix_has_objects(s3_client, curated_bucket, curated_key):
+            raise RuntimeError(f"Curated data prefix missing objects: s3://{curated_bucket}/{curated_key}")
+        if not _prefix_has_objects(s3_client, curated_bucket, indicators_key):
+            raise RuntimeError(f"Indicators prefix missing objects: s3://{curated_bucket}/{indicators_key}")
 
     print("Waiting for load queue to accumulate new messages...")
     post_queue = _wait_for_queue_growth(
@@ -369,6 +374,7 @@ def main() -> None:
             "manifest_keys": manifest_keys,
             "manifest_sources": manifest_sources,
             "tracker_status": batch_record.get("status"),
+            "processed_dates": processed_dates,
         },
         "step_function": {
             "execution_arn": execution_arn,
@@ -382,10 +388,8 @@ def main() -> None:
             "indicators": {"run_id": indicators_run.get("Id"), "state": indicators_run.get("JobRunState")},
         },
         "s3_checks": {
-            "curated_prefix": f"s3://{curated_bucket}/{curated_key}",
-            "indicators_prefix": f"s3://{curated_bucket}/{indicators_key}",
-            "curated_has_objects": curated_ready,
-            "indicators_has_objects": indicators_ready,
+            "curated_prefixes": [f"s3://{curated_bucket}/{key}" for key in curated_prefixes],
+            "indicator_prefixes": [f"s3://{curated_bucket}/{key}" for key in indicator_prefixes],
         },
         "queue_metrics": {
             "queue_name": queue_name,
@@ -404,6 +408,7 @@ def main() -> None:
         f"Environment: {args.environment}",
         f"Batch ID: {batch_id}",
         f"Batch date: {batch_ds}",
+        f"Processed ds values: {', '.join(processed_dates) if processed_dates else batch_ds}",
         f"Ingestion chunks: {chunks} (messages published: {published})",
         f"Manifests discovered: {len(manifest_payload)}",
         f"State machine: {execution_arn}",
@@ -411,11 +416,16 @@ def main() -> None:
         f"  compaction={compaction_run.get('Id')}",
         f"  etl={etl_run.get('Id')}",
         f"  indicators={indicators_run.get('Id')}",
-        f"Curated data prefix: s3://{curated_bucket}/{curated_key}",
-        f"Indicators prefix: s3://{curated_bucket}/{indicators_key}",
-        f"Load queue visible messages: {pre_queue.visible} -> {post_queue.visible}",
-        f"Load DLQ visible messages: {pre_dlq.visible} -> {post_dlq.visible}",
     ]
+
+    lines.extend(f"Curated data prefix: s3://{curated_bucket}/{key}" for key in curated_prefixes)
+    lines.extend(f"Indicators prefix: s3://{curated_bucket}/{key}" for key in indicator_prefixes)
+    lines.extend(
+        [
+            f"Load queue visible messages: {pre_queue.visible} -> {post_queue.visible}",
+            f"Load DLQ visible messages: {pre_dlq.visible} -> {post_dlq.visible}",
+        ]
+    )
     text_path = Path(args.output_text)
     text_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
 
