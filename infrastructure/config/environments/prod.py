@@ -33,7 +33,8 @@ prod_config = {
     "symbol_universe_s3_bucket": "",
     # Indicators
     "indicators_table_name": "indicators",
-    "indicators_lookback_days": 252,
+    "indicators_lookback_days": 150,
+    "indicators_layer": "technical_indicator",
     # Fan-out (Extract) defaults
     "orchestrator_chunk_size": 20,
     "sqs_send_batch_size": 10,
@@ -67,7 +68,7 @@ prod_config = {
     "max_retries": 6,
     # Enable full processing orchestration in production so Step Functions + Glue
     # assets are synthesized and deployable by default.
-    "enable_processing_orchestration": True,
+    "enable_processing_orchestration": False,
     # Catalog update policy for crawler: on_schema_change|never|force
     "catalog_update": "on_schema_change",
     "processing_triggers": [

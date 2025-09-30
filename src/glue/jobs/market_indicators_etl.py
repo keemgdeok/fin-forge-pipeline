@@ -15,6 +15,8 @@ from pyspark.sql import DataFrame
 from pyspark.sql import functions as F
 from pyspark.sql import types as T
 
+from shared.paths import build_curated_interval_prefix, build_curated_layer_path
+
 # Optional imports from shared layer for schema fingerprint utilities
 try:  # pragma: no cover
     from shared.utils.schema_fingerprint import (
@@ -221,14 +223,18 @@ args = getResolvedOptions(
         "JOB_NAME",
         "environment",
         "prices_curated_bucket",
-        "prices_prefix",
         "output_bucket",
-        "output_prefix",
         "schema_fingerprint_s3_uri",
         "codec",
         "target_file_mb",
         "ds",
         "lookback_days",
+        "interval",
+        "data_source",
+        "domain",
+        "table_name",
+        "prices_layer",
+        "output_layer",
     ],
 )
 
@@ -250,9 +256,30 @@ batch_id_value = int(abs(now_utc.timestamp()) * 1_000_000)
 created_at_value = now_utc
 updated_at_value = now_utc
 
-prices_path = _build_path(uri_scheme, args["prices_curated_bucket"], args["prices_prefix"])
+interval = str(args.get("interval") or "").strip()
+data_source = str(args.get("data_source") or "").strip()
+domain = str(args.get("domain") or "").strip()
+table_name = str(args.get("table_name") or "").strip()
+prices_layer = str(args.get("prices_layer") or "adjusted").strip()
+output_layer = str(args.get("output_layer") or "technical_indicator").strip()
+
+if not interval or not domain or not table_name:
+    raise ValueError("Indicators job requires domain, table_name, and interval arguments")
+
+interval_prefix = build_curated_interval_prefix(
+    domain=domain,
+    table=table_name,
+    interval=interval,
+    data_source=data_source or None,
+)
+
+prices_path = _build_path(uri_scheme, args["prices_curated_bucket"], interval_prefix)
 raw_prices_df = spark.read.format("parquet").load(prices_path)
-prices_df = raw_prices_df.where((F.col("ds") >= F.lit(start_dt.strftime("%Y-%m-%d"))) & (F.col("ds") <= F.lit(ds_str)))
+prices_df = raw_prices_df.where(
+    (F.col("ds") >= F.lit(start_dt.strftime("%Y-%m-%d")))
+    & (F.col("ds") <= F.lit(ds_str))
+    & (F.col("layer") == F.lit(prices_layer))
+)
 
 missing_columns = [col for col in REQUIRED_BASE_COLUMNS if col not in prices_df.columns]
 if missing_columns:
@@ -320,8 +347,15 @@ ind_ds_df = indicators_df.where(F.col("ds") == F.lit(ds_str))
 
 duplicate_check = ind_ds_df.groupBy("date", "symbol").count().where(F.col("count") > F.lit(1)).limit(1).count()
 if duplicate_check > 0:
-    curated_base = f"s3://{args['output_bucket']}/{args['output_prefix']}"
-    quarantine_path = f"{curated_base}quarantine/ds={ds_str}"
+    quarantine_key = build_curated_layer_path(
+        domain=domain,
+        table=table_name,
+        interval=interval,
+        data_source=data_source or None,
+        ds=ds_str,
+        layer="quarantine",
+    )
+    quarantine_path = _build_path(uri_scheme, args["output_bucket"], quarantine_key)
     ind_ds_df.coalesce(1).write.mode("overwrite").format("parquet").save(quarantine_path)
     raise RuntimeError("DQ_FAILED: duplicate (date,symbol) detected in indicators output")
 
@@ -335,12 +369,21 @@ ind_out = _cast_short(ind_out, SHORT_COLUMNS)
 ind_out = ind_out.withColumn("batch_id", F.col("batch_id").cast(T.LongType()))
 ind_out = ind_out.withColumn("created_at", F.to_timestamp(F.col("created_at")))
 ind_out = ind_out.withColumn("updated_at", F.to_timestamp(F.col("updated_at")))
+ind_out = ind_out.withColumn("layer", F.lit(output_layer))
 
-ordered_output_columns = INDICATOR_COLUMNS + ["batch_id", "created_at", "updated_at"]
+ordered_output_columns = INDICATOR_COLUMNS + ["layer", "batch_id", "created_at", "updated_at"]
 ind_out = ind_out.select(*ordered_output_columns)
 
-out_path = _build_path(uri_scheme, args["output_bucket"], args["output_prefix"])
-ind_out.coalesce(1).write.mode("append").partitionBy("ds").format("parquet").save(out_path)
+output_key = build_curated_layer_path(
+    domain=domain,
+    table=table_name,
+    interval=interval,
+    data_source=data_source or None,
+    ds=ds_str,
+    layer=output_layer,
+)
+out_path = _build_path(uri_scheme, args["output_bucket"], output_key)
+ind_out.coalesce(1).write.mode("overwrite").format("parquet").save(out_path)
 
 cols = [
     {"name": field.name, "type": field.dataType.simpleString()} for field in ind_out.schema.fields if field.name != "ds"

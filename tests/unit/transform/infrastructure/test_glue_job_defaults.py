@@ -13,6 +13,10 @@ def _base_config():
         "ingestion_domain": "market",
         "ingestion_table_name": "prices",
         "ingestion_file_format": "json",
+        "ingestion_interval": "1d",
+        "ingestion_data_source": "yahoo_finance",
+        "compaction_output_subdir": "compacted",
+        "indicators_layer": "technical_indicator",
         "enable_processing_orchestration": False,
     }
 
@@ -74,8 +78,14 @@ def test_glue_job_defaults_and_schema_fingerprint_path(monkeypatch) -> None:
 
     default_args = props["DefaultArguments"]
     schema_uri = default_args["--schema_fingerprint_s3_uri"]
-    assert default_args.get("--enable-s3-parquet-optimized-committer") == "1"
+    assert default_args.get("--enable-s3-parquet-optimized-committer") == "true"
     assert default_args.get("--job-bookmark-option") == "job-bookmark-enable"
+    assert default_args.get("--curated_layer") == "adjusted"
+    assert default_args.get("--compacted_layer") == cfg.get("compaction_output_subdir")
+    assert default_args.get("--domain") == cfg["ingestion_domain"]
+    assert default_args.get("--table_name") == cfg["ingestion_table_name"]
+    assert default_args.get("--interval") == cfg["ingestion_interval"]
+    assert default_args.get("--data_source") == cfg.get("ingestion_data_source", "yahoo_finance")
 
     # Handle CloudFormation references (Fn::Join, Fn::Sub, etc.)
     if isinstance(schema_uri, str):

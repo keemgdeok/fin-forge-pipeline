@@ -23,12 +23,23 @@ import uuid
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional
 
 import boto3
 from botocore.exceptions import BotoCoreError, ClientError
 
 from infrastructure.config.environments import get_environment_config
+
+try:
+    from shared.ingestion.manifests import ManifestEntry, collect_manifest_entries
+    from shared.paths import build_curated_layer_path
+except ModuleNotFoundError:  # pragma: no cover - local CLI fallback
+    repo_root = Path(__file__).resolve().parents[2]
+    shared_layer_path = repo_root / "src" / "lambda" / "layers" / "common" / "python"
+    if str(shared_layer_path) not in sys.path:
+        sys.path.append(str(shared_layer_path))
+    from shared.ingestion.manifests import ManifestEntry, collect_manifest_entries  # type: ignore  # noqa: E402
+    from shared.paths import build_curated_layer_path  # type: ignore  # noqa: E402
 
 
 @dataclass
@@ -82,25 +93,6 @@ def _wait_for_batch_completion(table, batch_id: str, timeout: int, interval: int
         if not last_item
         else f"Timed out waiting for batch status to reach 'complete' (last: {last_item.get('status')})"
     )
-
-
-def _find_recent_execution(
-    sfn_client, state_machine_arn: str, started_after: datetime, timeout: int, interval: int
-) -> Dict[str, Any]:
-    tolerance = timedelta(minutes=5)
-    deadline = _now() + timedelta(seconds=timeout)
-    candidate: Optional[Dict[str, Any]] = None
-    while _now() < deadline:
-        resp = sfn_client.list_executions(stateMachineArn=state_machine_arn, maxResults=10)
-        for execution in resp.get("executions", []):
-            start_time: datetime = execution.get("startDate")
-            if start_time and start_time + tolerance >= started_after:
-                candidate = execution
-                break
-        if candidate:
-            return candidate
-        time.sleep(interval)
-    raise TimeoutError("Unable to locate Step Functions execution started after ingestion run")
 
 
 def _await_execution_success(sfn_client, execution_arn: str, timeout: int, interval: int) -> Dict[str, Any]:
@@ -174,10 +166,10 @@ def main() -> None:
     config = get_environment_config(args.environment)
     domain = str(config.get("ingestion_domain", "market"))
     table_name = str(config.get("ingestion_table_name", "prices"))
-    indicators_table = str(config.get("indicators_table_name", "indicators"))
     period = str(config.get("ingestion_period", "1mo"))
     interval_value = str(config.get("ingestion_interval", "1d"))
     file_format = str(config.get("ingestion_file_format", "json"))
+    data_source = str(config.get("ingestion_data_source", "yahoo_finance"))
     symbols = list(config.get("ingestion_symbols", ["AAPL", "MSFT"]))
 
     load_configs = list(config.get("load_domain_configs", []))
@@ -205,6 +197,7 @@ def main() -> None:
     etl_job = f"{args.environment}-daily-prices-data-etl"
     indicators_job = f"{args.environment}-market-indicators-etl"
 
+    raw_bucket = f"data-pipeline-raw-{args.environment}-{account_id}"
     curated_bucket = f"data-pipeline-curated-{args.environment}-{account_id}"
 
     queue_name = f"{args.environment}-{load_domain}-load-queue"
@@ -222,7 +215,7 @@ def main() -> None:
     batch_id = f"ci-{uuid.uuid4()}"
     batch_ds = _now().date().isoformat()
     ingest_event: Dict[str, Any] = {
-        "data_source": "yahoo_finance",
+        "data_source": data_source,
         "data_type": "prices",
         "domain": domain,
         "table_name": table_name,
@@ -252,7 +245,6 @@ def main() -> None:
 
     published = int(result.get("published", 0))
     chunks = int(result.get("chunks", 0))
-    ingestion_start = _now()
     print(f"Published {published} chunk(s) across {chunks} batch entries")
 
     print("Waiting for DynamoDB batch tracker to reach 'complete'...")
@@ -262,20 +254,47 @@ def main() -> None:
         timeout=args.ingestion_timeout,
         interval=10,
     )
-    manifest_keys = batch_record.get("manifest_keys") or []
-    print(f"Batch tracker status: {batch_record.get('status')} (manifest keys: {len(manifest_keys)})")
-
-    print("Locating Step Functions execution launched by EventBridge...")
-    execution_stub = _find_recent_execution(
-        sfn_client,
-        state_machine_arn=state_machine_arn,
-        started_after=ingestion_start - timedelta(minutes=1),
-        timeout=args.execution_timeout,
-        interval=15,
+    manifest_entries: List[ManifestEntry] = collect_manifest_entries(
+        batch_id=batch_id,
+        raw_bucket=raw_bucket,
+        domain=domain,
+        table_name=table_name,
+        interval=interval_value,
+        data_source=data_source,
+        manifest_basename=str(config.get("raw_manifest_basename", "_batch")),
+        manifest_suffix=str(config.get("raw_manifest_suffix", ".manifest.json")),
+        tracker_table=batch_tracker_table,
     )
-    execution_arn = execution_stub["executionArn"]
-    execution_start: datetime = execution_stub["startDate"]
-    print(f"Found execution {execution_arn}")
+    manifest_payload: List[Dict[str, Any]] = [
+        {"ds": entry.ds, "manifest_key": entry.manifest_key, "source": entry.source} for entry in manifest_entries
+    ]
+    processed_dates: List[str] = sorted({entry.ds for entry in manifest_entries})
+    print(f"Batch tracker status: {batch_record.get('status')} (manifests discovered: {len(manifest_payload)})")
+
+    if not manifest_payload:
+        raise RuntimeError("No manifest entries discovered for batch; cannot run processing workflow")
+
+    execution_input = {
+        "manifest_keys": manifest_payload,
+        "domain": domain,
+        "table_name": table_name,
+        "file_type": file_format,
+        "interval": interval_value,
+        "data_source": data_source,
+        "raw_bucket": raw_bucket,
+        "catalog_update": str(config.get("catalog_update", "on_schema_change")),
+        "batch_id": batch_id,
+        "environment": args.environment,
+    }
+
+    print("Starting Step Functions execution with manifest list...")
+    execution_start = _now()
+    execution_resp = sfn_client.start_execution(
+        stateMachineArn=state_machine_arn,
+        input=json.dumps(execution_input),
+    )
+    execution_arn = execution_resp["executionArn"]
+    print(f"Started execution {execution_arn}")
 
     print("Waiting for Step Functions execution to succeed...")
     execution_detail = _await_execution_success(
@@ -284,6 +303,7 @@ def main() -> None:
         timeout=args.execution_timeout,
         interval=15,
     )
+    execution_start = execution_detail.get("startDate", execution_start)
     execution_stop: datetime = execution_detail.get("stopDate", _now())
 
     print("Validating Glue job runs...")
@@ -299,14 +319,33 @@ def main() -> None:
         if state != "SUCCEEDED":
             raise RuntimeError(f"Glue {name} job run did not succeed (state={state})")
 
-    curated_prefix = f"{domain}/{table_name}/adjusted/ds={batch_ds}/"
-    indicators_prefix = f"{domain}/{table_name}/{indicators_table}/ds={batch_ds}/"
-    curated_ready = _prefix_has_objects(s3_client, curated_bucket, curated_prefix)
-    indicators_ready = _prefix_has_objects(s3_client, curated_bucket, indicators_prefix)
-    if not curated_ready:
-        raise RuntimeError(f"Curated data prefix missing objects: s3://{curated_bucket}/{curated_prefix}")
-    if not indicators_ready:
-        raise RuntimeError(f"Indicators prefix missing objects: s3://{curated_bucket}/{indicators_prefix}")
+    indicators_layer = str(config.get("indicators_layer", "technical_indicator"))
+    curated_prefixes: List[str] = []
+    indicator_prefixes: List[str] = []
+    for ds_value in processed_dates or [batch_ds]:
+        curated_key = build_curated_layer_path(
+            domain=domain,
+            table=table_name,
+            interval=interval_value,
+            data_source=data_source or None,
+            ds=ds_value,
+            layer="adjusted",
+        )
+        indicators_key = build_curated_layer_path(
+            domain=domain,
+            table=table_name,
+            interval=interval_value,
+            data_source=data_source or None,
+            ds=ds_value,
+            layer=indicators_layer,
+        )
+        curated_prefixes.append(curated_key)
+        indicator_prefixes.append(indicators_key)
+
+        if not _prefix_has_objects(s3_client, curated_bucket, curated_key):
+            raise RuntimeError(f"Curated data prefix missing objects: s3://{curated_bucket}/{curated_key}")
+        if not _prefix_has_objects(s3_client, curated_bucket, indicators_key):
+            raise RuntimeError(f"Indicators prefix missing objects: s3://{curated_bucket}/{indicators_key}")
 
     print("Waiting for load queue to accumulate new messages...")
     post_queue = _wait_for_queue_growth(
@@ -321,6 +360,9 @@ def main() -> None:
     if post_dlq.visible > pre_dlq.visible:
         raise RuntimeError("Load DLQ received messages; investigate before releasing")
 
+    manifest_keys = [entry["manifest_key"] for entry in manifest_payload]
+    manifest_sources = [entry["source"] for entry in manifest_payload]
+
     summary: Dict[str, Any] = {
         "environment": args.environment,
         "region": region,
@@ -330,7 +372,9 @@ def main() -> None:
             "published_messages": published,
             "chunks": chunks,
             "manifest_keys": manifest_keys,
+            "manifest_sources": manifest_sources,
             "tracker_status": batch_record.get("status"),
+            "processed_dates": processed_dates,
         },
         "step_function": {
             "execution_arn": execution_arn,
@@ -344,10 +388,8 @@ def main() -> None:
             "indicators": {"run_id": indicators_run.get("Id"), "state": indicators_run.get("JobRunState")},
         },
         "s3_checks": {
-            "curated_prefix": f"s3://{curated_bucket}/{curated_prefix}",
-            "indicators_prefix": f"s3://{curated_bucket}/{indicators_prefix}",
-            "curated_has_objects": curated_ready,
-            "indicators_has_objects": indicators_ready,
+            "curated_prefixes": [f"s3://{curated_bucket}/{key}" for key in curated_prefixes],
+            "indicator_prefixes": [f"s3://{curated_bucket}/{key}" for key in indicator_prefixes],
         },
         "queue_metrics": {
             "queue_name": queue_name,
@@ -366,17 +408,24 @@ def main() -> None:
         f"Environment: {args.environment}",
         f"Batch ID: {batch_id}",
         f"Batch date: {batch_ds}",
+        f"Processed ds values: {', '.join(processed_dates) if processed_dates else batch_ds}",
         f"Ingestion chunks: {chunks} (messages published: {published})",
+        f"Manifests discovered: {len(manifest_payload)}",
         f"State machine: {execution_arn}",
         "Glue runs:",
         f"  compaction={compaction_run.get('Id')}",
         f"  etl={etl_run.get('Id')}",
         f"  indicators={indicators_run.get('Id')}",
-        f"Curated data prefix: s3://{curated_bucket}/{curated_prefix}",
-        f"Indicators prefix: s3://{curated_bucket}/{indicators_prefix}",
-        f"Load queue visible messages: {pre_queue.visible} -> {post_queue.visible}",
-        f"Load DLQ visible messages: {pre_dlq.visible} -> {post_dlq.visible}",
     ]
+
+    lines.extend(f"Curated data prefix: s3://{curated_bucket}/{key}" for key in curated_prefixes)
+    lines.extend(f"Indicators prefix: s3://{curated_bucket}/{key}" for key in indicator_prefixes)
+    lines.extend(
+        [
+            f"Load queue visible messages: {pre_queue.visible} -> {post_queue.visible}",
+            f"Load DLQ visible messages: {pre_dlq.visible} -> {post_dlq.visible}",
+        ]
+    )
     text_path = Path(args.output_text)
     text_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
 

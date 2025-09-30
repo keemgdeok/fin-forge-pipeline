@@ -15,6 +15,8 @@ import pandas as pd
 import pytest
 from moto import mock_aws
 
+from shared.paths import build_curated_layer_path
+
 
 @pytest.mark.integration
 @mock_aws
@@ -28,6 +30,8 @@ def test_indicators_etl_skeleton() -> None:
 
     # Prepare minimal curated prices partition for ds=2025-09-07
     ds = "2025-09-07"
+    interval = "1d"
+    data_source = "yahoo_finance"
     data = [
         {
             "symbol": "AAA",
@@ -44,6 +48,7 @@ def test_indicators_etl_skeleton() -> None:
             "raw_volume": 1000,
             "adjustment_factor": 1.0,
             "ds": ds,
+            "layer": "adjusted",
         },
         {
             "symbol": "BBB",
@@ -60,14 +65,23 @@ def test_indicators_etl_skeleton() -> None:
             "raw_volume": 500,
             "adjustment_factor": 1.0,
             "ds": ds,
+            "layer": "adjusted",
         },
     ]
     df = pd.DataFrame(data)
     buf = BytesIO()
     df.to_parquet(buf, engine="pyarrow", index=False)
+    curated_key = build_curated_layer_path(
+        domain="market",
+        table="prices",
+        interval=interval,
+        data_source=data_source,
+        ds=ds,
+        layer="adjusted",
+    )
     s3.put_object(
         Bucket=curated_bucket,
-        Key=f"market/prices/adjusted/ds={ds}/data.parquet",
+        Key=f"{curated_key}/data.parquet",
         Body=buf.getvalue(),
         ContentType="application/octet-stream",
     )
@@ -75,10 +89,14 @@ def test_indicators_etl_skeleton() -> None:
     # In a full integration test, you would submit a Glue job with arguments like:
     glue_args: Dict[str, str] = {
         "--environment": "test",
+        "--domain": "market",
+        "--table_name": "prices",
         "--prices_curated_bucket": curated_bucket,
-        "--prices_prefix": "market/prices/adjusted/",
+        "--prices_layer": "adjusted",
         "--output_bucket": curated_bucket,
-        "--output_prefix": "market/prices/indicators/",
+        "--output_layer": "technical_indicator",
+        "--interval": interval,
+        "--data_source": data_source,
         "--schema_fingerprint_s3_uri": f"s3://{artifacts_bucket}/market/prices/indicators/_schema/latest.json",
         "--codec": "zstd",
         "--target_file_mb": "256",
@@ -87,5 +105,5 @@ def test_indicators_etl_skeleton() -> None:
     }
 
     # Example placeholder assertion to indicate setup works
-    assert glue_args["--prices_prefix"].endswith("adjusted/")
+    assert glue_args["--prices_layer"] == "adjusted"
     # NOTE: Actual Glue job submission is environment dependent and omitted here.

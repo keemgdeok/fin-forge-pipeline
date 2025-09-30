@@ -137,26 +137,30 @@ cdk deploy DailyPricesDataIngestionStack \
 }
 ```
 
-워커 Lambda는 하루치 배치가 완료되면 `_batch.manifest.json` 파일을 해당 파티션에 기록하며, 이 마커에만 이벤트가 연결되도록 설계되었습니다. 심볼별 RAW 객체는 그대로 저장되지만, Step Functions 트리거는 배치 마커 1건에만 반응합니다.
+워커 Lambda는 하루치 배치가 완료되면 `_batch.manifest.json` 파일을 해당 파티션에 기록합니다. 기존에는 이 마커에 연결된 EventBridge 규칙이 Step Functions 실행을 직접 시작했지만, 현재는 EventBridge 연동을 제거하고 **단일 실행 기반으로 매니페스트 목록을 전달**합니다. 심볼별 RAW 객체는 그대로 저장되고, `scripts/validate/validate_pipeline.py` (또는 운영 오케스트레이터)가 DynamoDB 배치 트래커/S3 요약 정보를 읽어 하나의 상태 머신 실행 입력으로 변환합니다.
 
 ### Batch Tracker Coordination
 
 SQS 워커는 동일한 배치에 대한 여러 청크를 병렬로 처리하므로, DynamoDB 기반의 `batch_tracker` 테이블이 추가되어 최종 청크만 매니페스트를 생성합니다. 오케스트레이터는 배치 시작 시 `expected_chunks`를 저장하고, 워커는 각 청크 완료 후 `processed_chunks`를 증가시킵니다. `processed_chunks == expected_chunks`가 되는 순간에만 상태를 `finalizing → complete`으로 전환하면서 매니페스트를 업로드하므로, 배치당 정확히 한 번만 S3 이벤트가 발생합니다.
 
-### Transform EventBridge Event
+### Transform 실행 입력 (단일 실행)
 
 ```json
 {
-  "version": "0",
-  "detail-type": "Object Created",
-  "source": "aws.s3",
-  "detail": {
-    "bucket": "data-pipeline-raw-dev-1234",
-    "object": {
-  "key": "market/prices/interval=1d/data_source=yahoo_finance/year=2025/month=09/day=09/_batch.manifest.json",
-      "size": 12345
+  "manifest_keys": [
+    {
+      "ds": "2025-09-09",
+      "manifest_key": "market/prices/interval=1d/data_source=yahoo_finance/year=2025/month=09/day=09/_batch.manifest.json",
+      "source": "dynamodb"
     }
-  }
+  ],
+  "domain": "market",
+  "table_name": "prices",
+  "file_type": "json",
+  "interval": "1d",
+  "data_source": "yahoo_finance",
+  "raw_bucket": "data-pipeline-raw-dev-123456789012",
+  "catalog_update": "on_schema_change"
 }
 ```
 

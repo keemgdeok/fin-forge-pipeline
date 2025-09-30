@@ -31,9 +31,21 @@ def test_indicators_etl_with_file_scheme() -> None:
     s3.create_bucket(Bucket=artifacts_bucket)
 
     ds = "2025-09-07"
+    interval = "1d"
+    data_source = "yahoo_finance"
     with TemporaryDirectory() as tmp:
         # Prepare local curated prices partition
-        in_dir = os.path.join(tmp, "market", "prices", "adjusted", f"ds={ds}")
+        in_dir = os.path.join(
+            tmp,
+            "market",
+            "prices",
+            f"interval={interval}",
+            f"data_source={data_source}",
+            "year=2025",
+            "month=09",
+            "day=07",
+            "layer=adjusted",
+        )
         os.makedirs(in_dir, exist_ok=True)
         df = pd.DataFrame(
             [
@@ -52,6 +64,7 @@ def test_indicators_etl_with_file_scheme() -> None:
                     "raw_volume": 1000,
                     "adjustment_factor": 1.0,
                     "ds": ds,
+                    "layer": "adjusted",
                 },
                 {
                     "symbol": "BBB",
@@ -68,6 +81,7 @@ def test_indicators_etl_with_file_scheme() -> None:
                     "raw_volume": 500,
                     "adjustment_factor": 1.0,
                     "ds": ds,
+                    "layer": "adjusted",
                 },
             ]
         )
@@ -83,12 +97,20 @@ def test_indicators_etl_with_file_scheme() -> None:
             "test",
             "--prices_curated_bucket",
             tmp,
-            "--prices_prefix",
-            "market/prices/adjusted/",
+            "--prices_layer",
+            "adjusted",
             "--output_bucket",
             tmp,
-            "--output_prefix",
-            "market/prices/indicators/",
+            "--output_layer",
+            "technical_indicator",
+            "--interval",
+            interval,
+            "--data_source",
+            data_source,
+            "--domain",
+            "market",
+            "--table_name",
+            "prices",
             "--schema_fingerprint_s3_uri",
             f"s3://{artifacts_bucket}/market/prices/indicators/_schema/latest.json",
             "--codec",
@@ -114,7 +136,17 @@ def test_indicators_etl_with_file_scheme() -> None:
             _sys.argv = prev_argv
 
         # Verify output partition exists
-        out_dir = os.path.join(tmp, "market", "prices", "indicators", f"ds={ds}")
+        out_dir = os.path.join(
+            tmp,
+            "market",
+            "prices",
+            f"interval={interval}",
+            f"data_source={data_source}",
+            "year=2025",
+            "month=09",
+            "day=07",
+            "layer=technical_indicator",
+        )
         files = []
         for root, _dirs, filenames in os.walk(out_dir):
             for f in filenames:
