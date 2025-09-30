@@ -31,7 +31,7 @@ staging_config = {
     "symbol_universe_s3_bucket": "",
     # Indicators
     "indicators_table_name": "indicators",
-    "indicators_lookback_days": 252,
+    "indicators_lookback_days": 150,
     "indicators_layer": "technical_indicator",
     # Fan-out (Extract) defaults
     "orchestrator_chunk_size": 15,
@@ -59,7 +59,7 @@ staging_config = {
         "daily-prices-data-etl",
         "market-indicators-etl",
     ],
-    "sfn_max_concurrency": 2,
+    "sfn_max_concurrency": 1,
     "monitored_state_machines": [
         "daily-prices-data-processing",
     ],
