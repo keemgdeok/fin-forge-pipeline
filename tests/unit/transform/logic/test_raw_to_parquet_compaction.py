@@ -38,6 +38,7 @@ def _mock_spark_session(record_count: int) -> SimpleNamespace:
     mock_writer.format.return_value = mock_writer
     mock_writer.option.return_value = mock_writer
     mock_df.write = mock_writer
+    mock_df.coalesce.return_value = mock_df
 
     mock_reader = MagicMock()
     mock_reader.json.return_value = mock_df
@@ -139,6 +140,7 @@ def test_compaction_writes_parquet(monkeypatch):
     mock_writer.save.assert_called_once_with(
         "s3://curated-bucket/market/prices/interval=1d/data_source=yahoo/year=2024/month=01/day=15/layer=compacted"
     )
+    mock_df.coalesce.assert_called_once_with(1)
     mock_job.commit.assert_called_once()
 
 

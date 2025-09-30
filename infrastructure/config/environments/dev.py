@@ -59,7 +59,7 @@ dev_config = {
         "daily-prices-data-etl",
         "market-indicators-etl",
     ],
-    "sfn_max_concurrency": 1,
+    "sfn_max_concurrency": 2,
     "monitored_state_machines": [
         "daily-prices-data-processing",
     ],
