@@ -3,9 +3,9 @@
 <table style="width:100%; table-layout:fixed;">
   <thead>
     <tr>
-      <th style="width:15%;">Diagram</th>
-      <th style="width:55%;">미리보기</th>
-      <th style="width:30%;">설명</th>
+      <th style="width:12%;">Diagram</th>
+      <th style="width:68%;">미리보기</th>
+      <th style="width:20%;">설명</th>
     </tr>
   </thead>
   <tbody>
