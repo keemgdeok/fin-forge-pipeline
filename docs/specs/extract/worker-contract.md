@@ -1,167 +1,122 @@
 # Worker Lambda — I/O 계약 명세
 
-본 문서는 Extract 파이프라인의 Worker Lambda 함수(Ingestion Worker)의 입력/출력 계약을 정의합니다. Worker는 실제 외부 데이터 수집 및 Raw 데이터 저장을 담당합니다.
+| 항목 | 내용 |
+|------|------|
+| 책임 | 외부 데이터 공급자에서 가격 데이터를 수집해 RAW S3에 저장하고 배치 상태를 갱신 |
+| 코드 기준 | `src/lambda/functions/ingestion_worker/handler.py` |
+| 배포 리소스 | `{environment}-daily-prices-data-ingestion-worker` (Python 3.12) |
 
-## 기본 정보
-
-| 항목 | 값 |
-|------|-----|
-| **Function Name** | `{environment}-daily-prices-data-ingestion-worker` |
-| **Runtime** | Python 3.12 |
-| **Memory** | 512MB+ (설정 가능) |
-| **Timeout** | 300초 (기본, 설정 가능) |
-| **Trigger** | SQS Queue Event |
-
-## 환경변수
+## 환경 변수
 
 | 변수명 | 필수 | 기본값 | 설명 |
 |--------|:---:|--------|------|
-| **ENVIRONMENT** | Y | - | 배포 환경 |
-| **RAW_BUCKET** | Y | - | 대상 S3 Raw 버킷 |
-| **ENABLE_GZIP** | N | `false` | S3 업로드 시 GZIP 압축 |
+| `ENVIRONMENT` | ✅ | - | 배포 환경 식별자 |
+| `RAW_BUCKET` | ✅ | - | RAW 데이터가 저장될 S3 버킷 |
+| `ENABLE_GZIP` | ❌ | `false` | 업로드 시 GZIP 압축 여부 |
+| `BATCH_TRACKING_TABLE` | ❌ | - | DynamoDB 배치 트래커 테이블 이름 |
+| `RAW_MANIFEST_BASENAME` | ❌ | `_batch` | 매니페스트 기본 파일명 |
+| `RAW_MANIFEST_SUFFIX` | ❌ | `.manifest.json` | 매니페스트 확장자 |
 
-## 입력 명세 (SQS 메시지)
+## SQS 메시지 계약
 
-| 필드 | 타입 | 필수 | 제약 | 예시 | 설명 |
-|------|------|:---:|------|------|------|
-| **data_source** | string | Y | 1-50자 | `yahoo_finance` | 데이터 소스 식별자 |
-| **data_type** | string | Y | 1-30자 | `prices` | 데이터 타입 |
-| **domain** | string | Y | 1-50자 | `market` | 도메인 식별자 |
-| **table_name** | string | Y | 1-50자 | `prices` | 대상 테이블명 |
-| **symbols** | array | Y | 1-10개 | `["AAPL", "MSFT"]` | 수집할 심볼 목록 |
-| **period** | string | N | Yahoo 지원값 | `1mo` | 조회 기간 |
-| **interval** | string | N | Yahoo 지원값 | `1d` | 시간 간격 |
-| **file_format** | string | N | json\|csv\|parquet | `json` | 출력 파일 형식 |
-| **correlation_id** | string | N | 1-100자 | `batch-001` | 추적용 상관관계 ID |
+| 필드 | 타입 | 필수 | 제약/설명 | 예시 |
+|------|------|:---:|-------------|------|
+| `data_source` | string | ✅ | 1–50자 | `yahoo_finance` |
+| `data_type` | string | ✅ | 1–30자 | `prices` |
+| `domain` | string | ✅ | 1–50자 | `market` |
+| `table_name` | string | ✅ | 1–50자 | `prices` |
+| `symbols` | array | ✅ | 1–10개 | `["AAPL", "MSFT"]` |
+| `period` | string | ❌ | Yahoo 지원값 | `1mo` |
+| `interval` | string | ❌ | Yahoo 지원값 | `1d` |
+| `file_format` | string | ❌ | `json` 또는 `csv` (`parquet` 요청 시 JSON 저장) | `json` |
+| `correlation_id` | string | ❌ | 1–100자 | `batch-001` |
+| `batch_id` | string | ✅ | UUID v4 | `c7d3...` |
+| `batch_ds` | string | ✅ | `YYYY-MM-DD` | `2025-09-07` |
+| `batch_total_chunks` | integer | ✅ | > 0 | `8` |
 
-## 데이터 수집 (Yahoo Finance)
+## 외부 데이터 호출 요약
 
-| 항목 | 값 | 제한사항 |
-|------|-----|----------|
-| **지원 심볼** | 미국 주식 (AAPL, MSFT 등) | 국제 주식 일부 지원 |
-| **지원 기간** | `1d`, `5d`, `1mo`, `3mo`, `6mo`, `1y`, `2y`, `5y`, `10y`, `ytd`, `max` | API 제공값 |
-| **지원 간격** | `1m`~`3mo` (15가지) | 고빈도 데이터는 제한적 |
-| **Rate Limit** | ~2000 요청/시간 | 심볼당 제한 |
+| 항목 | 값 |
+|------|-----|
+| 공급자 | Yahoo Finance (`yfinance`) |
+| 재시도 전략 | 명시적 재시도 없음 (오류 시 해당 심볼 스킵) |
+| 라이브러리 미존재 시 | 빈 리스트 반환 (정상 처리) |
+| 전달 파라미터 | 이벤트 payload의 `symbols`, `period`, `interval`을 그대로 사용 |
 
-### API 제한 및 대응
+## RAW S3 저장 규칙
 
-| 제한 유형 | 임계값 | 대응 방법 | 재시도 |
-|-----------|--------|----------|-------|
-| **Rate Limiting** | 429 에러 | 1-2초 대기 | 1회 |
-| **Server Error** | 500/502/503 | 지수 백오프 | 2회 |
-| **Timeout** | > 10초 | 즉시 중단 | 1회 |
-| **Not Found** | 404 (심볼 없음) | 로그 후 스킵 | 0회 |
+| 항목 | 값/예시 | 설명 |
+|------|---------|------|
+| 경로 패턴 | `s3://{RAW_BUCKET}/{domain}/{table_name}/interval={interval}/data_source={data_source}/year={YYYY}/month={MM}/day={DD}/` | Hive 파티션 구조 |
+| 파일명 | `{symbol}.{ext}[.gz]` | 심볼별 1일치 데이터 저장 |
+| 지원 형식 | JSON Lines, CSV | `ENABLE_GZIP=true` 시 `.gz` 확장자 추가 |
+| Parquet 요청 | 저장은 JSON으로 수행 후 Transform에서 Parquet 변환 |
 
-## S3 저장 구조
-
-### 파티셔닝 (Hive 스타일)
-
-```
-s3://{RAW_BUCKET}/{domain}/{table_name}/
-    interval={interval}/
-    data_source={data_source}/
-    year={YYYY}/
-    month={MM}/
-    day={DD}/
-    {symbol}.{file_format}[.gz]
-```
-
-- `interval`: 이벤트나 환경 설정에서 전달한 수집 해상도(예: `1d`, `1m`).
-- `data_source`: 원본 데이터 공급자(예: `yahoo_finance`).
-- `year/month/day`: 시세 레코드의 UTC 날짜.
-- 파일 이름은 심볼을 기준으로 하며, `ENABLE_GZIP=true` 인 경우 `.gz` 확장자가 추가됩니다.
-
-### 파일 형식 비교
+## 파일 형식 비교
 
 | 형식 | 확장자 | 압축률 | 호환성 | 쿼리 성능 | 권장 용도 |
 |------|--------|:------:|:------:|:---------:|----------|
-| **JSON Lines** | `.json` | ⭐⭐⭐ | ⭐⭐⭐⭐⭐ | ⭐⭐⭐ | 기본값, 개발 친화적 |
-| **CSV** | `.csv` | ⭐⭐ | ⭐⭐⭐⭐⭐ | ⭐⭐ | Excel 호환, 수동 분석 |
-| **Parquet** | `.parquet` | ⭐⭐⭐⭐⭐ | ⭐⭐⭐ | ⭐⭐⭐⭐⭐ | 대용량 분석 (미래) |
+| JSON Lines | `.json` | ⭐⭐⭐ | ⭐⭐⭐⭐⭐ | ⭐⭐⭐ | 기본값 (개발 친화적) |
+| CSV | `.csv` | ⭐⭐ | ⭐⭐⭐⭐⭐ | ⭐⭐ | Excel/수동 분석 |
 
-### 파일 크기 가이드
+## 배치 트래커 & 매니페스트 흐름
 
-| 형식 | 목표 크기 | 최대 크기 | 심볼당 30일 예상 |
-|------|:---------:|:---------:|:---------------:|
-| **JSON** | 1-10MB | 50MB | ~9MB |
-| **CSV** | 1-5MB | 25MB | ~6MB |
-| **Parquet** | 10-100MB | 200MB | ~3MB |
+| 단계 | 설명 | 저장소 |
+|------|------|--------|
+| 청크 처리 | `processed_chunks` 증가, partition summary 추가 | DynamoDB `BATCH_TRACKING_TABLE` |
+| 임시 요약 | `manifests/tmp/{batch_id}/*.json` 파일 기록 | RAW 버킷 |
+| 최종 완료 | `_batch.manifest.json` 생성 | RAW 버킷 |
+| 후속 실행 | Runner/운영 스크립트가 `manifest_keys`를 구성해 Step Functions 실행 | 외부 스크립트 |
 
-### 백필 & 증분 수집 전략
+## Partial Batch Failure 응답
 
-- **대규모 초기 적재(예: 10년)**: 동일 심볼의 레코드를 UTC 기준 일 단위로 나누어 업로드합니다. 각 날짜는 `year=YYYY/month=MM/day=DD` 파티션에 매핑되므로 Athena/Glue 파티션 수가 예측 가능합니다.
-- **일일 증분**: 매일 새로 수집된 값은 동일 파티션 경로(같은 interval/data_source/year/month/day)로 업로드하되, 동형 키가 이미 존재하면 idempotency 로직이 덮어쓰지 않고 건너뜁니다.
-- **분석 워크로드**: 장기 분석 시에는 원하는 날짜 범위만 스캔하도록 `year/month/day` 필터를 사용하고, 고빈도(interval=1m 등) 데이터는 별도 파티션으로 분리됩니다.
+| 시나리오 | Lambda 응답 | SQS 동작 |
+|----------|-------------|----------|
+| 전체 성공 | `{"batchItemFailures": []}` | 모든 메시지 삭제 |
+| 부분 실패 | 실패한 `messageId` 목록 포함 | 해당 메시지만 재전달 |
+| 전체 실패 | 예외 발생 | 전체 메시지 재전달 (receiveCount 증가) |
 
-## 출력 명세 (Partial Batch Failure)
+## SQS 재시도 구성
 
-Worker Lambda는 SQS의 Partial Batch Failure 패턴을 사용합니다:
-
-| 시나리오 | 응답 구조 | SQS 동작 | 재시도 |
-|----------|-----------|----------|-------|
-| **전체 성공** | `{"batchItemFailures": []}` | 모든 메시지 삭제 | 없음 |
-| **부분 실패** | `{"batchItemFailures": [{"itemIdentifier": "msg-id"}]}` | 실패한 메시지만 재시도 | 있음 |
-| **전체 실패** | Lambda 예외 발생 | 모든 메시지 재시도 | 있음 |
-
-## 오류 처리
-
-| 오류 유형 | 재시도 | 백오프 | DLQ 이동 | 예시 |
-|-----------|:-----:|--------|:------:|------|
-| **JSON_PARSE_ERROR** | ✅ | - | 5회 후 | 잘못된 메시지 형식 |
-| **INPUT_VALIDATION** | ✅ | - | 5회 후 | 필수 필드 누락 |
-| **API_RATE_LIMIT** | ✅ | 1-2초 | 3회 후 | Yahoo Finance 제한 |
-| **API_SERVER_ERROR** | ✅ | 지수형 (1,2,4초) | 3회 후 | 외부 API 장애 |
-| **S3_PERMISSION** | ❌ | - | 즉시 | IAM 권한 오류 |
-| **S3_NETWORK** | ✅ | 지수형 | 2회 후 | 네트워크 장애 |
-| **NO_DATA** | ❌ | - | - | 주말/휴일 (정상) |
-
-### SQS 재시도 설정
-
-| 설정 | 값 | 설명 |
+| 항목 | 값 | 설명 |
 |------|-----|------|
-| **Visibility Timeout** | 1800초 (30분) | Worker timeout × 6 |
-| **Max Receive Count** | 5회 | DLQ 이동 전 최대 재시도 |
-| **Dead Letter Queue** | ✅ | 5회 실패 후 격리 |
-| **Batch Size** | 1-10 | 동시 처리할 메시지 수 |
+| Event Source Mapping | `report_batch_item_failures=true` | 실패 항목만 재전달 |
+| Visibility Timeout | `worker_timeout × 6` (Dev 1800초) | 메시지 재처리 시간 확보 |
+| `maxReceiveCount` | `max_retries` (Dev 5) | 초과 시 DLQ 이동 |
+| DLQ | `{env}-ingestion-dlq` (14일 보관) | 운영자가 재처리 |
 
-## 성능 설정
+## 성능/운영 파라미터
 
-| 규모 | 심볼 수 | 메모리 | 타임아웃 | 배치 크기 | 동시성 |
-|:----:|:-------:|--------|:--------:|:--------:|:------:|
-| **소규모** | < 100 | 512MB | 300초 | 1 | 10 |
-| **중규모** | 100-500 | 768MB | 600초 | 5 | 20 |
-| **대규모** | 500+ | 1024MB | 900초 | 10 | 50 |
+| 항목 | 관리 위치 | 기본값(Dev) | 비고 |
+|------|-----------|--------------|------|
+| Worker 메모리 | `worker_memory` | 512MB | 환경별 조정 가능 |
+| Worker 타임아웃 | `worker_timeout` | 300초 | 공급자 응답 속도 기반 |
+| 예약 동시성 | `worker_reserved_concurrency` | 0 | 0이면 제한 없음 |
+| SQS 배치 크기 | `sqs_batch_size` | 1 | 처리량 vs 실패 격리 |
+| CloudWatch 알람 | `ingestion_stack.py` | QueueDepth, MessageAge, Errors | Dev 값 기준 |
 
-## 모니터링
+## 데이터 품질 검사
 
-### 알람 임계값
+| 검사 항목 | 조건 | 조치 | 로그 |
+|------------|------|------|------|
+| 필수 필드 | `symbol`, `timestamp` 존재 여부 | 레코드 스킵 | ERROR |
+| 심볼 형식 | `^[A-Z0-9._-]{1,20}$` | 레코드 스킵 | WARNING |
+| 타임스탬프 | ISO 8601 UTC | 레코드 스킵 | ERROR |
+| 가격/볼륨 | 음수 방지 | 경고 후 계속 | WARNING |
+| 중복 레코드 | 동일 `symbol+timestamp` | 최근 레코드 유지 | INFO |
 
-| 지표 | 임계값 | 알람 조건 | 조치 |
-|------|--------|-----------|------|
-| **Duration** | 240초 (80%) | > 임계값 5분 연속 | 타임아웃 검토 |
-| **Errors** | 0 | ≥ 1 즉시 | 로그 확인 |
-| **Throttles** | 0 | ≥ 1 즉시 | 동시성 증가 |
+## 참고
 
-### 비즈니스 지표
-
-| 지표명 | 정상 범위 | 경고 임계값 | 위험 임계값 |
-|--------|-----------|-------------|-------------|
-| **처리 속도** | 2-10 심볼/초 | < 1 | < 0.5 |
-| **성공률** | > 95% | < 90% | < 80% |
-| **DLQ 유입률** | 0% | > 1% | > 5% |
-
-## 데이터 품질
-
-### 검증 체크리스트
-
-| 검증 항목 | 조건 | 액션 | 로그 레벨 |
-|----------|------|------|----------|
-| **심볼 유효성** | 영숫자, 점, 하이픈만 | 스킵 | WARNING |
-| **타임스탬프** | ISO 8601 형식 | 스킵 | ERROR |
-| **가격 범위** | ≥ 0 | 경고 후 계속 | WARNING |
-| **볼륨 범위** | ≥ 0 | 경고 후 계속 | WARNING |
-| **NULL 값 패턴** | 연속 NULL > 5개 | 경고 후 계속 | WARNING |
+| 항목 | 설명 |
+|------|------|
+| 외부 API 재시도 | 명시적 백오프 없음, 실패 심볼은 건너뜀 |
+| 심볼 요약 정리 | `_cleanup_chunk_summaries` 호출로 `manifests/tmp` 정리 |
+| 환경 파라미터 | `infrastructure/config/environments/*.py`에서 관리 |
 
 ---
 
-*본 명세는 `src/lambda/functions/ingestion_worker/handler.py`와 `src/lambda/layers/common/python/shared/ingestion/service.py` 구현을 기반으로 작성되었습니다.*
+| 관련 문서 | 경로 |
+|----------|------|
+| Raw 스키마 | `docs/specs/extract/raw-data-schema.md` |
+| SQS 통합 | `docs/specs/extract/sqs-integration-spec.md` |
+| 배치 트래커 | `docs/specs/extract/orchestrator-contract.md` |

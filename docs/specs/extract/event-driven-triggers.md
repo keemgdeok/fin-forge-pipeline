@@ -1,119 +1,74 @@
-# Event-Driven Triggers — 이벤트 기반 트리거 명세
+# Extract Trigger Specification
 
-본 문서는 Extract 파이프라인의 이벤트 기반 트리거 시스템을 정의합니다. EventBridge 스케줄, S3 이벤트 알림, 그리고 수동 트리거를 포함한 모든 파이프라인 시작점을 다룹니다.
+| 구분 | 값 |
+|------|-----|
+| 문서 목적 | Extract 파이프라인의 트리거 진입점을 표 기반으로 명세 |
+| 코드 기준 | `infrastructure/pipelines/daily_prices_data/ingestion_stack.py`, `src/step_functions/workflows/runner.py` |
+| 적용 범위 | EventBridge 스케줄, 수동 실행, (미구현) Event 기반 트리거 |
 
-## 트리거 아키텍처
+## Trigger Pattern Matrix
 
-Extract 파이프라인은 다음 3가지 트리거 패턴을 지원합니다:
+| 패턴 | 구현 상태 | 입력 소스 | 후속 처리 | 비고 |
+|------|-----------|-----------|-----------|------|
+| Scheduled | ✅ (배포됨) | EventBridge Rule + Cron | Orchestrator Lambda | 환경별 기본 이벤트 사용 |
+| Event-Driven | 🚧 (미구현) | EventBridge Custom Event | 구현 시 Step Functions 연계 필요 | `processing_triggers` 설정만 존재 |
+| Manual | ⚙️ (직접 호출) | `aws lambda invoke` 등 | Orchestrator Lambda | 전용 파라미터 미구현 |
 
-1. **Scheduled Trigger**: 정시 실행 (EventBridge Rule + Cron)
-2. **Event-Driven Trigger**: 외부 이벤트 기반 (EventBridge Custom Events)  
-3. **Manual Trigger**: 수동 실행 (Lambda Direct Invocation)
+## Scheduled Trigger 정리
 
-## 1. Scheduled Trigger (기본)
+| 항목 | 값 |
+|------|-----|
+| 환경별 Cron | 환경 설정(`ingestion_trigger_type`, `cron`) | 
+| 기본 이벤트 필드 | `data_source`, `data_type`, `domain`, `table_name`, `symbols`, `period`, `interval`, `file_format`, `trigger_type` |
+| 심볼 로딩 순서 | SSM Parameter → S3 객체 → 이벤트 payload → 폴백 `["AAPL"]` |
+| 배포 리소스 | EventBridge Rule → Lambda Target (`DailyPricesIngestionSchedule`) |
 
-### EventBridge Rule 구성
+### 기본 이벤트 예시
 
-| 환경 | Cron 표현식 | 실행 시간 | 설명 |
-|------|-------------|-----------|------|
-| **dev** | `0 22 ? * MON-FRI *` | 매주 월-금 22:00 UTC | 07:00 KST (거래일) |
-| **staging** | `0 21 ? * MON-FRI *` | 매주 월-금 21:00 UTC | 06:00 KST |
-| **prod** | `0 20 ? * MON-FRI *` | 매주 월-금 20:00 UTC | 05:00 KST |
+| 필드 | 값 |
+|------|-----|
+| `data_source` | `yahoo_finance` |
+| `data_type` | `prices` |
+| `domain` | `market` |
+| `table_name` | `prices` |
+| `symbols` | `["AAPL", "MSFT"]` |
+| `period` | `1mo` |
+| `interval` | `1d` |
+| `file_format` | `json` |
+| `trigger_type` | `schedule` |
 
-### 기본 스케줄 이벤트 페이로드
+## Manual Trigger 요약
 
-```json
-{
-  "data_source": "yahoo_finance",
-  "data_type": "prices", 
-  "domain": "market",
-  "table_name": "prices",
-  "symbols": ["AAPL", "MSFT", "GOOGL", "AMZN"],
-  "period": "1mo",
-  "interval": "1d",
-  "file_format": "json",
-  "trigger_type": "schedule"
-}
-```
+| 항목 | 값 |
+|------|-----|
+| 실행 주체 | 운영자/개발자 (CLI, Lambda 콘솔) |
+| 필수 필드 | Scheduled 이벤트와 동일 (필요 시 오버라이드) |
+| 미구현 항목 | `dry_run`, `force_symbols`, `override_config` |
+| 호출 예시 | `aws lambda invoke --function-name <env>-daily-prices-data-orchestrator --payload '{"symbols":["AAPL"]}' resp.json` |
 
-### 환경별 설정
+## Manifest Hand-off (S3 → Step Functions)
 
-| 환경 | 스케줄 | 심볼 소스 | 파일 형식 | 근거 |
-|------|--------|----------|----------|------|
-| **dev** | `cron(0 22 * * ? *)` | 고정값 `["AAPL", "MSFT"]` | `json` | 디버깅 편의성 |
-| **staging** | `cron(0 21 * * ? *)` | SSM 파라미터 | `json` | 운영 환경 유사 |
-| **prod** | `cron(0 20 * * ? *)` | SSM 파라미터 | `json` | 최대 성능 |
+| 단계 | 설명 |
+|------|------|
+| 매니페스트 생성 | 워커가 `_batch.manifest.json`을 RAW 버킷에 업로드 |
+| 자동 트리거 | **미배포** (EventBridge 규칙 없음) |
+| 실행 책임 | 운영 스크립트 또는 `src/step_functions/workflows/runner.py`에서 `manifest_keys` 입력 생성 후 실행 |
+| 필터 예시 (향후) | Prefix: `<domain>/`, Suffix: `.manifest.json`, Size ≥ 1KB |
 
-## 2. Event-Driven Trigger (확장)
+## 미구현/추가 과제
 
-### 지원하는 이벤트 소스
+| 항목 | 설명 |
+|------|------|
+| Event 기반 재실행 | `processing_triggers` 설정에 맞는 EventBridge 규칙과 Lambda 필요 |
+| 자동 매니페스트 소비 | S3 이벤트 → Step Functions 실행을 위한 인프라 확장 필요 |
+| 수동 실행 파라미터 | `dry_run`, `force_symbols`, `override_config` 지원 여부 결정 |
 
-| 소스 | Event Source | Detail Type | 용도 |
-|------|--------------|-------------|------|
-| **Transform Pipeline** | `extract.pipeline` | `Processing Complete` | Transform 완료 후 재수집 |
-| **Symbol Management** | `symbol.universe` | `Universe Updated` | 새 심볼 추가 시 즉시 수집 |
-| **Market Events** | `market.events` | `Market Close` | 장 마감 후 즉시 수집 |
-| **Manual Operations** | `ops.manual` | `Adhoc Ingestion` | 운영팀의 수동 트리거 |
+---
 
-### Transform Complete Event 예시
-
-```json
-{
-  "version": "0",
-  "detail-type": "Processing Complete",
-  "source": "transform.pipeline",
-  "detail": {
-    "domain": "market",
-    "table_name": "prices", 
-    "partition": "ds=2025-09-09",
-    "trigger_reingestion": true,
-    "symbols": ["AAPL", "TSLA"],
-    "reason": "data_quality_issue"
-  }
-}
-```
-
-### Symbol Universe Update Event 예시
-
-```json
-{
-  "version": "0",
-  "detail-type": "Universe Updated", 
-  "source": "symbol.universe",
-  "detail": {
-    "added_symbols": ["NVDA", "AMD"],
-    "removed_symbols": ["XOM"],
-    "effective_date": "2025-09-10",
-    "immediate_ingestion": true
-  }
-}
-```
-
-## 3. Manual Trigger (운영)
-
-### CLI를 통한 실행
-
-```bash
-# AWS CLI
-aws lambda invoke \
-  --function-name dev-daily-prices-data-orchestrator \
-  --payload '{"data_source":"yahoo_finance","symbols":["AAPL"],"correlation_id":"manual-001"}' \
-  response.json
-
-# CDK CLI (권장)
-cdk deploy DailyPricesDataIngestionStack \
-  --parameters TriggerIngestion=true \
-  --parameters TestSymbols=AAPL,MSFT
-```
-
-### 수동 실행 파라미터
-
-| 파라미터 | 타입 | 기본값 | 설명 |
-|----------|------|--------|------|
-| `correlation_id` | string | 자동 생성 | 추적용 상관관계 ID |
-| `dry_run` | boolean | `false` | true 시 SQS 전송 없이 로그만 |
-| `force_symbols` | boolean | `false` | true 시 외부 소스 무시 |
-| `override_config` | object | `{}` | 환경 설정 재정의 |
+| 참고 문서 | 경로 |
+|----------|------|
+| Event 입력/출력 계약 | `docs/specs/extract/orchestrator-contract.md` |
+| 매니페스트 처리 Runner | `src/step_functions/workflows/runner.py` |
 
 ## 4. S3 Event Notifications (Transform 연계)
 
