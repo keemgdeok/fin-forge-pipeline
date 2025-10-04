@@ -43,11 +43,14 @@
 
 ## Table of Contents
 
-- [Table of Contents](#table-of-contents)
-- [Overview](#overview)
-- [Features](#features)
-- [Project Structure](#project-structure)
-- [Getting Started](#getting-started)
+- [❯ fin-forge-pipeline ](#-fin-forge-pipeline-)
+  - [Table of Contents](#table-of-contents)
+  - [Overview](#overview)
+    - [End-to-End Architecture](#end-to-end-architecture)
+    - [Diagram Libraries](#diagram-libraries)
+  - [Features](#features)
+  - [Project Structure](#project-structure)
+  - [Getting Started](#getting-started)
     - [Prerequisites](#prerequisites)
     - [Installation](#installation)
     - [Usage](#usage)
@@ -66,11 +69,10 @@
 ### Diagram Libraries
 | 영역 | 다이어그램 미리보기 | 문서 |
 |------|--------------------|------|
-| Extract | <img src="docs/diagrams/extract/02-flow-1.svg" alt="Extract Flow" style="width:100%;" /> | [docs/diagrams/extract/README.md](docs/diagrams/extract/README.md) |
-| Transform | <img src="docs/diagrams/transform/02-flow-1.svg" alt="Transform Flow" style="width:100%;" /> | [docs/diagrams/transform/README.md](docs/diagrams/transform/README.md) |
-| Load | <img src="docs/diagrams/load/02-data-flow-1.svg" alt="Load Flow" style="width:100%;" /> | [docs/diagrams/load/README.md](docs/diagrams/load/README.md) |
+| Extract | <img src="docs/diagrams/extract/03-sequence-1.svg" alt="Extract Sequence" style="width:100%;" /> | [docs/diagrams/extract/README.md](docs/diagrams/extract/README.md) |
+| Transform | <img src="docs/diagrams/transform/03-sequence-1.svg" alt="Transform Sequence" style="width:100%;" /> | [docs/diagrams/transform/README.md](docs/diagrams/transform/README.md) |
+| Load | <img src="docs/diagrams/load/03-sequence-1.svg" alt="Load Sequence" style="width:100%;" /> | [docs/diagrams/load/README.md](docs/diagrams/load/README.md) |
 
-각 README에는 모든 SVG 다이어그램의 풀-폭 미리보기와 대응하는 Mermaid 원본 경로가 포함되어 있으며, `./docs/diagrams/generate-svgs.sh`를 통해 재렌더링할 수 있습니다.
 
 ---
 
