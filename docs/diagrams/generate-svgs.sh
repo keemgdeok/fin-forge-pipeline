@@ -25,6 +25,9 @@ SCRIPT_DIR=$(dirname "$0")
 # Set the path for the Puppeteer config file to be in the SAME directory as the script.
 PUPPETEER_CONFIG="$SCRIPT_DIR/puppeteer-config.json"
 
+# Target width for generated SVGs (helps GitHub preview render larger images)
+MERMAID_WIDTH=${MERMAID_WIDTH:-2400}
+
 
 # --- Main Logic ---
 echo "🚀 Starting Mermaid to SVG conversion..."
@@ -41,8 +44,8 @@ find "$SCRIPT_DIR" -type f -name "*.md" | while read -r mdfile; do
     svgfile="${mdfile%.md}.svg"
     echo "  - Converting: $mdfile  ->  $svgfile"
     
-    # Run the mmdc command with the config file path
-    mmdc -p "$PUPPETEER_CONFIG" -i "$mdfile" -o "$svgfile"
+    # Run the mmdc command with the config file path and desired width
+    mmdc -p "$PUPPETEER_CONFIG" -i "$mdfile" -o "$svgfile" -w "$MERMAID_WIDTH"
 done
 
 echo ""
