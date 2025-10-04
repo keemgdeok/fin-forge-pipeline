@@ -1,6 +1,6 @@
 # Load Monitoring & Metrics (Pull Model)
 
-## 핵심 모니터링 지표 (03-sequence.md 연동)
+## 핵심 모니터링 지표 (외부 Loader 기준)
 
 ```mermaid
 flowchart TD
@@ -20,7 +20,7 @@ flowchart TD
   AGT --> A2
   SQS --> A3
 
-  Note1["03-sequence.md 참조:<br/>정상/실패 플로우 상세"]:::note
+  Note1["03-sequence.md 참조:<br/>정상/실패 플로우 (Loader 외부 구현)"]:::note
   Note2["05-batch-optimization.md 참조:<br/>성능 목표 및 임계값"]:::note
   
   A1 -.-> Note1
@@ -37,6 +37,7 @@ flowchart TD
 - **DLQ Count**: > 0 (즉시 운영팀 알람)
 
 ### **Loader/ClickHouse 성능**
+- 아래 값은 온프레미스 Loader가 자체적으로 측정/전송해야 합니다.
 - **Processing Time P95**: < 30초/메시지 (타임아웃 5분 하에서)
 - **Loader Error Rate**: < 1% (재시도 포함)
 - **CH INSERT Duration**: < 1–5초/파일 (크기/압축에 따라 상이)

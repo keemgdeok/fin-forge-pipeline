@@ -1,48 +1,43 @@
 ```mermaid
 sequenceDiagram
   autonumber
-  participant SF as Step Functions
+  participant SF as Step Functions (per manifest item)
   participant PRE as Preflight Lambda
   participant COMP as Glue Compaction Job
   participant GUARD as Compaction Guard Lambda
-  participant GLUE as Glue ETL Job
+  participant ETL as Glue ETL Job
+  participant DEC as Schema Change Decider
+  participant CR as Glue Crawler
   participant RAW as S3 Raw Bucket
   participant CUR as S3 Curated Bucket
-  participant CR as Glue Crawler
-  participant CAT as Glue Data Catalog
-  
 
-  SF->>PRE: Invoke (domain, table, date)
-  PRE-->>SF: Glue args + idempotency key (compaction 포함)
-  alt Preflight 실패
-    SF-->>SF: Fail
-  else Preflight 통과
-    SF->>COMP: StartJobRun(compaction args)
-    COMP->>RAW: Read manifest-listed objects
-    COMP->>CUR: Write compacted parquet (ds)
-    COMP-->>SF: Success(runId, stats)
-    SF->>GUARD: Invoke ({bucket, prefix, ds})
-    GUARD-->>SF: {shouldProcess: bool}
-    alt Compacted data 존재
-      SF->>GLUE: StartJobRun(transform args)
-      GLUE->>CUR: Read compacted parquet
-      GLUE->>GLUE: Transform + validate
-      GLUE->>CUR: Write curated outputs
-      GLUE-->>SF: Success(runId, stats)
-      SF->>PRE: Schema drift check
-      PRE-->>SF: changed? (true/false)
-      alt Schema changed
-        SF->>CR: StartCrawler
-        CR->>CUR: Scan new paths
-        CR-->>CAT: Update table/partitions
-      else No change
-        SF-->>SF: Skip crawler
+  SF->>PRE: Invoke (domain, table, ds, manifest_key)
+  PRE-->>SF: {proceed, glue_args, error?}
+  alt proceed == false & error.code == "IDEMPOTENT_SKIP"
+    SF-->>SF: Skip item
+  else proceed == false
+    SF-->>SF: Fail (propagate error)
+  else proceed == true
+    SF->>COMP: StartJobRun(glue_args → compaction)
+    COMP->>RAW: Read raw partition (interval/data_source/year/month/day)
+    COMP->>CUR: Write compacted layer (`layer=compacted`)
+    COMP-->>SF: SUCCESS
+    SF->>GUARD: Invoke(bucket, domain, table, layer, ds)
+    GUARD-->>SF: {shouldProcess}
+    alt shouldProcess == false
+      SF-->>SF: Skip transform
+    else shouldProcess == true
+      SF->>ETL: StartJobRun(glue_args)
+      ETL->>CUR: Read compacted layer
+      ETL->>ETL: Transform + data quality checks
+      ETL->>CUR: Write curated layer (`layer=adjusted`)
+      ETL-->>SF: SUCCESS
+      SF->>DEC: Invoke(glue_args, catalog_update)
+      DEC-->>SF: {shouldRunCrawler}
+      alt shouldRunCrawler == true
+        SF->>CR: startCrawler()
+        CR->>CUR: Scan new partitions
       end
-      SF-->>SF: Succeed
-    else Compacted data 없음
-      SF-->>SF: Succeed (no new files)
     end
   end
-
-  Note over GLUE: 품질 실패/격리 경로는 04-data-quality-gate 참조
 ```

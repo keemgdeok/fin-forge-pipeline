@@ -17,7 +17,8 @@
 ## ClickHouse s3() 기반 INSERT 최적화
 
 ### **입력 파일 전략**
-- **단일 파티션**: `.../ds=YYYY-MM-DD/*.parquet` 와일드카드로 일괄 적재
+- **경로 정합성**: 현재 Transform 출력은 `interval=…/data_source=…/year=…/month=…/day=…/layer=<name>/` 구조이므로 로더가 예상 경로(`ds=`)에 맞게 변환하거나 Lambda를 수정해야 합니다.
+- **파티션 선택**: 일자별 처리 시 `year=YYYY/month=MM/day=DD/` 기반 와일드카드를 활용
 - **대용량**: 파티션별 파일 크기 128–512MB 권장(Gluespec와 일치)
 - **클러스터 병렬화**: (선택) `Distributed` 테이블로 샤드 병렬 적재
 

@@ -1,21 +1,24 @@
 ```mermaid
 flowchart TD
-  A["Transform 완료<br/>Curated S3 Object Created"] --> B["EventBridge Rule 매칭"]
-  B --> C["SQS Queue 메시지 생성"]
-  C --> D["On‑prem CH Loader Long Poll"]
-  D --> E["메시지 파싱 + domain/table/partition 추출"]
-  E --> F["INSERT INTO <table>\nSELECT * FROM s3('s3://.../*.parquet', ...) 실행"]
-  F --> G["ClickHouse가 S3에서 Parquet 병렬 읽기"]
-  G --> H["스키마 매핑/검증 + 적재 완료"]
-  H --> I["SQS Delete(ACK) + 메트릭 기록"]
+  A["Curated 객체 생성 (interval/.../layer=adjusted)"] --> B["EventBridge Rule\n(Prefix/size 필터)"]
+  B --> C["Load Event Publisher Lambda"]
+  C -->|Validation & transform_s3_event_to_message| D["도메인별 SQS Queue"]
+  D --> E["Dead Letter Queue (maxReceiveCount 초과)"]
 
-  %% DLQ 상세 처리 참고 노트
-  NDQ["실패/재시도/DLQ 처리는<br/>04-retry-and-dlq 참조"]:::note
-  G -.-> NDQ
+  subgraph "On-prem (External)"
+    D --> F["Loader (미구현)"]
+    F --> G["ClickHouse INSERT ... SELECT s3(...)"]
+    G --> H["S3에서 Parquet 병렬 읽기"]
+  end
 
-  %% 배치/동시성 최적화 참고 노트
-  NBATCH["폴링/워커/와일드카드 최적화는<br/>05-batch-optimization 참조"]:::note
-  H -.-> NBATCH
-  
+  %% Notes
+  N1["Lambda는 키를 `domain/table/ds=.../part.parquet` 패턴으로 파싱함"]:::note
+  N2["현재 Transform 출력은 `interval/.../layer=...` 구조 → 정합성 조정 필요"]:::note
+  N3["On-prem Loader 동작은 설계만 존재 (별도 서비스에서 구현)"]:::note
+
+  C -.-> N1
+  C -.-> N2
+  F -.-> N3
+
   classDef note fill:#fff3cd,stroke:#d39e00,color:#5c4800;
 ```

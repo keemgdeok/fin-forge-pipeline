@@ -17,7 +17,7 @@ flowchart TD
   N --> O{All chunks processed?}
   O -->|No| P["Return partial success"]
   O -->|Yes| Q["Emit partition manifests\n(_batch.manifest.json)"]
-  Q --> R["EventBridge: ObjectCreated (manifest)"]
-  R --> S["Transform Step Functions\n(preflight → Glue/Indicators)"]
+  Q --> R["Runner / Ops: manifest 수집\n(수동 또는 자동 스크립트)"]
+  R --> S["Start Step Functions execution\n(manifest_keys 입력)"]
 
 ```

@@ -24,8 +24,8 @@ flowchart TD
   B --> F
   A --> I
 
-  N1["Example defaults<br/>dev k=10,c=5<br/>stg k=15,c=10<br/>prod k=20,c=15"]
-  N2["RPS ≈ c/t_msg (target 1–3 req/s)"]
+  N1["환경 설정에서 제어:<br/>`orchestrator_chunk_size`, `worker_reserved_concurrency`(0이면 제한 없음)"]
+  N2["운영 권장: 외부 API RPS 1–3 req/s 내 관리"]
   A -.-> N1
   C -.-> N2
 ```

@@ -3,50 +3,39 @@
 ```mermaid
 flowchart TD
   subgraph Init
-    A1["Load Glue args"] --> A2["Set Spark config<br/>- dynamic allocation<br/>- shuffle partitions<br/>- optimized committer"]
+    A1["Load Glue args"] --> A2["Spark config 설정\n- parquet.codec = zstd\n- files.maxPartitionBytes<br/>- shuffle.partitions = 1"]
   end
 
   subgraph Read
-    R1["Resolve compacted path<br/>curated/<domain>/<table>/<subdir>/ds"] --> R2{Available?}
+    R1["Resolve compacted path\ncurated/.../layer=<compacted>"] --> R2{Available?}
     R2 -->|Yes| R3["Read Parquet (compacted)"]
-    R2 -->|No| R4["Fallback to Raw path<br/>raw/<domain>/<table>/interval=.../data_source=.../year/month/day/"]
+    R2 -->|No| R4["Fallback to Raw path\nraw/.../interval=…/year/month/day/"]
     R4 --> R3
   end
 
   subgraph Transform
-    T1["Type casting & normalization"] --> T2["Business transforms<br/>(joins/aggregates)"]
+    T1["Type casting & normalization"] --> T2["Business transforms<br/>(price adjustments, enrich)"]
   end
 
   subgraph DataQuality
-    DQ1["Evaluate rules<br/>- schema/type<br/>- not null/unique<br/>- ranges/enums"] --> DQ2{Violations?}
-    DQ2 -->|Yes| DQF["Fail job (no commit)<br/>log: DQ summary"]
+    DQ1["Evaluate rules\n- null symbol\n- 음수 가격/볼륨\n- 레코드 카운트"] --> DQ2{Violations?}
+    DQ2 -->|Yes| DQF["Raise RuntimeError\n→ Step Functions Catch"]
     DQ2 -->|No| DQP["Proceed"]
   end
 
   subgraph Write
-    W1["Coalesce to target size<br/>128–512MB"] --> W2["Write Parquet (partitioned ds)"]
-    W2 --> W3["Optimized commit<br/>--enable-s3-parquet-optimized-committer=1"]
+    W1["coalesce(1)"] --> W2["Write Parquet\ninterval/.../layer=<curated>"]
   end
 
-  A2 --> R1 --> R2 --> T1 --> T2 --> DQ1 --> DQ2
-  DQP --> W1 --> W2 --> W3
+  A2 --> R1 --> R2 --> T1 --> T2 --> DQ1 --> DQP --> W1 --> W2
 
   classDef note fill:#eef7ff,stroke:#3d7ea6,color:#244a5b;
 ```
 
 비고
 
-- Spark 설정: Glue 4/5, 오토스케일 on, 셔플 파티션 수는 데이터량에 맞춰 조정.
-- 데이터 품질: 치명 규칙 위반 시 커밋 차단(부분 결과 노출 방지). 경고 규칙은 통과 후 로그/메트릭 집계 가능.
-- 쓰기: 임시 경로 → 최종 경로 원자적 커밋. Parquet+ZSTD, 파일 크기 타깃 128–512MB.
-- Step Functions가 선행 컴팩션 Glue 잡을 실행해 Raw 소파일을 병합하고 Parquet으로 저장합니다.
-- Transform 잡은 `curated/<domain>/<table>/<compacted_subdir>/ds=` 경로를 우선 조회하고, 파티션이 아직 없는 경우에만 Raw 경로를 fallback 합니다.
-- RAW 파티션은 `interval/data_source/year/month/day` 5단 구성으로, 동일 심볼을 파일명(`{symbol}.{ext}[.gz]`) 단위로 저장 → 소스별/해상도별 재처리와 재수집 멱등성 보장.
-- 증분: Job Bookmark + 파티션 프루닝으로 스캔 최소화.
-
-권장 Spark 튜닝(DPU=2 고정 가정)
-
-- `spark.sql.shuffle.partitions`: 데이터량에 따라 64–128 범위로 시작
-- `spark.default.parallelism`: `spark.sql.shuffle.partitions`와 동일값 권장
-- 작은 룩업 조인: 브로드캐스트 조인 사용, 불필요한 `repartition` 지양
-- 파일 병합: `coalesce(n)` 또는 `maxRecordsPerFile`로 평균 256MB 근접
+- 컴팩션 잡과 변환 잡 모두 Glue 5.0 환경을 사용하며, Spark 설정은 코드(`raw_to_parquet_compaction.py`, `daily_prices_data_etl.py`)에서 직접 제어합니다.
+- 데이터 품질 실패 시 `RuntimeError("DQ_FAILED: …")`를 발생시켜 Step Functions Catch 체인으로 전파합니다.
+- 출력 파티션: `interval`, `data_source`, `year`, `month`, `day`, `layer`. 데이터 내부에는 `ds` 컬럼이 함께 저장됩니다.
+- Schema fingerprint는 변환 잡 종료 시 아티팩트 버킷에 `latest.json`/`previous.json` 형태로 기록되어 Crawler 실행 여부 판단에 활용됩니다.
+```
