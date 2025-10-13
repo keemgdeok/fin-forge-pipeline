@@ -73,8 +73,7 @@ Manifest 기반 Step Functions → Glue Compaction/ETL/Indicators → Curated S3
 [[**Load**]](docs/diagrams/load/README.md)  
 Curated S3 ObjectCreated → Publisher Lambda → Load SQS → On-premise Loader(미구현)
 
-**세부 문서 링크 확인
-
+**세부 문서 링크
 
 <br>
 
