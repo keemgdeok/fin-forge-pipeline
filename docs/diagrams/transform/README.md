@@ -41,10 +41,3 @@
 
 - RAW → Curated 경로와 파티션 구조
 <br>
-
-#### [IO &amp; Schema (Class)]
-<img src="07-io-and-schema-2.svg" alt="IO Class" style="width:50%;" />
-
--입력/출력 레코드 필드 매핑
-
-<br>
