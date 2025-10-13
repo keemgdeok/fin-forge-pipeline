@@ -1,6 +1,6 @@
 ```mermaid
 classDiagram
-  %% Core security stack
+  %% Core security & shared storage
   class SecurityStack {
     +Role lambda_execution_role
     +Role glue_execution_role
@@ -9,7 +9,6 @@ classDiagram
     +Role github_actions_deploy_role
   }
 
-  %% Shared storage (Data Lake)
   class SharedStorageStack {
     +Bucket raw_bucket
     +Bucket curated_bucket
@@ -21,28 +20,38 @@ classDiagram
     +Bucket curated_bucket
   }
 
-  %% Extract pipeline (fan-out ingestion)
+  %% Pipelines
   class DailyPricesDataIngestionStack {
-    +Queue queue
-    +Queue dlq
-    +Function orchestrator_function
-    +Function ingestion_function  %% SQS Worker
-    +Rule ingestion_schedule       %% EventBridge schedule
+    +Queue ingestion_queue
+    +Queue ingestion_dlq
+    +Function orchestrator_lambda
+    +Function ingestion_worker
+    +Rule ingestion_schedule
     +Dashboard ingestion_dashboard
   }
 
-  %% Transform pipeline (processing/orchestration)
   class DailyPricesDataProcessingStack {
+    +CfnJob compaction_job
     +CfnJob etl_job
-    +StateMachine processing_workflow  %% optional via enable_processing_orchestration
+    +CfnJob indicators_job
+    +StateMachine processing_workflow
     +LogGroup sm_log_group
+  }
+
+  class LoadPipelineStack {
+    +Queue load_queue
+    +Queue load_dlq
+    +Function load_event_publisher
+    +Rule curated_object_rule
   }
 
   %% Platform/Observability & Governance
   class ObservabilityStack {
+    +Topic alerts_topic
     +Dashboard platform_dashboard
-    +Alarms sqs_depth_age_alarms
-    +Alarms lambda_errors_throttles
+    +Alarms glue_job_alarms
+    +Alarms state_machine_alarms
+    +Alarms sqs_depth_alarms
   }
 
   class CatalogStack {
@@ -55,11 +64,15 @@ classDiagram
 
   DailyPricesDataIngestionStack --> SharedStorageStack : «uses» buckets
   DailyPricesDataProcessingStack --> SharedStorageStack : «uses» buckets
+  LoadPipelineStack --> SharedStorageStack : «uses» buckets
   CatalogStack --> SharedStorageStack : «uses» buckets
 
-  DailyPricesDataIngestionStack ..> SecurityStack : «refers» lambda_execution_role_arn
+  DailyPricesDataIngestionStack ..> SecurityStack : «refers» lambda_execution_role
   DailyPricesDataProcessingStack ..> SecurityStack : «refers» lambda/glue/sfn roles
+  LoadPipelineStack ..> SecurityStack : «refers» lambda_execution_role
+
   ObservabilityStack ..> DailyPricesDataIngestionStack : «monitors»
   ObservabilityStack ..> DailyPricesDataProcessingStack : «monitors»
-
+  ObservabilityStack ..> LoadPipelineStack : «monitors»
+  ObservabilityStack ..> CatalogStack : «monitors»
 ```
