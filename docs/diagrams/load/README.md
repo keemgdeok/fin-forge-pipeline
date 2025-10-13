@@ -19,7 +19,7 @@
 <br>
 
 #### [Retry &amp; DLQ]
-<img src="04-retry-and-dlq-1.svg" alt="Retry &amp; DLQ" style="width:100%;" />
+<img src="04-retry-and-dlq-1.svg" alt="Retry &amp; DLQ" style="width:70%;" />
 - 재시도 및 DLQ 처리 개요
 
 <br>
