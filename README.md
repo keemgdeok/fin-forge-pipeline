@@ -178,7 +178,9 @@ python scripts/validate/validate_pipeline.py --environment dev
 ```
 
 <br>
+
 ---
+
 
 ## Testing & Quality Gates
 ```bash
