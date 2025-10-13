@@ -3,11 +3,9 @@
 <!-- HEADER STYLE: CLASSIC -->
 <div align="center">
 
-<img src="readmeai/assets/logos/purple.svg" width="30%" style="position: relative; top: 0; right: 0;" alt="Project Logo"/>
-
 # <code>❯ fin-forge-pipeline </code>
 
-<em></em>
+<em>Serverless financial data pipelines delivered as code-first products on AWS.</em>
 
 <!-- BADGES -->
 <!-- local repository, no metadata badges. -->
@@ -43,44 +41,50 @@
 
 ## Table of Contents
 
-- [❯ fin-forge-pipeline ](#-fin-forge-pipeline-)
-  - [Table of Contents](#table-of-contents)
-  - [Overview](#overview)
-    - [End-to-End Architecture](#end-to-end-architecture)
-    - [Diagram Libraries](#diagram-libraries)
-  - [Features](#features)
-  - [Project Structure](#project-structure)
-  - [Getting Started](#getting-started)
-    - [Prerequisites](#prerequisites)
-    - [Installation](#installation)
-    - [Usage](#usage)
-    - [Testing](#testing)
+- [Architecture](#architecture)
+  - [End-to-end flow](#end-to-end-flow)
+- [Features](#features)
+- [Key Directories](#key-directories)
+- [Quick Start](#quick-start)
+  - [Prerequisites](#prerequisites)
+  - [Environment setup](#environment-setup)
+- [Day-to-day Commands](#day-to-day-commands)
+  - [Synthesize & deploy](#synthesize--deploy)
+  - [Data validation & runbooks](#data-validation--runbooks)
+- [Testing & Quality Gates](#testing--quality-gates)
 
+
+<br>
 
 ---
 
-## Overview
-
-### End-to-End Architecture
+## Architecture
 <p align="center">
   <img src="docs/architecture/architecture.svg" alt="Serverless Data Pipeline Architecture" width="100%" />
 </p>
 
-### Diagram Libraries
-| 영역 | 다이어그램 미리보기 | 문서 |
-|------|--------------------|------|
-| Extract | <img src="docs/diagrams/extract/03-sequence-1.svg" alt="Extract Sequence" style="width:100%;" /> | [docs/diagrams/extract/README.md](docs/diagrams/extract/README.md) |
-| Transform | <img src="docs/diagrams/transform/03-sequence-1.svg" alt="Transform Sequence" style="width:100%;" /> | [docs/diagrams/transform/README.md](docs/diagrams/transform/README.md) |
-| Load | <img src="docs/diagrams/load/03-sequence-1.svg" alt="Load Sequence" style="width:100%;" /> | [docs/diagrams/load/README.md](docs/diagrams/load/README.md) |
+### End-to-end flow
+1. [**Extract**](docs/diagrams/extract/README.md)  
+   EventBridge → Orchestrator Lambda → SQS → Worker Lambda → RAW S3
+2. [**Transform**](docs/diagrams/transform/README.md)  
+   Manifest 기반 Step Functions → Glue Compaction/ETL/Indicators → Curated S3 + Catalog
+3. [**Load**](docs/diagrams/load/README.md)  
+   Curated S3 ObjectCreated → Publisher Lambda → Load SQS → On-premise Loader
 
+각 단계별 관련 문서 및 다이어그램은 위 링크에서 확인
+
+
+
+<br>
 
 ---
+
 
 ## Features
 |      | Component       | Details                              |
 | :--- | :-------------- | :----------------------------------- |
 | ⚙️  | **Architecture**  | <ul><li>AWS CDK 기반 Pipeline-as-a-Product 설계</li><li>공유 스택(Security/Storage/Governance)과 도메인 스택을 조합</li><li>Lambda + Step Functions + Glue로 구성된 완전 서버리스 데이터 파이프라인</li></ul> |
-| 🔩 | **Code Quality**  | <ul><li>Ruff/Black/mypy 조합으로 정적 분석과 타입 검증 수행</li><li>pre-commit 훅으로 일관된 스타일과 보안 스캔(Bandit) 적용</li></ul> |
+| 🔩 | **Code Quality**  | <ul><li>Ruff/mypy 조합으로 정적 분석과 타입 검증 수행</li><li>pre-commit 훅으로 일관된 스타일과 보안 스캔(Bandit) 적용</li></ul> |
 | 📄 | **Documentation** | <ul><li>`docs/` 디렉터리에 아키텍처·보안·배포 문서를 구분 수록</li><li>`scripts/validate/validate_pipeline.py`로 배포 이후 검증 절차를 문서화 및 자동화</li></ul> |
 | 🔌 | **Integrations**  | <ul><li>GitHub Actions + OIDC AssumeRole로 시크릿리스 CI/CD 구현</li><li>Step Functions ↔ Glue ↔ SNS 연동으로 워크플로 상태와 알림을 통합 관리</li></ul> |
 | 🧩 | **Modularity**    | <ul><li>`infrastructure/constructs/`와 도메인별 Stack으로 재사용 가능한 인프라 패턴 제공</li><li>Lambda Layer(shared, market_data_deps)로 공통 로직과 서드파티 의존성을 분리</li></ul> |
@@ -90,142 +94,105 @@
 | 📦 | **Dependencies**  | <ul><li>Python: `requirements.txt` 및 Layer별 requirements로 환경 분리</li><li>NPM/CDK: `package.json`, `package-lock.json`으로 IaC 패키지 고정</li></ul> |
 | 🚀 | **Scalability**   | <ul><li>`processing_triggers`·`load_domain_configs` 설정으로 신규 도메인 확장 용이</li><li>EventBridge 스케줄/패턴 기반으로 데이터량 증가 시 자동 스케일 대응</li></ul> |
 
----
-
-## Project Structure
-
-```sh
-└── /
-    ├── .github/
-    │   └── workflows/
-    ├── README.md
-    ├── app.py
-    ├── bandit.yaml
-    ├── cdk.json
-    ├── data/
-    │   └── symbols/
-    ├── docs/
-    │   ├── architecture/
-    │   ├── deployment/
-    │   ├── diagrams/
-    │   ├── security/
-    │   ├── specs/
-    │   └── testing.md
-    ├── infrastructure/
-    │   ├── config/
-    │   ├── constructs/
-    │   ├── core/
-    │   ├── governance/
-    │   ├── monitoring/
-    │   ├── pipelines/
-    │   └── utils/
-    ├── package-lock.json
-    ├── package.json
-    ├── pyproject.toml
-    ├── pytest.ini
-    ├── requirements.txt
-    ├── scripts/
-    │   ├── deploy/
-    │   └── validate/
-    ├── src/
-    │   ├── glue/
-    │   ├── lambda/
-    │   └── step_functions/
-    └── tests/
-        ├── conftest.py
-        ├── data/
-        ├── e2e/
-        ├── fixtures/
-        ├── integration/
-        ├── performance/
-        └── unit/
-
-```
-
+<br>
 
 ---
 
-## Getting Started
 
+## Key Directories
+| Path | Purpose |
+| --- | --- |
+| `infrastructure/config/environments/` | 환경별(region, sizing, feature flag) 타입 세이프 설정 모듈 |
+| `infrastructure/constructs/` | 스토리지·오케스트레이션·보안 패턴을 위한 재사용 CDK constructs |
+| `infrastructure/core/` | IAM, 스토리지, 모니터링 기반을 제공하는 공유 스택 |
+| `infrastructure/pipelines/` | 도메인별 ingestion/processing 스택 (도메인당 디렉터리) |
+| `src/lambda/shared/layers/` | 로깅, 검증, 외부 의존성을 위한 공용 Lambda layer |
+| `src/step_functions/` | `aws_cdk.aws_stepfunctions` 기반 워크플로 정의 |
+| `docs/` | README에서 참고하는 아키텍처·배포·보안 문서 및 다이어그램 |
+| `scripts/` | 배포/검증 스크립트 (`deploy/deploy.py`, `validate/validate_pipeline.py`) |
+| `tests/` | 단위·통합·E2E·성능 테스트 스위트와 공용 fixture |
+
+
+<br>
+
+---
+## Quick Start
 ### Prerequisites
+- Python 3.12+
+- Node.js 20+ and npm
+- AWS CLI configured for the target account/region
+- AWS CDK toolkit (`npm install -g aws-cdk`) and a bootstrapped environment (`cdk bootstrap`)
 
-This project requires the following dependencies:
+### Environment setup
+1. **Clone the repository**
+   ```bash
+   git clone https://github.com/<org>/fin-forge-pipeline.git
+   cd fin-forge-pipeline
+   ```
+2. **Create and activate a virtual environment**
+   ```bash
+   python -m venv .venv
+   source .venv/bin/activate  # Windows: .venv\Scripts\activate
+   ```
+3. **Install Python dependencies**
+   ```bash
+   pip install -r requirements.txt
+   pip install -r src/lambda/layers/common/requirements.txt
+   pip install -r src/lambda/layers/market_data_deps/requirements.txt
+   pip install -r src/lambda/functions/data_ingestion/requirements.txt
+   ```
+4. **Install CDK dependencies**
+   ```bash
+   npm ci
+   npm install -g aws-cdk
+   ```
+5. **Bootstrap (first time per account/region)**
+   ```bash
+   cdk bootstrap aws://<account>/<region>
+   ```
 
-- **Programming Language:** Python
-- **Package Manager:** Pip, Npm
-
-### Installation
-
-Build  from the source and intsall dependencies:
-
-1. **Clone the repository:**
-
-    ```sh
-    ❯ git clone ../
-    ```
-
-2. **Navigate to the project directory:**
-
-    ```sh
-    ❯ cd 
-    ```
-
-3. **Install the dependencies:**
-
-<!-- SHIELDS BADGE CURRENTLY DISABLED -->
-	<!-- [![pip][pip-shield]][pip-link] -->
-	<!-- REFERENCE LINKS -->
-	<!-- [pip-shield]: https://img.shields.io/badge/Pip-3776AB.svg?style={badge_style}&logo=pypi&logoColor=white -->
-	<!-- [pip-link]: https://pypi.org/project/pip/ -->
-
-	**Using [pip](https://pypi.org/project/pip/):**
-
-	```sh
-	❯ pip install -r requirements.txt, src/lambda/layers/market_data_deps/requirements.txt, src/lambda/layers/common/requirements.txt, src/lambda/functions/data_ingestion/requirements.txt
-	```
-<!-- SHIELDS BADGE CURRENTLY DISABLED -->
-	<!-- [![npm][npm-shield]][npm-link] -->
-	<!-- REFERENCE LINKS -->
-	<!-- [npm-shield]: None -->
-	<!-- [npm-link]: None -->
-
-	**Using [npm](None):**
-
-	```sh
-	❯ echo 'INSERT-INSTALL-COMMAND-HERE'
-	```
-
-### Usage
-
-Run the project with:
-
-**Using [pip](https://pypi.org/project/pip/):**
-```sh
-python {entrypoint}
-```
-**Using [npm](None):**
-```sh
-echo 'INSERT-RUN-COMMAND-HERE'
-```
-
-### Testing
-
- uses the {__test_framework__} test framework. Run the test suite with:
-
-**Using [pip](https://pypi.org/project/pip/):**
-```sh
-pytest
-```
-**Using [npm](None):**
-```sh
-echo 'INSERT-TEST-COMMAND-HERE'
-```
+<br>
 
 ---
 
+## Day-to-day Commands
+### Synthesize & deploy
+```bash
+# Synthesize CloudFormation templates
+cdk synth
+
+# Compare local changes with deployed stacks
+cdk diff --context environment=dev
+
+# Deploy all stacks to the chosen environment
+cdk deploy '*' --context environment=dev
+
+# Alternative Python deploy script
+python scripts/deploy/deploy.py --environment dev
+```
+
+### Data validation & runbooks
+```bash
+# Post-deployment validation
+python scripts/validate/validate_pipeline.py --environment dev
+```
+
+## Testing & Quality Gates
+```bash
+# Linting and formatting
+ruff check src tests
+ruff format src tests
+
+# Static typing
+mypy src
+
+# Unit, integration, and performance tests
+pytest tests/unit
+pytest tests/integration
+pytest tests/performance
+```
 
 
-[back-to-top]: https://img.shields.io/badge/-BACK_TO_TOP-151515?style=flat-square
 
 
----
+
