@@ -64,12 +64,12 @@
 </p>
 
 ### End-to-end flow
-1. [**Extract**](docs/diagrams/extract/README.md)  
-   EventBridge → Orchestrator Lambda → SQS → Worker Lambda → RAW S3
-2. [**Transform**](docs/diagrams/transform/README.md)  
-   Manifest 기반 Step Functions → Glue Compaction/ETL/Indicators → Curated S3 + Catalog
-3. [**Load**](docs/diagrams/load/README.md)  
-   Curated S3 ObjectCreated → Publisher Lambda → Load SQS → On-premise Loader
+[[**Extract**]](docs/diagrams/extract/README.md)  
+EventBridge → Orchestrator Lambda → SQS → Worker Lambda → Raw S3
+[[**Transform**]](docs/diagrams/transform/README.md)  
+Manifest 기반 Step Functions → Glue Compaction/ETL/Indicators → Curated S3 + Catalog
+[[**Load**]](docs/diagrams/load/README.md)  
+Curated S3 ObjectCreated → Publisher Lambda → Load SQS → On-premise Loader
 
 각 단계별 관련 문서 및 다이어그램은 위 링크에서 확인
 
