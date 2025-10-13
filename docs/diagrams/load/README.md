@@ -1,4 +1,5 @@
 # Load Diagrams Overview
+[이미지 클릭] → [오른쪽 상단 Raw]
 
 #### [Components]
 <img src="01-components-1.svg" alt="Components" style="width:100%;" />

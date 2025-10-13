@@ -121,33 +121,33 @@ Curated S3 ObjectCreated → Publisher Lambda → Load SQS → 온프레미스 L
 ### Prerequisites
 - Python 3.12+
 - Node.js 20+ and npm
-- AWS CLI configured for the target account/region
-- AWS CDK toolkit (`npm install -g aws-cdk`) and a bootstrapped environment (`cdk bootstrap`)
+- configured AWS CLI account/region 
+- AWS CDK toolkit & a bootstrapped environment
 
 ### Environment setup
-1. **Clone the repository**
+1. **repository clone**
    ```bash
    git clone https://github.com/keemgdeok/fin-forge-pipeline.git
    cd fin-forge-pipeline
    ```
-2. **Create and activate a virtual environment**
+2. **가상 환경 생성 및 활성화**
    ```bash
    python -m venv .venv
    source .venv/bin/activate  # Windows: .venv\Scripts\activate
    ```
-3. **Install Python dependencies**
+3. **Python 의존성 설치**
    ```bash
    pip install -r requirements.txt
    pip install -r src/lambda/layers/common/requirements.txt
    pip install -r src/lambda/layers/market_data_deps/requirements.txt
    pip install -r src/lambda/functions/data_ingestion/requirements.txt
    ```
-4. **Install CDK dependencies**
+4. **CDK 의존성 설치**
    ```bash
    npm ci
    npm install -g aws-cdk
    ```
-5. **Bootstrap (first time per account/region)**
+5. **Bootstrap (계정/리전 최초 1회)**
    ```bash
    cdk bootstrap aws://<account>/<region>
    ```
@@ -156,7 +156,7 @@ Curated S3 ObjectCreated → Publisher Lambda → Load SQS → 온프레미스 L
 
 ---
 
-## Day-to-day Commands
+## Common Commands
 ### Synthesize & deploy
 ```bash
 # CloudFormation 템플릿 생성
