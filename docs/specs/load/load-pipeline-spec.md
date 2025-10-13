@@ -26,26 +26,9 @@
 | `partition` | `ds=YYYY-MM-DD` | 날짜 파티션 (현행 Load 파서 기대값) |
 | `object` | `part-0000.parquet` | Parquet 파일 |
 
-### SQS 메시지 본문 (Load Event Publisher 출력)
+### SQS 메시지 본문 및 속성
 
-| 필드 | 타입 | 필수 | 설명 |
-|------|------|:---:|------|
-| `bucket` | string | ✅ | Curated 버킷 |
-| `key` | string | ✅ | Curated 객체 키 |
-| `domain` | string | ✅ | 키에서 파싱 |
-| `table_name` | string | ✅ | 키에서 파싱 |
-| `partition` | string | ✅ | `ds=YYYY-MM-DD` |
-| `file_size` | integer | ❌ | 존재 시 > 0 |
-| `correlation_id` | string | ✅ | 생성된 UUID v4 |
-| `presigned_url` | string | ❌ | HTTPS URL (현재 미사용) |
-
-### 메시지 속성
-
-| Attribute | 타입 | 값 | 설명 |
-|-----------|------|-----|------|
-| `ContentType` | String | `application/json` | 본문 포맷 표시 |
-| `Domain` | String | `<domain>` | 도메인 라우팅 |
-| `TableName` | String | `<table_name>` | 테이블 라우팅 |
-| `Priority` | String | `PRIORITY_MAP[domain]` | 환경 설정 기반 우선순위 |
+- 메시지 본문 스키마와 메시지 속성 정의는 `docs/specs/load/load-component-contracts.md`를 단일 소스로 사용합니다.
+- Load Event Publisher Lambda는 해당 계약에 따라 메시지를 생성하며, Loader는 동일한 구조를 기대합니다.
 
 > Transform 출력이 `interval/.../layer=...` 구조인 경우 Load 파서(`ds=` 기대)를 맞추도록 Lambda 전 처리 또는 Transform 경로 정합화가 필요합니다.
