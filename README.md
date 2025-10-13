@@ -130,7 +130,7 @@ Curated S3 ObjectCreated → Publisher Lambda → Load SQS → 온프레미스 L
    git clone https://github.com/keemgdeok/fin-forge-pipeline.git
    cd fin-forge-pipeline
    ```
-2. **가상 환경 생성 및 활성화**
+2. **virtual env 생성 및 활성화**
    ```bash
    python -m venv .venv
    source .venv/bin/activate  # Windows: .venv\Scripts\activate
