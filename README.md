@@ -5,7 +5,7 @@
 
 # <code>❯ fin-forge-pipeline </code>
 
-<em>Serverless financial data pipelines delivered as code-first products on AWS.</em>
+<em>Serverless financial data pipelines delivered as code-first products on AWS</em>
 
 <!-- BADGES -->
 <!-- local repository, no metadata badges. -->
