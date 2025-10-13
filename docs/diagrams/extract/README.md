@@ -6,7 +6,7 @@
 <br>
 
 #### [Flow]
-<img src="02-flow-1.svg" alt="Flow" style="width:100%;" />
+<img src="02-flow-1.svg" alt="Flow" style="width:50%;" />
 - EventBridge → Orchestrator → Worker 전체 흐름
 <br>
 

@@ -8,35 +8,29 @@ graph LR
 
   subgraph Pipeline_Transform
     SFN["Step Functions<br/>Transform Workflow"]
-    PRE["Preflight Lambda<br/>(구성·멱등·인수 구성)"]
-    COMP["Glue Compaction Job<br/>(Raw → Parquet)"]
-    GUARD["Compaction Guard Lambda"]
-    GLUE["Glue ETL Job<br/>(Curated 변환)"]
+    PRE["Preflight Lambda<br/>(구성/멱등/인수 구성)"]
+    subgraph Glue_Jobs["Glue Jobs"]
+      COMP["Compaction<br/>(# JSON → 1 Parquet)"]
+      GUARD["Compaction Guard"]
+      GLUE["Curated ETL"]
+      IND["Indicators ETL"]
+    end
     CRAWL["Glue Crawler<br/>(스키마 변경 시)"]
-    ATH["Athena WorkGroup<br/>Ad-hoc Query"]
   end
 
-  SS -->|버킷 이름/프리픽스| SFN
-  SEC -->|Role ARN 참조| SFN
-  GOV -->|DB/Table 참조| SFN
+  SS -->|Bucket name/Prefix| SFN
+  SEC -->|Role ARN| SFN
+  GOV -->|DB/Table| SFN
 
   SFN --> PRE
   PRE --> COMP
-  COMP --> GUARD
-  GUARD --> GLUE
-  GLUE --> CRAWL
+  COMP --> GUARD --> GLUE --> IND --> CRAWL
   GLUE --> CUR[(S3 Curated)]
+  IND --> CUR
   GLUE --- RAW[(S3 Raw)]
   COMP --- RAW
   COMP --> CUR
   CRAWL --> CAT[(Glue Data Catalog)]
 
   %% Governance/Security notes
-  N1["IAM + Glue Catalog 권한<br/>KMS 암호화(버킷/로그)"]:::note
-  N2["Athena WorkGroup 결과 버킷 암호화"]:::note
-  N3["Quarantine 프리픽스 보존정책<br/>(30–90일, 운영자 한정 접근)"]:::note
-  GOV -.-> N1
-  ATH -.-> N2
-  CUR -.-> N3
-
 ```

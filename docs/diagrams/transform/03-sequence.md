@@ -3,41 +3,38 @@ sequenceDiagram
   autonumber
   participant SF as Step Functions (per manifest item)
   participant PRE as Preflight Lambda
-  participant COMP as Glue Compaction Job
-  participant GUARD as Compaction Guard Lambda
-  participant ETL as Glue ETL Job
-  participant DEC as Schema Change Decider
+  participant COMP as Glue Compaction
+  participant GUARD as Compaction Guard
+  participant ETL as Curated ETL
+  participant IND as Indicators ETL
+  participant DEC as Schema Decider
   participant CR as Glue Crawler
-  participant RAW as S3 Raw Bucket
-  participant CUR as S3 Curated Bucket
+  participant S3 as S3 (Raw & Curated)
 
-  SF->>PRE: Invoke (domain, table, ds, manifest_key)
-  PRE-->>SF: {proceed, glue_args, error?}
-  alt proceed == false & error.code == "IDEMPOTENT_SKIP"
-    SF-->>SF: Skip item
-  else proceed == false
-    SF-->>SF: Fail (propagate error)
+  SF->>PRE: Invoke manifest item
+  PRE-->>SF: proceed? + glue_args
+  alt proceed == false
+    SF-->>SF: Skip or fail item
   else proceed == true
-    SF->>COMP: StartJobRun(glue_args → compaction)
-    COMP->>RAW: Read raw partition (interval/data_source/year/month/day)
-    COMP->>CUR: Write compacted layer (`layer=compacted`)
+    SF->>COMP: Start compaction job
+    COMP->>S3: Read raw partition
+    COMP->>S3: Write compacted layer
     COMP-->>SF: SUCCESS
-    SF->>GUARD: Invoke(bucket, domain, table, layer, ds)
+    SF->>GUARD: Check compacted output
     GUARD-->>SF: {shouldProcess}
-    alt shouldProcess == false
-      SF-->>SF: Skip transform
-    else shouldProcess == true
-      SF->>ETL: StartJobRun(glue_args)
-      ETL->>CUR: Read compacted layer
-      ETL->>ETL: Transform + data quality checks
-      ETL->>CUR: Write curated layer (`layer=adjusted`)
+    opt shouldProcess == true
+      SF->>ETL: Run curated ETL
+      ETL->>S3: Read compacted layer
+      ETL->>S3: Write curated layer
       ETL-->>SF: SUCCESS
-      SF->>DEC: Invoke(glue_args, catalog_update)
-      DEC-->>SF: {shouldRunCrawler}
-      alt shouldRunCrawler == true
-        SF->>CR: startCrawler()
-        CR->>CUR: Scan new partitions
-      end
+      SF->>IND: Run indicators ETL
+      IND->>S3: Write indicators layer
+      IND-->>SF: SUCCESS
+    end
+    SF->>DEC: Decide crawler run
+    DEC-->>SF: {shouldRunCrawler}
+    opt shouldRunCrawler == true
+      SF->>CR: Start crawler
     end
   end
 ```

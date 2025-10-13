@@ -1,17 +1,20 @@
 ```mermaid
 flowchart TD
-  A["Step Functions 시작<br/>입력: domain, table_name, manifest_keys[…]"] --> B["Map 상태<br/>(각 manifest {ds, manifest_key})"]
+  A["Step Functions 입력<br/>manifest_keys + 메타데이터"] --> B["Map 상태<br/>(각 manifest 처리)"]
 
   subgraph ItemProcessor
-    B --> C["Preflight Lambda\n- Glue args 구성\n- Curated 멱등성 체크"]
+    B --> C["Preflight Lambda\n(인수 준비 + 멱등성)"]
     C --> D{proceed?}
-    D -->|false & error.code=IDEMPOTENT_SKIP| SKIP(["Skip (이미 처리됨)"])
-    D -->|false & 기타| FAIL(["Fail state"])
-    D -->|true| COMP["Glue Compaction Job"]
-    COMP --> GUARD["Compaction Guard Lambda"]
-    GUARD -->|데이터 없음| SKIP
-    GUARD -->|데이터 있음| ETL["Glue ETL Job"]
-    ETL --> DECIDE["Schema Change Decider Lambda"]
+    D -->|skip| SKIP(["Skip"])
+    D -->|error| FAIL(["Fail"])
+    D -->|true| COMP["Glue Compaction"]
+    subgraph GlueJobs
+      COMP --> GUARD["Compaction Guard"]
+      GUARD -->|데이터 없음| SKIP
+      GUARD -->|데이터 있음| ETL["Curated ETL"]
+      ETL --> IND["Indicators ETL"]
+  end
+    IND --> DECIDE["Schema Change Decider"]
     DECIDE -->|shouldRunCrawler=true| CRAWLER["Start Glue Crawler"]
     DECIDE -->|false| SKIP
     CRAWLER --> SKIP
