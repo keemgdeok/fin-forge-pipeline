@@ -14,7 +14,7 @@ flowchart TD
 
   subgraph Tuning
     F["Lower cost:<br/>Increase k (until t_msg growth outweighs gains)"]
-    G["Protect API:<br/>Decrease c or set YF_THREADS=false"]
+    G["Protect API:<br/>Decrease c or add client-side backoff"]
     H["Speed up:<br/>Increase c (keep RPS ≤ ~3)"]
     I["Heavy intervals (e.g., 1m):<br/>Decrease k, increase memory"]
   end

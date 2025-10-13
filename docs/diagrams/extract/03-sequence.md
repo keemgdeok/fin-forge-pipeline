@@ -8,7 +8,7 @@ sequenceDiagram
   participant WRK as Ingestion Worker Lambda
   participant PRV as Market Data Provider
   participant S3 as RAW Bucket
-  participant OPS as Runner / Ops (수동)
+  participant OPS as Runner Script
   participant SF as Transform Step Functions
 
   EV->>ORC: Scheduled event (domain/table/period/interval)
@@ -32,12 +32,12 @@ sequenceDiagram
     alt processed_chunks < expected
       WRK-->>SQS: ack message
     else
-      WRK->>S3: PutObject _batch.manifest.json
-      Note over WRK,S3: 매니페스트 업로드 이후 파이프라인 종료
+      WRK->>S3: PutObject partition manifest(s)
+      Note over WRK,S3: 파티션 매니페스트 업로드 후 파이프라인 종료
     end
   end
 
-  OPS->>S3: Poll manifests / batch tracker
-  OPS->>SF: Start execution (input.manifest_keys)
+  OPS->>S3: Collect manifests / tracker
+  OPS->>SF: Start execution (manifest_keys 입력)
   SF-->>OPS: Execution ARN
 ```
