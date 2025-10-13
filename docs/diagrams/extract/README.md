@@ -21,7 +21,3 @@
 - extract SQS 재시도/실패 처리 패턴
 <br>
 
-#### [Concurrency &amp; RPS]
-<img src="05-concurrency-and-rps-1.svg" alt="Concurrency" style="width:100%;" />
-- chunks 크기 및 동시성에 따른 처리량 추산
-<br>
