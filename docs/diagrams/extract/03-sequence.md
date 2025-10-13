@@ -8,15 +8,14 @@ sequenceDiagram
   participant WRK as Ingestion Worker Lambda
   participant PRV as Market Data Provider
   participant S3 as RAW Bucket
-  participant OPS as Runner Script
   participant SF as Transform Step Functions
 
-  EV->>ORC: Scheduled event (domain/table/period/interval)
+  EV->>ORC: Scheduled event
   ORC->>ORC: Load symbol universe (SSM 또는 S3)
-  ORC->>DDB: PutItem expected_chunks, status='processing'
+  ORC->>DDB: PutItem expected_chunks
   ORC->>SQS: SendMessageBatch(chunks of symbols)
 
-  loop per SQS message
+  par parallel workers (per SQS message)
     SQS->>WRK: Invoke with chunk payload
     WRK->>PRV: fetch_prices(symbols)
     PRV-->>WRK: List<PriceRecord>
@@ -35,9 +34,10 @@ sequenceDiagram
       WRK->>S3: PutObject partition manifest(s)
       Note over WRK,S3: 파티션 매니페스트 업로드 후 파이프라인 종료
     end
+  and
+    Note over SQS: Messages redelivered until chunk success or DLQ
   end
 
-  OPS->>S3: Collect manifests / tracker
-  OPS->>SF: Start execution (manifest_keys 입력)
-  SF-->>OPS: Execution ARN
+  S3-->>SF: Start execution (manifest_keys)
+  Note over S3,SF: 매니페스트 스크립트가 실행을 시작
 ```

@@ -11,7 +11,6 @@ graph LR
     WRK["Ingestion Worker Lambda"]
     DDB["Batch Tracker<br/>DynamoDB Table"]
     MAN["_batch.manifest.json<br/>(RAW bucket)"]
-    OPS["Runner / Ops<br/>(manifest 수집)"]
     SFN["Transform Step Functions<br/>(manifest-driven)"]
   end
 
@@ -25,6 +24,5 @@ graph LR
   WRK -->|Put/List RAW objects| SS
   WRK -->|UpdateItem processed_chunks| DDB
   WRK --> MAN
-  MAN --> OPS
-  OPS --> SFN
+  MAN -->|Runner scripts trigger| SFN
 ```
