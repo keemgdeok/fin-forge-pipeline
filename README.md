@@ -71,7 +71,7 @@ EventBridge → Orchestrator Lambda → SQS → Worker Lambda → Raw S3
 Manifest 기반 Step Functions → Glue Compaction/ETL/Indicators → Curated S3 + Catalog
 
 [[**Load**]](docs/diagrams/load/README.md)  
-Curated S3 ObjectCreated → Publisher Lambda → Load SQS → 온프레미스 Loader
+Curated S3 ObjectCreated → Publisher Lambda → Load SQS → On-premise Loader(미구현)
 
 **세부 문서 링크 확인
 
@@ -147,7 +147,7 @@ Curated S3 ObjectCreated → Publisher Lambda → Load SQS → 온프레미스 L
    npm ci
    npm install -g aws-cdk
    ```
-5. **Bootstrap (계정/리전 최초 1회)**
+5. **Bootstrap (account/region 최초 1회)**
    ```bash
    cdk bootstrap aws://<account>/<region>
    ```

@@ -6,7 +6,7 @@
 | 코드 기준 | `infrastructure/pipelines/daily_prices_data/processing_stack.py` |
 | 배포 리소스 | `{environment}-daily-prices-data-processing` |
 
-## 입력 계약
+### 입력 계약
 
 | 필드 | 타입 | 필수 | 기본값 | 설명 |
 |------|------|:---:|--------|------|
@@ -21,7 +21,7 @@
 | `environment` | string | ❌ | 입력 없음 | Runner가 전달 가능 (참조용) |
 | `batch_id` | string | ❌ | 입력 없음 | 외부 추적용 선택 필드 |
 
-## Preflight 출력 요약
+### Preflight 출력 요약
 
 | 필드 | 타입 | 설명 |
 |------|------|------|
@@ -29,7 +29,7 @@
 | `ds` | string | `manifest_keys` 항목에서 사용된 파티션 날짜 |
 | `glue_args` | object | Glue StartJobRun 공통 인수 집합 |
 
-### `glue_args` 필드
+#### `glue_args` 필드
 
 | 키 | 설명 |
 |----|------|
@@ -40,18 +40,15 @@
 | `--codec`, `--target_file_mb` | Glue Job 튜닝 파라미터 |
 | `--schema_fingerprint_s3_uri` | 스키마 지문 경로 |
 
-## 실행 흐름 (요약)
+### Map 처리 및 동시성
 
-| 순서 | 단계 | 성공 시 | 실패 시 |
-|:---:|------|---------|---------|
-| 1 | Preflight Lambda | `glue_args` 생성, 멱등성 체크 | `IDEMPOTENT_SKIP` → 스킵, 그 외 → Fail |
-| 2 | Glue Compaction Job | RAW → Parquet (`layer=compacted`) | Fail state |
-| 3 | Compaction Guard | 자료 없으면 성공 종료 | Lambda 실패 시 Fail |
-| 4 | Glue ETL Job | 조정 데이터 작성 (`layer=adjusted`) | `Glue.ConcurrentRunsExceededException` 재시도, 그 외 Fail |
-| 5 | Schema Change Decider | Crawler 실행 여부 판단 | Lambda 실패 시 Fail |
-| 6 | Glue Crawler | `catalog_update` 정책에 따라 실행 | Fail state |
+| 항목 | 값 | 설명 |
+|------|-----|------|
+| Map 상태 | `ProcessManifestList` | `manifest_keys` 배열 순회 |
+| `items_path` | `$.manifest_keys` | 각 항목 `{ds, manifest_key, source?}` |
+| 최대 동시 실행 | `config.sfn_max_concurrency` (기본 1) | 배치별 순차 처리 보장 기본값 |
 
-## 출력/오류 처리
+### 출력/오류 처리
 
 | 항목 | 현행 동작 |
 |------|-----------|
@@ -59,7 +56,7 @@
 | 오류 페이로드 | `Fail` 상태로 즉시 종료, 상세는 CloudWatch Logs 및 실행 히스토리 참고 |
 | 멱등성 | Preflight가 Curated `layer=adjusted` 경로 존재 여부 확인 (`IDEMPOTENT_SKIP`) |
 
-## 재시도 정책
+### 재시도 정책
 
 | 단계 | 재시도 조건 | 정책 |
 |------|--------------|------|
@@ -68,26 +65,10 @@
 | Lambda (Preflight/Guard/Decider) | 재시도 없음 | 실패 시 Fail |
 | Glue Crawler | 재시도 없음 | 실패 시 Fail |
 
-## Crawler 게이팅
+### Crawler 게이팅
 
 | 정책 값 | 실행 여부 | 비고 |
 |---------|-----------|------|
 | `never` | 실행 안 함 | 운영자가 수동 관리 |
 | `force` | 항상 실행 | 비용/시간 증가 주의 |
 | `on_schema_change` | 지문 `hash` 변경 시 실행 | 기본값 |
-
-## 관측 및 보안
-
-| 항목 | 설명 |
-|------|------|
-| CloudWatch Logs | `LOG_LEVEL` 기본 INFO, 실패 시 스택트레이스 남김 |
-| X-Ray | 환경 설정 `enable_xray_tracing`에 따름 |
-| IAM 권한 | S3 Prefix, Glue Job, Crawler, Step Functions 역할 최소 권한 부여 |
-
----
-
-| 관련 문서 | 경로 |
-|----------|------|
-| Glue Job 명세 | `docs/specs/transform/glue-job-spec.md` |
-| Preflight Lambda | `src/lambda/functions/preflight/handler.py` |
-| Runner 예시 | `src/step_functions/workflows/runner.py` |

@@ -1,122 +1,89 @@
-# Worker Lambda — I/O 계약 명세
-
-| 항목 | 내용 |
-|------|------|
-| 책임 | 외부 데이터 공급자에서 가격 데이터를 수집해 RAW S3에 저장하고 배치 상태를 갱신 |
-| 코드 기준 | `src/lambda/functions/ingestion_worker/handler.py` |
-| 배포 리소스 | `{environment}-daily-prices-data-ingestion-worker` (Python 3.12) |
-
-## 환경 변수
-
-| 변수명 | 필수 | 기본값 | 설명 |
-|--------|:---:|--------|------|
-| `ENVIRONMENT` | ✅ | - | 배포 환경 식별자 |
-| `RAW_BUCKET` | ✅ | - | RAW 데이터가 저장될 S3 버킷 |
-| `ENABLE_GZIP` | ❌ | `false` | 업로드 시 GZIP 압축 여부 |
-| `BATCH_TRACKING_TABLE` | ❌ | - | DynamoDB 배치 트래커 테이블 이름 |
-| `RAW_MANIFEST_BASENAME` | ❌ | `_batch` | 매니페스트 기본 파일명 |
-| `RAW_MANIFEST_SUFFIX` | ❌ | `.manifest.json` | 매니페스트 확장자 |
-
-## SQS 메시지 계약
-
-| 필드 | 타입 | 필수 | 제약/설명 | 예시 |
-|------|------|:---:|-------------|------|
-| `data_source` | string | ✅ | 1–50자 | `yahoo_finance` |
-| `data_type` | string | ✅ | 1–30자 | `prices` |
-| `domain` | string | ✅ | 1–50자 | `market` |
-| `table_name` | string | ✅ | 1–50자 | `prices` |
-| `symbols` | array | ✅ | 1–10개 | `["AAPL", "MSFT"]` |
-| `period` | string | ❌ | Yahoo 지원값 | `1mo` |
-| `interval` | string | ❌ | Yahoo 지원값 | `1d` |
-| `file_format` | string | ❌ | `json` 또는 `csv` (`parquet` 요청 시 JSON 저장) | `json` |
-| `correlation_id` | string | ❌ | 1–100자 | `batch-001` |
-| `batch_id` | string | ✅ | UUID v4 | `c7d3...` |
-| `batch_ds` | string | ✅ | `YYYY-MM-DD` | `2025-09-07` |
-| `batch_total_chunks` | integer | ✅ | > 0 | `8` |
-
-## 외부 데이터 호출 요약
+# Worker Lambda — Data Contracts
 
 | 항목 | 값 |
 |------|-----|
-| 공급자 | Yahoo Finance (`yfinance`) |
-| 재시도 전략 | 명시적 재시도 없음 (오류 시 해당 심볼 스킵) |
-| 라이브러리 미존재 시 | 빈 리스트 반환 (정상 처리) |
-| 전달 파라미터 | 이벤트 payload의 `symbols`, `period`, `interval`을 그대로 사용 |
+| 목적 | Ingestion Worker Lambda의 입력/출력 데이터 구조와 산출물 명세 |
+| 코드 기준 | `src/lambda/functions/ingestion_worker/handler.py`, `src/lambda/layers/common/python/shared/ingestion/service.py` |
 
-## RAW S3 저장 규칙
+### 입력: SQS 메시지 본문
 
-| 항목 | 값/예시 | 설명 |
-|------|---------|------|
-| 경로 패턴 | `s3://{RAW_BUCKET}/{domain}/{table_name}/interval={interval}/data_source={data_source}/year={YYYY}/month={MM}/day={DD}/` | Hive 파티션 구조 |
-| 파일명 | `{symbol}.{ext}[.gz]` | 심볼별 1일치 데이터 저장 |
-| 지원 형식 | JSON Lines, CSV | `ENABLE_GZIP=true` 시 `.gz` 확장자 추가 |
-| Parquet 요청 | 저장은 JSON으로 수행 후 Transform에서 Parquet 변환 |
+| 필드 | 타입 | 필수 | 설명 |
+|------|------|:---:|------|
+| `data_source` | string | ✅ | 데이터 공급자 |
+| `data_type` | string | ✅ | 데이터 유형 |
+| `domain` | string | ✅ | 비즈니스 도메인 |
+| `table_name` | string | ✅ | 대상 테이블 |
+| `symbols` | array[string] | ✅ | 처리 대상 심볼 묶음 |
+| `period` | string | ✅ | 공급자 쿼리 기간 |
+| `interval` | string | ✅ | 공급자 쿼리 주기 |
+| `file_format` | string | ✅ | 저장 포맷 (`json`/`csv`) |
+| `batch_id` | string | ✅ | 배치 UUID |
+| `batch_ds` | string | ✅ | `YYYY-MM-DD` |
+| `batch_total_chunks` | integer | ✅ | 전체 청크 수 |
+| `correlation_id` | string | ❌ | 전달 시 로깅에 사용 |
 
-## 파일 형식 비교
+### 출력: Lambda 성공 응답 본문
 
-| 형식 | 확장자 | 압축률 | 호환성 | 쿼리 성능 | 권장 용도 |
-|------|--------|:------:|:------:|:---------:|----------|
-| JSON Lines | `.json` | ⭐⭐⭐ | ⭐⭐⭐⭐⭐ | ⭐⭐⭐ | 기본값 (개발 친화적) |
-| CSV | `.csv` | ⭐⭐ | ⭐⭐⭐⭐⭐ | ⭐⭐ | Excel/수동 분석 |
+| 필드 | 타입 | 설명 |
+|------|------|------|
+| `message` | string | `"Data ingestion completed"` |
+| `data_source` | string | 입력 값 |
+| `data_type` | string | 입력 값 |
+| `symbols_requested` | array[string] | 입력 심볼 전체 |
+| `symbols_processed` | array[string] | 실제 처리된 심볼 |
+| `invalid_symbols` | array[string] | 필터링된 심볼 |
+| `period` | string | 입력 값 |
+| `interval` | string | 입력 값 |
+| `domain` | string | 입력 값 |
+| `table_name` | string | 입력 값 |
+| `file_format` | string | 입력 값 |
+| `environment` | string | Lambda 환경 변수 |
+| `raw_bucket` | string | RAW 버킷 이름 |
+| `processed_records` | integer | 적재된 레코드 수 |
+| `written_keys` | array[string] | 생성된 S3 객체 키 목록 |
+| `partition_summaries` | array\<object> | 매니페스트 생성을 위한 요약 |
 
-## 배치 트래커 & 매니페스트 흐름
+#### `partition_summaries` 항목 구조
 
-| 단계 | 설명 | 저장소 |
-|------|------|--------|
-| 청크 처리 | `processed_chunks` 증가, partition summary 추가 | DynamoDB `BATCH_TRACKING_TABLE` |
-| 임시 요약 | `manifests/tmp/{batch_id}/*.json` 파일 기록 | RAW 버킷 |
-| 최종 완료 | `_batch.manifest.json` 생성 | RAW 버킷 |
-| 후속 실행 | Runner/운영 스크립트가 `manifest_keys`를 구성해 Step Functions 실행 | 외부 스크립트 |
+| 필드 | 타입 | 설명 |
+|------|------|------|
+| `ds` | string | `YYYY-MM-DD` 파티션 날짜 |
+| `raw_prefix` | string | RAW 파티션 프리픽스 (`domain/.../day=DD/`) |
+| `objects` | array\<object> | 청크 결과 목록 |
+| `objects[].symbol` | string | 심볼 |
+| `objects[].key` | string | S3 객체 키 |
+| `objects[].records` | integer | 객체 내 레코드 수 |
 
-## Partial Batch Failure 응답
+### 배치 트래커 업데이트 (DynamoDB)
 
-| 시나리오 | Lambda 응답 | SQS 동작 |
-|----------|-------------|----------|
-| 전체 성공 | `{"batchItemFailures": []}` | 모든 메시지 삭제 |
-| 부분 실패 | 실패한 `messageId` 목록 포함 | 해당 메시지만 재전달 |
-| 전체 실패 | 예외 발생 | 전체 메시지 재전달 (receiveCount 증가) |
+| 필드 | 타입 | 설명 |
+|------|------|------|
+| `processed_chunks` | number | 메시지 처리 시 +1 |
+| `last_update` | string | ISO 8601 타임스탬프 |
+| `partition_payload` | list\<object> | `{"ds", "raw_prefix", "object_count"}` 누적 |
+| `combined_partition_summaries` | list\<object> | 최종 청크가 집계한 partition 요약 |
+| `status` | string | `processing` → `finalizing` → `complete` (Worker가 전환) |
 
-## SQS 재시도 구성
+### 매니페스트 파일 (`_batch.manifest.json`)
 
-| 항목 | 값 | 설명 |
-|------|-----|------|
-| Event Source Mapping | `report_batch_item_failures=true` | 실패 항목만 재전달 |
-| Visibility Timeout | `worker_timeout × 6` (Dev 1800초) | 메시지 재처리 시간 확보 |
-| `maxReceiveCount` | `max_retries` (Dev 5) | 초과 시 DLQ 이동 |
-| DLQ | `{env}-ingestion-dlq` (14일 보관) | 운영자가 재처리 |
+| 필드 | 타입 | 설명 |
+|------|------|------|
+| `environment` | string | 실행 환경 |
+| `domain` | string | 도메인 |
+| `table_name` | string | 테이블 |
+| `data_source` | string | 데이터 공급자 |
+| `interval` | string | 수집 간격 |
+| `ds` | string | 파티션 날짜 (`YYYY-MM-DD`) |
+| `generated_at` | string | ISO 8601 생성 시각 |
+| `objects` | array<object> | 매니페스트 대상 RAW 객체 |
+| `objects[].symbol` | string | 심볼 |
+| `objects[].key` | string | RAW 객체 키 |
+| `objects[].records` | integer | 객체 내 레코드 수 |
+| `batch_id` | string | 배치 UUID |
 
-## 성능/운영 파라미터
+### SQS Partial Failure 응답
 
-| 항목 | 관리 위치 | 기본값(Dev) | 비고 |
-|------|-----------|--------------|------|
-| Worker 메모리 | `worker_memory` | 512MB | 환경별 조정 가능 |
-| Worker 타임아웃 | `worker_timeout` | 300초 | 공급자 응답 속도 기반 |
-| 예약 동시성 | `worker_reserved_concurrency` | 0 | 0이면 제한 없음 |
-| SQS 배치 크기 | `sqs_batch_size` | 1 | 처리량 vs 실패 격리 |
-| CloudWatch 알람 | `ingestion_stack.py` | QueueDepth, MessageAge, Errors | Dev 값 기준 |
-
-## 데이터 품질 검사
-
-| 검사 항목 | 조건 | 조치 | 로그 |
-|------------|------|------|------|
-| 필수 필드 | `symbol`, `timestamp` 존재 여부 | 레코드 스킵 | ERROR |
-| 심볼 형식 | `^[A-Z0-9._-]{1,20}$` | 레코드 스킵 | WARNING |
-| 타임스탬프 | ISO 8601 UTC | 레코드 스킵 | ERROR |
-| 가격/볼륨 | 음수 방지 | 경고 후 계속 | WARNING |
-| 중복 레코드 | 동일 `symbol+timestamp` | 최근 레코드 유지 | INFO |
-
-## 참고
-
-| 항목 | 설명 |
-|------|------|
-| 외부 API 재시도 | 명시적 백오프 없음, 실패 심볼은 건너뜀 |
-| 심볼 요약 정리 | `_cleanup_chunk_summaries` 호출로 `manifests/tmp` 정리 |
-| 환경 파라미터 | `infrastructure/config/environments/*.py`에서 관리 |
-
----
-
-| 관련 문서 | 경로 |
-|----------|------|
-| Raw 스키마 | `docs/specs/extract/raw-data-schema.md` |
-| SQS 통합 | `docs/specs/extract/sqs-integration-spec.md` |
-| 배치 트래커 | `docs/specs/extract/orchestrator-contract.md` |
+| 필드 | 타입 | 설명 |
+|------|------|------|
+| `batchItemFailures` | array\<object> | 실패 메시지 식별자 목록 |
+| `batchItemFailures[].itemIdentifier` | string | 실패한 SQS `messageId` |
