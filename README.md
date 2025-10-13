@@ -108,9 +108,9 @@ Curated S3 ObjectCreated → Publisher Lambda → Load SQS → 온프레미스 L
 | `infrastructure/core/` | IAM, 스토리지, 모니터링 기반을 제공하는 공유 스택 |
 | `infrastructure/pipelines/` | 도메인별 ingestion/processing 스택 (도메인당 디렉토리) |
 | `src/lambda/shared/layers/` | 로깅, 검증, 외부 의존성을 위한 공용 Lambda layer |
-| `src/step_functions/` | `aws_cdk.aws_stepfunctions` 기반 워크플로 정의 |
+| `src/step_functions/` | sfn 기반 워크플로 정의 |
 | `docs/` | Architecture/Deploy/Specs 문서 및 다이어그램 |
-| `scripts/` | 배포/검증 스크립트 (`deploy/deploy.py`, `validate/validate_pipeline.py`) |
+| `scripts/` | 배포/검증 스크립트 |
 | `tests/` | 단위/통합/E2E/성능 테스트 스위트 & 공용 fixture |
 
 
@@ -127,7 +127,7 @@ Curated S3 ObjectCreated → Publisher Lambda → Load SQS → 온프레미스 L
 ### Environment setup
 1. **Clone the repository**
    ```bash
-   git clone https://github.com/<org>/fin-forge-pipeline.git
+   git clone https://github.com/keemgdeok/fin-forge-pipeline.git
    cd fin-forge-pipeline
    ```
 2. **Create and activate a virtual environment**
@@ -159,22 +159,22 @@ Curated S3 ObjectCreated → Publisher Lambda → Load SQS → 온프레미스 L
 ## Day-to-day Commands
 ### Synthesize & deploy
 ```bash
-# Synthesize CloudFormation templates
+# CloudFormation 템플릿 생성
 cdk synth
 
-# Compare local changes with deployed stacks
+# 로컬 변경 사항과 배포된 스택 비교
 cdk diff --context environment=dev
 
-# Deploy all stacks to the chosen environment
+# 지정한 환경으로 전체 스택 배포
 cdk deploy '*' --context environment=dev
 
-# Alternative Python deploy script
+# Python 배포 스크립트 사용
 python scripts/deploy/deploy.py --environment dev
 ```
 
 ### Data validation & runbooks
 ```bash
-# Post-deployment validation
+# 배포 후 검증 실행
 python scripts/validate/validate_pipeline.py --environment dev
 ```
 
@@ -185,18 +185,18 @@ python scripts/validate/validate_pipeline.py --environment dev
 
 ## Testing & Quality Gates
 ```bash
-# Linting and formatting
+# 린트 및 포맷팅
 ruff check src tests
 ruff format src tests
 
-# Static typing
+# 정적 타입 검사
 mypy src
 
-# pre-commit hooks (install & run all checks locally)
+# pre-commit 훅(설치 및 전체 실행)
 pip install pre-commit && pre-commit install
 pre-commit run --all-files
 
-# Unit, integration, and performance tests
+# 단위·통합·성능 테스트 실행
 pytest tests/unit
 pytest tests/integration
 pytest tests/performance
