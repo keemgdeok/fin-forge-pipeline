@@ -177,6 +177,9 @@ python scripts/deploy/deploy.py --environment dev
 python scripts/validate/validate_pipeline.py --environment dev
 ```
 
+<br>
+---
+
 ## Testing & Quality Gates
 ```bash
 # Linting and formatting
