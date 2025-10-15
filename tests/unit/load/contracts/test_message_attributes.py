@@ -21,10 +21,16 @@ def test_build_message_attributes(load_module) -> None:
     # Given: market 도메인의 LoadMessage가 있고
     msg = LoadMessage(
         bucket="data-pipeline-curated-dev",
-        key="market/prices/ds=2025-09-10/part-001.parquet",
+        key="market/prices/interval=1d/data_source=yahoo/year=2025/month=09/day=10/layer=adjusted/part-001.parquet",
         domain="market",
         table_name="prices",
-        partition="ds=2025-09-10",
+        interval="1d",
+        data_source="yahoo",
+        year="2025",
+        month="09",
+        day="10",
+        layer="adjusted",
+        ds="2025-09-10",
         correlation_id="550e8400-e29b-41d4-a716-446655440000",
     )
 
@@ -58,10 +64,18 @@ def test_priority_mapping(load_module, domain: str, expected: str) -> None:
     # Then: Priority 값이 도메인 규칙에 맞게 계산된다
     msg = LoadMessage(
         bucket="data-pipeline-curated-dev",
-        key=f"{domain}/prices/ds=2025-09-10/part-001.parquet",
+        key=(
+            f"{domain}/prices/interval=1d/data_source=yahoo/year=2025/month=09/day=10/layer=adjusted/part-001.parquet"
+        ),
         domain=domain,
         table_name="prices",
-        partition="ds=2025-09-10",
+        interval="1d",
+        data_source="yahoo",
+        year="2025",
+        month="09",
+        day="10",
+        layer="adjusted",
+        ds="2025-09-10",
         correlation_id="550e8400-e29b-41d4-a716-446655440000",
     )
 

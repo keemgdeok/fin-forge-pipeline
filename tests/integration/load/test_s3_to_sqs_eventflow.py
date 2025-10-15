@@ -12,6 +12,66 @@ from tests.fixtures.load_agent import FakeLoaderAgent, LoaderConfig, LoaderError
 pytestmark = [pytest.mark.integration, pytest.mark.load]
 
 
+CURATED_BUCKET = "data-pipeline-curated-dev"
+CURATED_DOMAIN = "market"
+CURATED_TABLE = "prices"
+CURATED_INTERVAL = "1d"
+CURATED_DATA_SOURCE = "yahoo"
+CURATED_YEAR = "2025"
+CURATED_MONTH = "09"
+CURATED_DAY = "10"
+CURATED_LAYER = "adjusted"
+CURATED_DS = "2025-09-10"
+
+
+def _build_key(
+    *,
+    domain: str = CURATED_DOMAIN,
+    table: str = CURATED_TABLE,
+    interval: str = CURATED_INTERVAL,
+    data_source: str | None = CURATED_DATA_SOURCE,
+    year: str = CURATED_YEAR,
+    month: str = CURATED_MONTH,
+    day: str = CURATED_DAY,
+    layer: str = CURATED_LAYER,
+    part: str,
+) -> str:
+    segments = [domain, table, f"interval={interval}"]
+    if data_source:
+        segments.append(f"data_source={data_source}")
+    segments.extend([f"year={year}", f"month={month}", f"day={day}", f"layer={layer}", part])
+    return "/".join(segments)
+
+
+def _build_message(
+    *,
+    part: str,
+    correlation_id: str,
+    domain: str = CURATED_DOMAIN,
+    data_source: str | None = CURATED_DATA_SOURCE,
+    file_size: int | None = None,
+) -> Dict[str, Any]:
+    key = _build_key(domain=domain, data_source=data_source, part=part)
+    message: Dict[str, Any] = {
+        "bucket": CURATED_BUCKET,
+        "key": key,
+        "domain": domain,
+        "table_name": CURATED_TABLE,
+        "interval": CURATED_INTERVAL,
+        "layer": CURATED_LAYER,
+        "year": CURATED_YEAR,
+        "month": CURATED_MONTH,
+        "day": CURATED_DAY,
+        "ds": CURATED_DS,
+        "correlation_id": correlation_id,
+    }
+    if data_source is not None:
+        message["data_source"] = data_source
+    if file_size is not None:
+        message["file_size"] = file_size
+    return message
+
+
 def _drain_main_queue(
     *,
     sqs_client,
@@ -64,14 +124,7 @@ def test_happy_path_ack_deletes_message(make_load_queues) -> None:
     # Given: 재시도가 필요한 메시지가 있고
     # Given: 권한 오류가 발생할 메시지가 있고
     # Given: 시크릿 조회에 실패하는 메시지가 있고
-    body = {
-        "bucket": "data-pipeline-curated-dev",
-        "key": "market/prices/ds=2025-09-10/part-001.parquet",
-        "domain": "market",
-        "table_name": "prices",
-        "partition": "ds=2025-09-10",
-        "correlation_id": "550e8400-e29b-41d4-a716-446655440000",
-    }
+    body = _build_message(part="part-001.parquet", correlation_id="550e8400-e29b-41d4-a716-446655440000")
     sqs.send_message(QueueUrl=main_url, MessageBody=json.dumps(body))
 
     agent = FakeLoaderAgent(LoaderConfig(queue_url=main_url, retry_visibility_timeout=0))
@@ -100,22 +153,8 @@ def test_partial_batch_retry_then_success(make_load_queues) -> None:
 
     sqs = boto3.client("sqs", region_name="us-east-1")
     # Given: 일부는 성공하고 일부는 재시도가 필요한 메시지 배치가 있고
-    good = {
-        "bucket": "data-pipeline-curated-dev",
-        "key": "market/prices/ds=2025-09-10/part-001.parquet",
-        "domain": "market",
-        "table_name": "prices",
-        "partition": "ds=2025-09-10",
-        "correlation_id": "550e8400-e29b-41d4-a716-446655440000",
-    }
-    retry = {
-        "bucket": "data-pipeline-curated-dev",
-        "key": "market/prices/ds=2025-09-10/part-002.parquet",
-        "domain": "market",
-        "table_name": "prices",
-        "partition": "ds=2025-09-10",
-        "correlation_id": "660e8400-e29b-41d4-a716-446655440001",
-    }
+    good = _build_message(part="part-001.parquet", correlation_id="550e8400-e29b-41d4-a716-446655440000")
+    retry = _build_message(part="part-002.parquet", correlation_id="660e8400-e29b-41d4-a716-446655440001")
     for msg in [good, retry]:
         sqs.send_message(QueueUrl=main_url, MessageBody=json.dumps(msg))
 
@@ -154,14 +193,7 @@ def test_dlq_after_max_receive_count(make_load_queues) -> None:
     # Reduce visibility timeout for the test so we can reprocess quickly
     sqs.set_queue_attributes(QueueUrl=main_url, Attributes={"VisibilityTimeout": "0"})
 
-    body = {
-        "bucket": "data-pipeline-curated-dev",
-        "key": "market/prices/ds=2025-09-10/part-003.parquet",
-        "domain": "market",
-        "table_name": "prices",
-        "partition": "ds=2025-09-10",
-        "correlation_id": "770e8400-e29b-41d4-a716-446655440000",
-    }
+    body = _build_message(part="part-003.parquet", correlation_id="770e8400-e29b-41d4-a716-446655440000")
     sqs.send_message(QueueUrl=main_url, MessageBody=json.dumps(body))
 
     dlq_messages = _drain_main_queue(sqs_client=sqs, main_url=main_url, dlq_url=dlq_url)
@@ -211,14 +243,7 @@ def test_file_not_found_retries_then_dlq(make_load_queues) -> None:
     sqs = boto3.client("sqs", region_name="us-east-1")
     sqs.set_queue_attributes(QueueUrl=main_url, Attributes={"VisibilityTimeout": "0"})
 
-    body = {
-        "bucket": "data-pipeline-curated-dev",
-        "key": "market/prices/ds=2025-09-10/part-006.parquet",
-        "domain": "market",
-        "table_name": "prices",
-        "partition": "ds=2025-09-10",
-        "correlation_id": "a70e8400-e29b-41d4-a716-446655440000",
-    }
+    body = _build_message(part="part-006.parquet", correlation_id="a70e8400-e29b-41d4-a716-446655440000")
     sqs.send_message(QueueUrl=main_url, MessageBody=json.dumps(body))
 
     attempts: List[str] = []
@@ -254,14 +279,7 @@ def test_connection_error_retries_then_dlq(make_load_queues) -> None:
     sqs = boto3.client("sqs", region_name="us-east-1")
     sqs.set_queue_attributes(QueueUrl=main_url, Attributes={"VisibilityTimeout": "0"})
 
-    body = {
-        "bucket": "data-pipeline-curated-dev",
-        "key": "market/prices/ds=2025-09-10/part-006.parquet",
-        "domain": "market",
-        "table_name": "prices",
-        "partition": "ds=2025-09-10",
-        "correlation_id": "a70e8400-e29b-41d4-a716-446655440000",
-    }
+    body = _build_message(part="part-006.parquet", correlation_id="a70e8400-e29b-41d4-a716-446655440000")
     sqs.send_message(QueueUrl=main_url, MessageBody=json.dumps(body))
 
     attempts: List[str] = []
@@ -297,14 +315,7 @@ def test_memory_exhaustion_retry_limit(make_load_queues) -> None:
     sqs = boto3.client("sqs", region_name="us-east-1")
     sqs.set_queue_attributes(QueueUrl=main_url, Attributes={"VisibilityTimeout": "0"})
 
-    body = {
-        "bucket": "data-pipeline-curated-dev",
-        "key": "market/prices/ds=2025-09-10/part-007.parquet",
-        "domain": "market",
-        "table_name": "prices",
-        "partition": "ds=2025-09-10",
-        "correlation_id": "b80e8400-e29b-41d4-a716-446655440000",
-    }
+    body = _build_message(part="part-007.parquet", correlation_id="b80e8400-e29b-41d4-a716-446655440000")
     sqs.send_message(QueueUrl=main_url, MessageBody=json.dumps(body))
 
     attempt_codes: List[str] = []
@@ -343,15 +354,11 @@ def test_large_file_processing_success(make_load_queues) -> None:
     import boto3
 
     sqs = boto3.client("sqs", region_name="us-east-1")
-    body = {
-        "bucket": "data-pipeline-curated-dev",
-        "key": "market/prices/ds=2025-09-10/part-008.parquet",
-        "domain": "market",
-        "table_name": "prices",
-        "partition": "ds=2025-09-10",
-        "correlation_id": "c80e8400-e29b-41d4-a716-446655440000",
-        "file_size": 150 * 1024 * 1024,
-    }
+    body = _build_message(
+        part="part-008.parquet",
+        correlation_id="c80e8400-e29b-41d4-a716-446655440000",
+        file_size=150 * 1024 * 1024,
+    )
     sqs.send_message(QueueUrl=main_url, MessageBody=json.dumps(body))
 
     agent = FakeLoaderAgent(LoaderConfig(queue_url=main_url))
@@ -378,14 +385,7 @@ def test_retry_visibility_extension(make_load_queues) -> None:
     import boto3
 
     sqs = boto3.client("sqs", region_name="us-east-1")
-    body = {
-        "bucket": "data-pipeline-curated-dev",
-        "key": "market/prices/ds=2025-09-10/part-004.parquet",
-        "domain": "market",
-        "table_name": "prices",
-        "partition": "ds=2025-09-10",
-        "correlation_id": "880e8400-e29b-41d4-a716-446655440000",
-    }
+    body = _build_message(part="part-004.parquet", correlation_id="880e8400-e29b-41d4-a716-446655440000")
     sqs.send_message(QueueUrl=main_url, MessageBody=json.dumps(body))
 
     agent = FakeLoaderAgent(LoaderConfig(queue_url=main_url, retry_visibility_timeout=15))
@@ -414,11 +414,17 @@ def test_security_attributes_round_trip(make_load_queues, load_module) -> None:
 
     # Given: 메시지 속성이 포함된 SQS 메시지가 전송되고
     message = LoadMessage(
-        bucket="data-pipeline-curated-dev",
-        key="market/prices/ds=2025-09-10/part-005.parquet",
-        domain="market",
-        table_name="prices",
-        partition="ds=2025-09-10",
+        bucket=CURATED_BUCKET,
+        key=_build_key(part="part-005.parquet"),
+        domain=CURATED_DOMAIN,
+        table_name=CURATED_TABLE,
+        interval=CURATED_INTERVAL,
+        data_source=CURATED_DATA_SOURCE,
+        year=CURATED_YEAR,
+        month=CURATED_MONTH,
+        day=CURATED_DAY,
+        layer=CURATED_LAYER,
+        ds=CURATED_DS,
         correlation_id="990e8400-e29b-41d4-a716-446655440000",
     )
     attrs = build_message_attributes(message)
@@ -454,14 +460,7 @@ def test_permission_error_immediate_dlq(make_load_queues) -> None:
     sqs = boto3.client("sqs", region_name="us-east-1")
     sqs.set_queue_attributes(QueueUrl=main_url, Attributes={"VisibilityTimeout": "0"})
 
-    body = {
-        "bucket": "data-pipeline-curated-dev",
-        "key": "market/prices/ds=2025-09-10/part-009.parquet",
-        "domain": "market",
-        "table_name": "prices",
-        "partition": "ds=2025-09-10",
-        "correlation_id": "d90e8400-e29b-41d4-a716-446655440000",
-    }
+    body = _build_message(part="part-009.parquet", correlation_id="d90e8400-e29b-41d4-a716-446655440000")
     sqs.send_message(QueueUrl=main_url, MessageBody=json.dumps(body))
 
     agent = FakeLoaderAgent(LoaderConfig(queue_url=main_url, retry_visibility_timeout=0))
@@ -488,14 +487,7 @@ def test_secrets_failure_immediate_dlq(make_load_queues) -> None:
     sqs = boto3.client("sqs", region_name="us-east-1")
     sqs.set_queue_attributes(QueueUrl=main_url, Attributes={"VisibilityTimeout": "0"})
 
-    body = {
-        "bucket": "data-pipeline-curated-dev",
-        "key": "market/prices/ds=2025-09-10/part-010.parquet",
-        "domain": "market",
-        "table_name": "prices",
-        "partition": "ds=2025-09-10",
-        "correlation_id": "e90e8400-e29b-41d4-a716-446655440000",
-    }
+    body = _build_message(part="part-010.parquet", correlation_id="e90e8400-e29b-41d4-a716-446655440000")
     sqs.send_message(QueueUrl=main_url, MessageBody=json.dumps(body))
 
     agent = FakeLoaderAgent(LoaderConfig(queue_url=main_url, retry_visibility_timeout=0))

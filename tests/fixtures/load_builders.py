@@ -7,7 +7,7 @@ succinct and intention‑revealing. Production code should live under `src/`.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, Dict, Optional, Tuple
+from typing import Any, Dict, Optional
 from uuid import uuid4
 
 
@@ -41,33 +41,87 @@ def build_expected_load_message(
     presigned_url: Optional[str] = None,
 ) -> Dict[str, Any]:
     """Expected SQS message body from the EventBridge transformer, per spec."""
-    domain, table, partition = parse_curated_key(key)
+    parts = parse_curated_key(key)
     return {
         "bucket": bucket,
         "key": key,
-        "domain": domain,
-        "table_name": table,
-        "partition": partition,
+        "domain": parts.domain,
+        "table_name": parts.table_name,
+        "interval": parts.interval,
+        **({"data_source": parts.data_source} if parts.data_source is not None else {}),
+        "year": parts.year,
+        "month": parts.month,
+        "day": parts.day,
+        "layer": parts.layer,
+        "ds": parts.ds,
         **({"file_size": file_size} if file_size is not None else {}),
         "correlation_id": correlation_id or str(uuid4()),
         **({"presigned_url": presigned_url} if presigned_url else {}),
     }
 
 
-def parse_curated_key(key: str) -> Tuple[str, str, str]:
-    """Parse curated S3 key into (domain, table_name, partition).
+@dataclass(frozen=True)
+class ParsedCuratedKey:
+    domain: str
+    table_name: str
+    interval: str
+    data_source: Optional[str]
+    year: str
+    month: str
+    day: str
+    layer: str
 
-    Expected format: <domain>/<table_name>/ds=YYYY-MM-DD/<file>.parquet
-    This is a test helper; production code should implement the parser and be
-    covered by tests in tests/unit/load/contracts/test_key_parsing.py.
-    """
+    @property
+    def ds(self) -> str:
+        return f"{self.year}-{self.month}-{self.day}"
+
+
+def parse_curated_key(key: str) -> ParsedCuratedKey:
+    """Parse curated S3 key into its semantic components for tests."""
     parts = key.split("/")
-    if len(parts) < 4:
+    if len(parts) < 8:
         raise ValueError("Invalid curated key format: not enough segments")
-    domain, table_name, partition = parts[0], parts[1], parts[2]
-    if not partition.startswith("ds="):
-        raise ValueError("Invalid partition segment; expected ds=YYYY-MM-DD")
-    return domain, table_name, partition
+
+    domain, table_name = parts[0], parts[1]
+    interval_segment = parts[2]
+    data_source: Optional[str] = None
+    index = 3
+
+    if not interval_segment.startswith("interval="):
+        raise ValueError("Missing interval segment")
+    interval = interval_segment.split("=", 1)[1]
+
+    if parts[3].startswith("data_source="):
+        data_source = parts[3].split("=", 1)[1]
+        index = 4
+
+    try:
+        year_segment = parts[index]
+        month_segment = parts[index + 1]
+        day_segment = parts[index + 2]
+        layer_segment = parts[index + 3]
+    except IndexError as exc:
+        raise ValueError("Incomplete curated key partitions") from exc
+
+    if not year_segment.startswith("year="):
+        raise ValueError("Missing year segment")
+    if not month_segment.startswith("month="):
+        raise ValueError("Missing month segment")
+    if not day_segment.startswith("day="):
+        raise ValueError("Missing day segment")
+    if not layer_segment.startswith("layer="):
+        raise ValueError("Missing layer segment")
+
+    return ParsedCuratedKey(
+        domain=domain,
+        table_name=table_name,
+        interval=interval,
+        data_source=data_source,
+        year=year_segment.split("=", 1)[1],
+        month=month_segment.split("=", 1)[1],
+        day=day_segment.split("=", 1)[1],
+        layer=layer_segment.split("=", 1)[1],
+    )
 
 
 @dataclass(frozen=True)
