@@ -69,6 +69,7 @@ def test_event_transform_rejects_invalid_event_type(load_module) -> None:
     transform = mod["transform_s3_event_to_message"]
     ValidationError = mod.get("ValidationError")
 
+    # Given: 지원되지 않는 source 값을 가진 S3 이벤트가 있고
     event = build_s3_object_created_event(
         bucket="data-pipeline-curated-dev",
         key="market/prices/interval=1d/data_source=yahoo/year=2025/month=09/day=10/layer=adjusted/part.parquet",
@@ -76,6 +77,7 @@ def test_event_transform_rejects_invalid_event_type(load_module) -> None:
     )
     event["source"] = "custom.source"
 
+    # When: 변환 함수를 호출하면
     with pytest.raises(ValidationError or Exception):  # type: ignore[arg-type]
         transform(event)
 
@@ -85,12 +87,13 @@ def test_event_transform_requires_object_payload(load_module) -> None:
     transform = mod["transform_s3_event_to_message"]
     ValidationError = mod.get("ValidationError")
 
-    # detail-section 제거해 KeyError 유발
+    # Given: object 정보가 누락된 이벤트 페이로드가 주어지고
     event: Dict[str, Any] = {
         "source": "aws.s3",
         "detail-type": "Object Created",
         "detail": {},
     }
 
+    # When & Then: 변환 시 ValidationError가 발생한다
     with pytest.raises(ValidationError or Exception):  # type: ignore[arg-type]
         transform(event)

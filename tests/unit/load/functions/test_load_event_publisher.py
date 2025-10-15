@@ -60,11 +60,14 @@ def load_publisher(monkeypatch: pytest.MonkeyPatch, load_module) -> Callable[...
 
 
 def test_main_publishes_message(load_publisher) -> None:
+    # Given: 유효한 S3 Object Created 이벤트와 큐 매핑이 준비되고
     module, fake_sqs = load_publisher()
     event = build_s3_object_created_event(bucket=CURATED_BUCKET, key=CURATED_KEY, size=4096)
 
+    # When: Load Event Publisher를 실행하면
     result = module["main"](event, None)
 
+    # Then: 메시지가 정상적으로 발행되어 SQS에 기록된다
     assert result == {
         "status": "SUCCESS",
         "queue": "https://sqs.ap-northeast-2.amazonaws.com/123456789012/dev-market-load-queue",
@@ -80,35 +83,44 @@ def test_main_publishes_message(load_publisher) -> None:
 
 
 def test_main_skips_small_file(load_publisher) -> None:
+    # Given: 최소 파일 크기보다 작은 이벤트가 주어지고
     module, fake_sqs = load_publisher(min_file_size="2048")
     small_event = build_s3_object_created_event(bucket=CURATED_BUCKET, key=CURATED_KEY, size=1024)
 
+    # When: Load Event Publisher를 실행하면
     result = module["main"](small_event, None)
 
+    # Then: 메시지는 발행되지 않고 SKIPPED 상태가 반환된다
     assert result == {"status": "SKIPPED", "reason": "File size below threshold"}
     assert fake_sqs.calls == []
 
 
 def test_main_skips_unknown_domain(load_publisher) -> None:
+    # Given: 큐 매핑에 존재하지 않는 도메인의 이벤트가 주어지고
     module, fake_sqs = load_publisher()
     unknown_key = (
         "unknown/prices/interval=1d/data_source=yahoo/year=2025/month=09/day=10/layer=adjusted/part-0000.parquet"
     )
     event = build_s3_object_created_event(bucket=CURATED_BUCKET, key=unknown_key, size=4096)
 
+    # When: Load Event Publisher를 실행하면
     result = module["main"](event, None)
 
+    # Then: 메시지가 드롭되고 Unknown domain 사유로 SKIPPED가 반환된다
     assert result == {"status": "SKIPPED", "reason": "Unknown domain"}
     assert fake_sqs.calls == []
 
 
 def test_main_skips_on_validation_error(load_publisher) -> None:
+    # Given: 스키마 검증에 실패할 잘못된 확장자의 이벤트가 주어지고
     module, fake_sqs = load_publisher()
     invalid_key = "market/prices/interval=1d/data_source=yahoo/year=2025/month=09/day=10/layer=adjusted/part-0000.csv"
     event = build_s3_object_created_event(bucket=CURATED_BUCKET, key=invalid_key, size=4096)
 
+    # When: Load Event Publisher를 실행하면
     result = module["main"](event, None)
 
+    # Then: ValidationError로 인해 이벤트가 무시되고 큐 전송은 수행되지 않는다
     assert result["status"] == "SKIPPED"
     assert "Parquet" in result["reason"]
     assert fake_sqs.calls == []

@@ -163,7 +163,7 @@ def test_partial_batch_retry_then_success(make_load_queues) -> None:
     def process_first(msg: Dict[str, Any]) -> str:
         return "RETRY" if msg["key"].endswith("part-002.parquet") else "SUCCESS"
 
-    # When: 첫 번째 실행에서 재시도가 발생하고
+    # When: 첫 번째 실행에서 일부 메시지가 재시도를 요구하고
     # First pass: 1 success, 1 retry (visibility set to 0 to requeue)
     r1 = agent.run_once(process_first)
     assert r1["count"] == 2
@@ -193,10 +193,14 @@ def test_dlq_after_max_receive_count(make_load_queues) -> None:
     # Reduce visibility timeout for the test so we can reprocess quickly
     sqs.set_queue_attributes(QueueUrl=main_url, Attributes={"VisibilityTimeout": "0"})
 
+    # Given: 지속적으로 실패할 메시지가 큐에 존재하고
     body = _build_message(part="part-003.parquet", correlation_id="770e8400-e29b-41d4-a716-446655440000")
     sqs.send_message(QueueUrl=main_url, MessageBody=json.dumps(body))
 
+    # When: 최대 재시도 횟수를 초과하도록 여러 번 폴링하면
     dlq_messages = _drain_main_queue(sqs_client=sqs, main_url=main_url, dlq_url=dlq_url)
+
+    # Then: 메시지가 DLQ로 이동해야 한다
     assert len(dlq_messages) == 1
     dlq_body = json.loads(dlq_messages[0]["Body"])
     assert dlq_body["key"].endswith("part-003.parquet")
@@ -243,6 +247,7 @@ def test_file_not_found_retries_then_dlq(make_load_queues) -> None:
     sqs = boto3.client("sqs", region_name="us-east-1")
     sqs.set_queue_attributes(QueueUrl=main_url, Attributes={"VisibilityTimeout": "0"})
 
+    # Given: S3 404가 재현되는 메시지가 큐에 있고
     body = _build_message(part="part-006.parquet", correlation_id="a70e8400-e29b-41d4-a716-446655440000")
     sqs.send_message(QueueUrl=main_url, MessageBody=json.dumps(body))
 
@@ -254,6 +259,7 @@ def test_file_not_found_retries_then_dlq(make_load_queues) -> None:
 
     agent = FakeLoaderAgent(LoaderConfig(queue_url=main_url, retry_visibility_timeout=0))
 
+    # When: 동일한 메시지가 여러 번 재시도되면
     for _ in range(3):
         result = agent.run_once(process_with_retries)
         codes = [r.get("error_code") for r in result["results"] if r["action"] == "EXCEPTION"]
@@ -279,6 +285,7 @@ def test_connection_error_retries_then_dlq(make_load_queues) -> None:
     sqs = boto3.client("sqs", region_name="us-east-1")
     sqs.set_queue_attributes(QueueUrl=main_url, Attributes={"VisibilityTimeout": "0"})
 
+    # Given: 네트워크 오류가 반복되는 메시지가 큐에 있고
     body = _build_message(part="part-006.parquet", correlation_id="a70e8400-e29b-41d4-a716-446655440000")
     sqs.send_message(QueueUrl=main_url, MessageBody=json.dumps(body))
 
@@ -290,6 +297,7 @@ def test_connection_error_retries_then_dlq(make_load_queues) -> None:
 
     agent = FakeLoaderAgent(LoaderConfig(queue_url=main_url, retry_visibility_timeout=0))
 
+    # When: 동일한 메시지가 여러 번 재시도되면
     for _ in range(3):
         result = agent.run_once(process_connection)
         exception_codes = [r.get("error_code") for r in result["results"] if r["action"] == "EXCEPTION"]
@@ -315,6 +323,7 @@ def test_memory_exhaustion_retry_limit(make_load_queues) -> None:
     sqs = boto3.client("sqs", region_name="us-east-1")
     sqs.set_queue_attributes(QueueUrl=main_url, Attributes={"VisibilityTimeout": "0"})
 
+    # Given: 메모리 오류가 누적되는 메시지가 큐에 있고
     body = _build_message(part="part-007.parquet", correlation_id="b80e8400-e29b-41d4-a716-446655440000")
     sqs.send_message(QueueUrl=main_url, MessageBody=json.dumps(body))
 
@@ -329,6 +338,7 @@ def test_memory_exhaustion_retry_limit(make_load_queues) -> None:
 
     agent = FakeLoaderAgent(LoaderConfig(queue_url=main_url, retry_visibility_timeout=0))
 
+    # When: 재시도 한도를 초과하도록 처리하면
     for _ in range(3):
         result = agent.run_once(process_memory)
         exception_codes = [r.get("error_code") for r in result["results"] if r["action"] == "EXCEPTION"]
@@ -337,8 +347,6 @@ def test_memory_exhaustion_retry_limit(make_load_queues) -> None:
     assert attempt_codes == ["MEMORY_ERROR", "MEMORY_ERROR", "MEMORY_ERROR"]
 
     # Then: 재시도 제한 후 DLQ로 이동한다
-    # Then: 즉시 DLQ로 라우팅된다
-    # Then: 즉시 DLQ로 라우팅된다
     dlq_messages = _drain_main_queue(sqs_client=sqs, main_url=main_url, dlq_url=dlq_url, max_attempts=3)
     assert len(dlq_messages) == 1
     dlq_body = json.loads(dlq_messages[0]["Body"])
@@ -354,6 +362,7 @@ def test_large_file_processing_success(make_load_queues) -> None:
     import boto3
 
     sqs = boto3.client("sqs", region_name="us-east-1")
+    # Given: 큰 파일을 가리키는 메시지가 큐에 있고
     body = _build_message(
         part="part-008.parquet",
         correlation_id="c80e8400-e29b-41d4-a716-446655440000",
@@ -385,6 +394,7 @@ def test_retry_visibility_extension(make_load_queues) -> None:
     import boto3
 
     sqs = boto3.client("sqs", region_name="us-east-1")
+    # Given: 재시도 처리가 필요한 메시지가 큐에 있고
     body = _build_message(part="part-004.parquet", correlation_id="880e8400-e29b-41d4-a716-446655440000")
     sqs.send_message(QueueUrl=main_url, MessageBody=json.dumps(body))
 
@@ -393,7 +403,7 @@ def test_retry_visibility_extension(make_load_queues) -> None:
     def process_retry(_: Dict[str, Any]) -> str:
         return "RETRY"
 
-    # When: 재시도를 요청하면
+    # When: 에이전트가 재시도를 요청하면
     # Then: visibility 타임아웃이 설정값으로 변경된다
     result = agent.run_once(process_retry)
     assert result["count"] == 1
@@ -460,6 +470,7 @@ def test_permission_error_immediate_dlq(make_load_queues) -> None:
     sqs = boto3.client("sqs", region_name="us-east-1")
     sqs.set_queue_attributes(QueueUrl=main_url, Attributes={"VisibilityTimeout": "0"})
 
+    # Given: 권한 오류를 유발할 메시지가 큐에 있고
     body = _build_message(part="part-009.parquet", correlation_id="d90e8400-e29b-41d4-a716-446655440000")
     sqs.send_message(QueueUrl=main_url, MessageBody=json.dumps(body))
 
@@ -468,10 +479,12 @@ def test_permission_error_immediate_dlq(make_load_queues) -> None:
     def process_permission(_: Dict[str, Any]) -> str:
         raise PermissionError("access denied")
 
+    # When: 메시지를 처리하면
     result = agent.run_once(process_permission)
     exception_codes = [r.get("error_code") for r in result["results"] if r["action"] == "EXCEPTION"]
     assert exception_codes and exception_codes[0] == "PERMISSION_ERROR"
 
+    # Then: 메시지는 즉시 DLQ로 이동한다
     dlq_messages = _drain_main_queue(sqs_client=sqs, main_url=main_url, dlq_url=dlq_url, max_attempts=3)
     assert len(dlq_messages) == 1
 
@@ -487,6 +500,7 @@ def test_secrets_failure_immediate_dlq(make_load_queues) -> None:
     sqs = boto3.client("sqs", region_name="us-east-1")
     sqs.set_queue_attributes(QueueUrl=main_url, Attributes={"VisibilityTimeout": "0"})
 
+    # Given: 시크릿 조회 오류를 유발할 메시지가 큐에 있고
     body = _build_message(part="part-010.parquet", correlation_id="e90e8400-e29b-41d4-a716-446655440000")
     sqs.send_message(QueueUrl=main_url, MessageBody=json.dumps(body))
 
@@ -495,9 +509,11 @@ def test_secrets_failure_immediate_dlq(make_load_queues) -> None:
     def process_secrets(_: Dict[str, Any]) -> str:
         raise LoaderError("SECRETS_ERROR", "unable to read secret")
 
+    # When: 메시지를 처리하면
     result = agent.run_once(process_secrets)
     exception_codes = [r.get("error_code") for r in result["results"] if r["action"] == "EXCEPTION"]
     assert exception_codes and exception_codes[0] == "SECRETS_ERROR"
 
+    # Then: 메시지는 즉시 DLQ로 이동한다
     dlq_messages = _drain_main_queue(sqs_client=sqs, main_url=main_url, dlq_url=dlq_url, max_attempts=3)
     assert len(dlq_messages) == 1
