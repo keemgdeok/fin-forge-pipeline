@@ -1,38 +1,36 @@
 ```mermaid
 graph LR
   subgraph Core
-    SS["SharedStorageStack<br/>DataLake (Curated)"]
-    SEC["SecurityStack<br/>IAM Users/Roles & KMS"]
-    GOV["CatalogStack<br/>Glue Database"]
+    SS["SharedStorageStack<br/>Curated S3"]
+    SEC["SecurityStack<br/>IAM Roles"]
   end
 
   subgraph Pipeline_Load
-    EB["EventBridge Rule<br/>(S3 Object Created)"]
-    SQS["SQS Queue<br/>(Load Jobs)"]
-    DLQ["Dead Letter Queue<br/>(Failed Jobs)"]
-    AGT["On‑prem CH Loader Agent<br/>(SQS Consumer)"]
+    EB["EventBridge Rule<br/>S3 ObjectCreated"]
+    PUB["Load Event Publisher"]
+    SQS["{env}-{domain}-load-queue"]
+    DLQ["{env}-{domain}-load-dlq"]
   end
 
-  subgraph External_Systems
-    DW["ClickHouse (On‑prem)"]
+  subgraph External
+    AGT["On‑prem Loader<br/>(미구현)"]
+    CH["ClickHouse"]
   end
 
-  SS -->|Curated bucket events| EB
-  EB -->|S3 Event Match| SQS
-  SQS -->|Long poll| AGT
-  SQS -.->|Max Retries Exceeded| DLQ
+  SS -->|Curated object events| EB
+  EB -->|Filtered event| PUB
+  PUB -->|SendMessage| SQS
+  SQS -.->|maxReceiveCount 초과| DLQ
 
-  AGT -->|INSERT via s3 table fn| DW
-  DW -->|Read Parquet via s3| SS
+  %% External consumption (예정)
+  SQS -->|ReceiveMessage| AGT
+  AGT -->|INSERT via s3| CH
+  CH -->|Read Parquet over HTTPS| SS
 
-  CUR[(S3 Curated)] --> EB
-  EB -->|Event Filter<br/>prefix/suffix| SQS
+  %% Notes
+  N2["year=YYYY/month=MM/day=DD/layer=... "]:::note
 
-  %% Security/ops notes
-  N1["Loader용 최소권한 IAM<br/>SQS: Receive/Delete/ChangeVisibility<br/>S3: GetObject (domain prefix)"]:::note
-  N2["DLQ 보존정책<br/>(3-7일, 운영자 알람)"]:::note
-  SEC -.-> N1
-  DLQ -.-> N2
+  PUB -.-> N2
 
   classDef note fill:#fff3cd,stroke:#d39e00,color:#5c4800;
 ```

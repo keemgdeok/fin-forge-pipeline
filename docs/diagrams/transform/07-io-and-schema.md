@@ -2,10 +2,10 @@
 
 ```mermaid
 flowchart LR
-  RAW[("S3 Raw<br/>/<domain>/<table>/interval=.../data_source=.../year=YYYY/month=MM/day=DD/")] --> READ["Read with schema on read"]
+  RAW[("RAW S3<br/>/<domain>/<table>/interval=…/data_source=…/year=YYYY/month=MM/day=DD/")] --> READ["Schema-on-read"]
   READ --> XFORM["Transform"]
-  XFORM --> CUR[("S3 Curated<br/>/<domain>/<table>/ds=YYYY-MM-DD/ (Parquet, ZSTD)")]
-  CUR --> ATH[("Athena Table<br/><domain>_<table>")]
+  XFORM --> CUR[("Curated S3<br/>.../layer=<name>/ (Parquet + ZSTD)")]
+  CUR --> ATH[("Athena / Glue Catalog<br/>domain_table views")]
 
   classDef store fill:#e8f3ff,stroke:#1f77b4,color:#1f77b4;
   class RAW,CUR,ATH store;
@@ -14,31 +14,31 @@ flowchart LR
 ```mermaid
 classDiagram
   class InputRecord {
-    +string symbol
-    +datetime ts_utc
-    +decimal price
-    +string exchange
-    +string interval
-    +string data_source
-    +date utc_day  // year/month/day 파티션 기준
+    symbol
+    timestamp (UTC)
+    open/high/low/close?
+    adjusted_close?
+    volume?
+    interval
+    data_source
   }
 
   class OutputRecord {
-    +string symbol
-    +datetime ts_utc
-    +decimal price
-    +string exchange
-    +date ds  // partition key (YYYY-MM-DD)
+    symbol
+    timestamp (UTC)
+    open/high/low/close
+    adjusted_close
+    volume
+    ds
+    layer
   }
 
-  InputRecord <--> OutputRecord : mapping & validation
+  InputRecord <--> OutputRecord : validate & enrich
 ```
 
 비고
 
-- 입력 파티션 키: `interval, data_source, year, month, day`
-- 출력 파티션 키: `ds=YYYY-MM-DD` (UTC)
-- 파일 포맷: Parquet + ZSTD
-- 테이블 노출: Glue Catalog/Athena 테이블 `<domain>_<table>`
-- 카탈로그 갱신: 스키마 변경 감지 시에만 크롤러 실행(기본은 스킵)
-- RAW는 심볼별 파일(`{symbol}.{ext}[.gz]`)로 저장되어 재수집 시 멱등성을 보장합니다.
+- RAW 파티션 키: `interval`, `data_source`, `year`, `month`, `day`.
+- Curated 파티션 키: `year`, `month`, `day`, `layer` (`ds` 컬럼 포함).
+- 스키마 지문은 `s3://<artifacts>/<domain>/<table>/_schema/latest.json`에 기록되어 Preflight/Schema Decider에서 활용됩니다.
+```

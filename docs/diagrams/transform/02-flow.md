@@ -1,27 +1,28 @@
 ```mermaid
 flowchart TD
-  A["Step Functions 시작<br/>(입력: domain, table, date 범위)"] --> B["Preflight Lambda"]
-  B --> C["구성 로드 + 입력 검증"]
-  C --> D["멱등성 체크(실행 키/파티션)"]
-  D --> E["컴팩션 Glue 인자 구성"]
-  E --> F["Glue Compaction Job<br/>(Raw → Parquet)"]
-  F --> G["Compaction Guard Lambda"]
-  G -->|데이터 존재| H["Transform Glue StartJobRun"]
-  G -->|데이터 없음| S["종료 (성공)"]
-  H --> I["Glue: Compacted Parquet 읽기"]
-  I --> J["변환/정합성·품질 검증"]
-  J --> K["Curated Parquet 쓰기 (ds=YYYY-MM-DD)"]
-  K --> L["Glue 크롤러 시작(스키마 변경 시)"]
-  L --> M["새 경로 스캔 → Catalog 갱신"]
-  M --> S
+  A["Step Functions 입력<br/>manifest_keys + 메타데이터"] --> B["Map 상태<br/>(각 manifest 처리)"]
 
-  %% DQ 상세 참고 노트
-  NDQ["품질 실패/격리 경로는<br/>04-data-quality-gate 참조"]:::note
-  J -.-> NDQ
+  subgraph ItemProcessor
+    B --> C["Preflight Lambda\n(인수 준비 + 멱등성)"]
+    C --> D{proceed?}
+    D -->|skip| SKIP(["Skip"])
+    D -->|error| FAIL(["Fail"])
+    D -->|true| COMP["Glue Compaction"]
+    subgraph GlueJobs
+      COMP --> GUARD["Compaction Guard"]
+      GUARD -->|데이터 없음| SKIP
+      GUARD -->|데이터 있음| ETL["Curated ETL"]
+      ETL --> IND["Indicators ETL"]
+  end
+    IND --> DECIDE["Schema Change Decider"]
+    DECIDE -->|shouldRunCrawler=true| CRAWLER["Start Glue Crawler"]
+    DECIDE -->|false| SKIP
+    CRAWLER --> SKIP
+  end
 
-  %% 오류/우회 경로: 단순화 위해 생략(핵심 플로우만 표시)
+  SKIP --> Z
 
-  
-
-  classDef note fill:#fff3cd,stroke:#d39e00,color:#5c4800;
+  subgraph Aggregation
+    Z["Map 완료 → Succeed"]
+  end
 ```

@@ -1,32 +1,29 @@
 ```mermaid
 flowchart TD
-  A["Input: start_date, end_date"] --> B["Build date array [ds_i]"]
-  B --> M["Step Functions Map<br/>maxConcurrency = k (2–4)"]
+  A["Backfill 입력<br/>manifest_keys[...]"] --> M["Map 상태<br/>(동시성 = config.sfn_max_concurrency)"]
 
   subgraph ItemProcessor
-    I1["Preflight(ds_i)"] --> J{skip?}
-    J -->|true| SKIP(["Skip (no changes)"])
-    J -->|false| C["Compaction Glue (ds_i)"]
-    C --> G["Compaction Guard"]
-    G -->|자료 있음| T["Transform Glue"]
-    G -->|자료 없음| SKIP
-    T --> CR["Start Crawler (스키마 변경 시)"]
-    
+    M --> P["Preflight Lambda"]
+    P --> D{proceed?}
+    D -->|skip| SKIP(["Skip"])
+    D -->|error| FAIL(["Fail"])
+    D -->|run| COMP["Glue Compaction"]
+    subgraph GlueJobs
+      COMP --> GUARD["Compaction guard"]
+      GUARD -->|no data| SKIP
+      GUARD -->|process| ETL["Curated ETL"]
+      ETL --> IND["Indicators ETL"]
+    end
+    IND --> DECIDE["Schema decider"]
+    DECIDE -->|run crawler| CRAWLER["Start crawler"]
+    DECIDE -->|no| SKIP
+    CRAWLER --> SKIP
   end
 
-  M --> I1
-  I1 --> J
-  SKIP --> Z
-  CR --> Z
-  subgraph Aggregation
-    Z["Reduce: success/failed counts,<br/>rows/bytes sum"]
+  subgraph Result
+    SKIP --> Z["Map 완료"]
   end
 
-  %% Notes
-  N1["표준(Standard) 상태머신 사용,<br/>동시성은 2–4로 제한"]:::note
-  N2["부분 실패 집계 및 재시도 큐잉(필요 시)"]:::note
-  M -.-> N1
-  Z -.-> N2
-
-  classDef note fill:#fff3cd,stroke:#d39e00,color:#5c4800;
+  classDef skip fill:#eef6ff,stroke:#5080c1,color:#2d5a8d;
+  class SKIP,Z skip;
 ```

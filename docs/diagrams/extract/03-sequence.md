@@ -8,34 +8,36 @@ sequenceDiagram
   participant WRK as Ingestion Worker Lambda
   participant PRV as Market Data Provider
   participant S3 as RAW Bucket
-  participant EB as EventBridge (S3)
   participant SF as Transform Step Functions
 
-  EV->>ORC: Scheduled event (domain/table/period/interval)
-  ORC->>ORC: Load symbol universe (SSM or S3)
-  ORC->>DDB: PutItem expected_chunks, status='processing'
+  EV->>ORC: Scheduled event
+  ORC->>ORC: Load symbol universe (SSM 또는 S3)
+  ORC->>DDB: PutItem expected_chunks
   ORC->>SQS: SendMessageBatch(chunks of symbols)
 
-  loop per SQS message
+  par parallel workers (per SQS message)
     SQS->>WRK: Invoke with chunk payload
     WRK->>PRV: fetch_prices(symbols)
     PRV-->>WRK: List<PriceRecord>
     loop per symbol/day
-      WRK->>S3: head_object(interval/data_source/year/month/day)
+      WRK->>S3: head_object(interval/...)
       alt Object exists
         WRK-->>WRK: Skip write (idempotent)
       else
         WRK->>S3: PutObject(symbol partition, optional .gz)
       end
     end
-    WRK->>DDB: UpdateItem ADD processed_chunks, append partition summary
+    WRK->>DDB: UpdateItem ADD processed_chunks
     alt processed_chunks < expected
       WRK-->>SQS: ack message
     else
-      WRK->>S3: PutObject _batch.manifest.json (per partition)
-      S3-->>EB: ObjectCreated (manifest)
-      EB-->>SF: Trigger transform workflow
+      WRK->>S3: PutObject partition manifest(s)
+      Note over WRK,S3: 파티션 매니페스트 업로드 후 파이프라인 종료
     end
+  and
+    Note over SQS: Messages redelivered until chunk success or DLQ
   end
 
+  S3-->>SF: Start execution (manifest_keys)
+  Note over S3,SF: 매니페스트 스크립트가 실행을 시작
 ```

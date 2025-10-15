@@ -1,23 +1,23 @@
 ```mermaid
 flowchart TD
-  A["EventBridge Scheduled Event<br/>env-configured payload"] --> B["Orchestrator Lambda"]
-  B --> C["Load symbol universe (SSM/S3 fallback)"]
+  A["EventBridge Scheduled Event"] --> B["Orchestrator Lambda"]
+  B --> C["Resolve symbols"]
   C --> D["Chunk symbols (size N)"]
-  D --> E["Init/refresh DynamoDB batch tracker\n(expected_chunks, status='processing')"]
+  D --> E["Init/refresh DynamoDB batch tracker"]
   E --> F["SendMessageBatch to ingestion SQS"]
-  F --> G["SQS → Ingestion Worker Lambda"]
+  F --> G["SQS fan-out<br/>parallel worker Lambdas"]
   G --> H["Fetch prices from provider"]
-  H --> I["Group records by symbol & ds"]
+  H --> I["Group by symbol + ds"]
   I --> J{RAW object exists?}
   J -->|Yes| K["Skip write (idempotent)"]
-  J -->|No| L["Serialize and PutObject\ninterval/data_source/year/month/day"]
-  L --> M["Record written key"]
+  J -->|No| L["Serialize and PutObject <br>interval/data_source/year/month/day"]
+  L --> M["Capture written key"]
   K --> M
-  M --> N["Update DynamoDB tracker\n(ADD processed_chunks, append partition summary)"]
+  M --> N["Update DynamoDB tracker"]
   N --> O{All chunks processed?}
-  O -->|No| P["Return partial success"]
-  O -->|Yes| Q["Emit partition manifests\n(_batch.manifest.json)"]
-  Q --> R["EventBridge: ObjectCreated (manifest)"]
-  R --> S["Transform Step Functions\n(preflight → Glue/Indicators)"]
+  O -->|No| P["Await remaining chunks"]
+  O -->|Yes| Q["Emit partition manifests"]
+  Q --> R["Collect manifests"]
+  R --> S["Start Step Functions execution"]
 
 ```

@@ -1,48 +1,40 @@
 ```mermaid
 sequenceDiagram
   autonumber
-  participant SF as Step Functions
+  participant SF as Step Functions (per manifest item)
   participant PRE as Preflight Lambda
-  participant COMP as Glue Compaction Job
-  participant GUARD as Compaction Guard Lambda
-  participant GLUE as Glue ETL Job
-  participant RAW as S3 Raw Bucket
-  participant CUR as S3 Curated Bucket
+  participant COMP as Glue Compaction
+  participant GUARD as Compaction Guard
+  participant ETL as Curated ETL
+  participant IND as Indicators ETL
+  participant DEC as Schema Decider
   participant CR as Glue Crawler
-  participant CAT as Glue Data Catalog
-  
+  participant S3 as S3 (Raw & Curated)
 
-  SF->>PRE: Invoke (domain, table, date)
-  PRE-->>SF: Glue args + idempotency key (compaction 포함)
-  alt Preflight 실패
-    SF-->>SF: Fail
-  else Preflight 통과
-    SF->>COMP: StartJobRun(compaction args)
-    COMP->>RAW: Read manifest-listed objects
-    COMP->>CUR: Write compacted parquet (ds)
-    COMP-->>SF: Success(runId, stats)
-    SF->>GUARD: Invoke ({bucket, prefix, ds})
-    GUARD-->>SF: {shouldProcess: bool}
-    alt Compacted data 존재
-      SF->>GLUE: StartJobRun(transform args)
-      GLUE->>CUR: Read compacted parquet
-      GLUE->>GLUE: Transform + validate
-      GLUE->>CUR: Write curated outputs
-      GLUE-->>SF: Success(runId, stats)
-      SF->>PRE: Schema drift check
-      PRE-->>SF: changed? (true/false)
-      alt Schema changed
-        SF->>CR: StartCrawler
-        CR->>CUR: Scan new paths
-        CR-->>CAT: Update table/partitions
-      else No change
-        SF-->>SF: Skip crawler
-      end
-      SF-->>SF: Succeed
-    else Compacted data 없음
-      SF-->>SF: Succeed (no new files)
+  SF->>PRE: Invoke manifest item
+  PRE-->>SF: proceed? + glue_args
+  alt proceed == false
+    SF-->>SF: Skip or fail item
+  else proceed == true
+    SF->>COMP: Start compaction job
+    COMP->>S3: Read raw partition
+    COMP->>S3: Write compacted layer
+    COMP-->>SF: SUCCESS
+    SF->>GUARD: Check compacted output
+    GUARD-->>SF: {shouldProcess}
+    opt shouldProcess == true
+      SF->>ETL: Run curated ETL
+      ETL->>S3: Read compacted layer
+      ETL->>S3: Write curated layer
+      ETL-->>SF: SUCCESS
+      SF->>IND: Run indicators ETL
+      IND->>S3: Write indicators layer
+      IND-->>SF: SUCCESS
+    end
+    SF->>DEC: Decide crawler run
+    DEC-->>SF: {shouldRunCrawler}
+    opt shouldRunCrawler == true
+      SF->>CR: Start crawler
     end
   end
-
-  Note over GLUE: 품질 실패/격리 경로는 04-data-quality-gate 참조
 ```

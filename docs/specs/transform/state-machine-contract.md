@@ -1,140 +1,74 @@
 # Step Functions Transform State Machine — I/O 계약 명세
 
-본 문서는 Transform 상태 머신의 입력/출력 계약, 실패 코드, 재시도 정책을 정의합니다. 모든 예시는 UTC 기준이며, CDK가 생성한 리소스와 일관되게 유지해야 합니다. 파이프라인은 `Preflight → Glue Compaction → Compaction Guard → Prices ETL (조정) → Indicators ETL → Glue Crawler` 순으로 실행됩니다.
+| 항목 | 내용 |
+|------|------|
+| 책임 | 매니페스트 기반 배치를 Compaction → Transform → Indicators → Crawler 순으로 처리 |
+| 코드 기준 | `infrastructure/pipelines/daily_prices_data/processing_stack.py` |
+| 배포 리소스 | `{environment}-daily-prices-data-processing` |
 
-## 입력(Inputs)
+### 입력 계약
 
-| 필드 | 타입 | 필수 | 예시 | 제약/설명 |
-|---|---|:---:|---|---|
-| environment | string | Y | `dev` | `dev\|stg\|prod` 중 하나 |
-| domain | string | Y | `daily-prices-data` | 도메인 식별자 |
-| table_name | string | Y | `orders` | 데이터셋/테이블 이름 (`table` 별칭 허용) |
-| ds | string | C | `2025-09-07` | `YYYY-MM-DD` (UTC). `date_range`와 상호 배타(XOR) |
-| date_range.start | string | C | `2025-09-01` | `YYYY-MM-DD` (UTC) |
-| date_range.end | string | C | `2025-09-07` | `YYYY-MM-DD` (UTC), `start ≤ end` |
-| reprocess | boolean | N | `false` | 기본 `false`. 재처리 시 멱등 락 무시하고 진행 |
-| execution_id | string | N | `ext-req-123` | 상관키. 미제공 시 상태 머신이 생성 |
-| catalog_update | string | N | `on_schema_change` | `on_schema_change|never|force`. 기본은 스키마 변경 감지 시에만 크롤러 실행 |
-| source_bucket | string | C | `data-pipeline-raw-dev-1234` | S3 트리거 모드일 때 필수 |
-| source_key | string | C | `market/prices/interval=1d/data_source=yahoo_finance/year=2025/month=09/day=07/AAPL.json` | S3 트리거 모드일 때 필수 |
-| interval | string | C | `1d` | S3 트리거 모드에서 RAW 경로 파티션 정보 |
-| data_source | string | C | `yahoo_finance` | S3 트리거 모드에서 RAW 경로 파티션 정보 |
-| file_type | string | N | `json` | `json|csv|parquet`. S3 트리거 모드에서 권장 |
+| 필드 | 타입 | 필수 | 기본값 | 설명 |
+|------|------|:---:|--------|------|
+| `manifest_keys` | array<object> | ✅ | - | 각 항목 `{ds, manifest_key, source?}`. Map 상태가 순차 처리 |
+| `domain` | string | ✅ | - | 도메인 식별자 (`table` 별칭도 허용) |
+| `table_name` | string | ✅ | - | 테이블 이름 |
+| `raw_bucket` | string | ✅ | - | RAW S3 버킷 |
+| `file_type` | string | ❌ | `json` | Glue 인자에 사용 |
+| `interval` | string | ❌ | `1d` | Glue 인자에 사용 |
+| `data_source` | string | ❌ | `yahoo_finance` | Glue 인자에 사용 |
+| `catalog_update` | string | ❌ | `on_schema_change` | `on_schema_change`/`never`/`force` |
+| `environment` | string | ❌ | 입력 없음 | Runner가 전달 가능 (참조용) |
+| `batch_id` | string | ❌ | 입력 없음 | 외부 추적용 선택 필드 |
 
-- 두 가지 입력 모드를 지원합니다.
-  - 직접 모드: `ds` 또는 `date_range` 제공(XOR).
-  - S3 트리거 모드: `source_bucket`/`source_key` 제공 → Preflight에서 `ds`를 도출.
-- 호환성: `table_name`을 기본으로 사용하되, 레거시 입력 `table`도 허용합니다(내부적으로 `table_name`으로 합쳐 처리).
-- 백필(Map) 사용 시 `date_range` 길이는 운영 정책 범위 내에서 제한(권장: ≤ 31일).
-- RAW 파티션 레이아웃은 `interval/data_source/year/month/day/{symbol}.{ext}` 구조로 고정되어야 하며, Preflight는 `source_key`에서 interval/data_source를 파싱해 Glue 인자와 멱등성 체크에 활용합니다.
-- 10년 이상 장기 백필은 일자·심볼 단위로 쪼개 1일씩 재처리하고, Glue 파티션 수/카탈로그 갱신 비용을 모니터링하면서 Athena 쿼리 계획을 검증해야 합니다.
+### Preflight 출력 요약
 
-### Preflight 출력(요약)
+| 필드 | 타입 | 설명 |
+|------|------|------|
+| `proceed` | boolean | `false` & `error.code=IDEMPOTENT_SKIP`이면 Map 항목 스킵 |
+| `ds` | string | `manifest_keys` 항목에서 사용된 파티션 날짜 |
+| `glue_args` | object | Glue StartJobRun 공통 인수 집합 |
 
-| 필드 | 타입 | 예시 | 설명 |
-|---|---|---|---|
-| proceed | boolean | `true` | 진행 여부(멱등 스킵 시 `false`) |
-| ds | string | `2025-09-07` | 도출된 파티션(UTC) |
-| glue_args | object | `{ "--ds": "2025-09-07", ... }` | Transform/Compaction에 공통으로 사용하는 Glue 인자 집합 |
-
-`glue_args`는 아래 Key를 최소 포함합니다.
+#### `glue_args` 필드
 
 | 키 | 설명 |
-|---|---|
-| `--raw_bucket`, `--raw_prefix` | Fallback용 RAW 경로 |
-| `--compacted_bucket`, `--compacted_prefix` | 컴팩션 출력 경로 |
-| `--curated_bucket`, `--curated_prefix` | 최종 Curated 출력 |
+|----|------|
+| `--raw_bucket`, `--raw_prefix` | RAW 입력 경로 |
+| `--compacted_bucket`, `--compacted_layer` | 컴팩션 결과 버킷/레이어 (`compacted`) |
+| `--curated_bucket`, `--curated_layer` | 최종 결과 버킷/레이어 (`adjusted`) |
 | `--interval`, `--data_source`, `--file_type`, `--ds` | 파티션 지정 |
+| `--codec`, `--target_file_mb` | Glue Job 튜닝 파라미터 |
+| `--schema_fingerprint_s3_uri` | 스키마 지문 경로 |
 
-## 출력(Outputs)
+### Map 처리 및 동시성
 
-단일 실행(ds)과 범위(Map) 모두를 포괄합니다.
+| 항목 | 값 | 설명 |
+|------|-----|------|
+| Map 상태 | `ProcessManifestList` | `manifest_keys` 배열 순회 |
+| `items_path` | `$.manifest_keys` | 각 항목 `{ds, manifest_key, source?}` |
+| 최대 동시 실행 | `config.sfn_max_concurrency` (기본 1) | 배치별 순차 처리 보장 기본값 |
 
-| 필드 | 타입 | 예시 | 설명 |
-|---|---|---|---|
-| ok | boolean | `true` | 전체 실행 성공 여부 |
-| correlationId | string | `daily-prices-data:orders:2025-09-07` | `domain:table:ds` 또는 생성된 실행 키 |
-| domain | string | `daily-prices-data` | 입력 반사 |
-| table_name | string | `orders` | 입력 반사 |
-| partitions | array<string> | `["ds=2025-09-07"]` | 성공적으로 처리된 파티션 목록 |
-| stats.rowCount | number | `123456` | 출력 레코드 수(합계) |
-| stats.bytesWritten | number | `987654321` | Curated 총 바이트 |
-| stats.fileCount | number | `24` | Curated 생성 파일 수 |
-| glueRunIds | array<string> | `["jr_abcdef"]` | Glue StartJobRun ID 리스트(Map 포함) |
+### 출력/오류 처리
 
-실패 시에는 `ok=false`와 함께 오류 페이로드를 반환합니다(아래 참조).
+| 항목 | 현행 동작 |
+|------|-----------|
+| 성공 결과 | 모든 항목 처리 후 `Succeed` (추가 페이로드 없음) |
+| 오류 페이로드 | `Fail` 상태로 즉시 종료, 상세는 CloudWatch Logs 및 실행 히스토리 참고 |
+| 멱등성 | Preflight가 Curated `layer=adjusted` 경로 존재 여부 확인 (`IDEMPOTENT_SKIP`) |
 
-## 실패 코드 및 오류 페이로드
+### 재시도 정책
 
-| code | 발생 지점 | 설명 | 재시도 |
-|---|---|---|---|
-| PRE_VALIDATION_FAILED | Preflight | 입력 누락/형식 불일치 등 | 지수 백오프 최대 2회 |
-| IDEMPOTENT_SKIP | Preflight | 이미 처리/잠금 중 → 스킵 | 재시도 없음(정상 종료 취급 가능) |
-| NO_RAW_DATA | Preflight | 대상 Raw 파티션 없음 | 재시도 없음 |
-| GLUE_JOB_FAILED | Glue | 컴팩션 또는 변환 Glue 잡 실패 | 최대 1회 재시도 |
-| DQ_FAILED | Glue | 데이터 품질 치명 규칙 위반 | 재시도 없음(수정 후 재실행) |
-| CRAWLER_FAILED | Crawler | 크롤러 실패/타임아웃 | 최대 2회 재시도(백오프) |
-| SCHEMA_CHECK_FAILED | Pre/Post | 스키마 지문 계산/비교 실패 | 1회 재시도 |
-| TIMEOUT | SFN/Glue | 전체/태스크 타임아웃 | 원인에 따라 1회 재시도 |
-| UNEXPECTED_ERROR | 전체 | 알 수 없는 예외 | 1회 재시도 후 실패 |
+| 단계 | 재시도 조건 | 정책 |
+|------|--------------|------|
+| Glue ETL | `Glue.ConcurrentRunsExceededException` | 구성된 backoff/attempts 사용 |
+| Glue Compaction | 재시도 없음 | 실패 시 Fail |
+| Lambda (Preflight/Guard/Decider) | 재시도 없음 | 실패 시 Fail |
+| Glue Crawler | 재시도 없음 | 실패 시 Fail |
 
-오류 페이로드 예시:
+### Crawler 게이팅
 
-```json
-{
-  "ok": false,
-  "correlationId": "daily-prices-data:orders:2025-09-07",
-  "error": {
-    "code": "DQ_FAILED",
-    "message": "null ratio exceeded for column price",
-    "partition": "ds=2025-09-07"
-  }
-}
-```
-
-## 성공 페이로드 예시
-
-```json
-{
-  "ok": true,
-  "correlationId": "daily-prices-data:orders:2025-09-07",
-  "domain": "daily-prices-data",
-  "table": "orders",
-  "partitions": ["ds=2025-09-07"],
-  "stats": {"rowCount": 123456, "bytesWritten": 987654321, "fileCount": 24},
-  "glueRunIds": ["jr_abcdef"]
-}
-```
-
-## 재시도 정책(요약)
-
-- Preflight: 지수 백오프(예: 2x) 최대 2회. 검증 실패/데이터 없음은 비재시도.
-- Glue: 시스템/일시 오류 시 1회. DQ_FAILED는 비재시도.
-- Schema check: 1회(일시 오류만)
-- Crawler: 최대 2회, 백오프로 간격 증가.
-- 전체 실행: 표준 타입, 태스크별 `Retry`와 공통 `Catch`로 실패 페이로드 구성.
-
-## 크롤러 실행 게이팅
-
-- 정책(`catalog_update`)에 따라 Glue Crawler 실행 여부를 결정합니다.
-  - `never`: 실행 안 함
-  - `force`: 항상 실행
-  - `on_schema_change`: 스키마 지문(`_schema/latest.json`)과 이전 지문(`_schema/previous.json`)의 `hash` 비교로 변경 시에만 실행
-- Preflight 출력의 `glue_args['--schema_fingerprint_s3_uri']`를 활용하여 비교 대상 경로를 해석합니다.
-
-## 관측(선택)
-
-- 최소 요약만 보존 가능: 성공/실패 카운트와 오류 코드 중심(PII 금지). 특정 도구 의존 없음.
-
-## 멱등성/상관키
-
-- `correlationId = domain:table:ds`(단일) 또는 `execution_id` 기반.
-- 현재 구현: 조정된 가격 Curated 경로 `/<domain>/<table>/adjusted/ds=<ds>/`에 출력 존재 시 스킵(멱등).
-- 지표 산출물은 `/<domain>/<table>/indicators/ds=<ds>/`에 기록되며, 동일한 패턴으로 재처리 시 존재 여부를 확인할 수 있습니다.
-- 선택적 고도화: DynamoDB 기반 실행 락/상태 추적을 추가 가능.
-
-## 보안
-
-- 최소권한 원칙: 프리픽스 단위 S3 접근, 로깅 저장소/KMS 권한은 필요한 범위로 한정.
-- Glue Catalog/Athena 권한은 IAM으로 관리합니다. 컬럼 수준 제한이 필요하면 Athena View/별도 테이블로 분리해 뷰 단위로 권한을 부여합니다.
-- Step Functions는 컴팩션 Guard가 `shouldProcess=false`를 반환하면 변환 단계를 건너뛰고 성공으로 종료합니다. 이 경우에도 DynamoDB 등 외부 상태 저장 구조는 변경되지 않습니다.
+| 정책 값 | 실행 여부 | 비고 |
+|---------|-----------|------|
+| `never` | 실행 안 함 | 운영자가 수동 관리 |
+| `force` | 항상 실행 | 비용/시간 증가 주의 |
+| `on_schema_change` | 지문 `hash` 변경 시 실행 | 기본값 |

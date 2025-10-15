@@ -2,21 +2,26 @@
 sequenceDiagram
   autonumber
   participant S3 as S3 Curated
-  participant EB as EventBridge
+  participant EB as EventBridge Rule
+  participant LMB as Load Event Publisher
   participant SQS as SQS Queue
-  participant AGT as On‑prem CH Loader
+  participant AGT as On‑prem Loader (external)
   participant CH as ClickHouse
 
-  S3->>EB: Object Created Event
-  EB->>SQS: Enqueue Load Message
-  AGT->>SQS: ReceiveMessage (long poll)
-  SQS-->>AGT: Messages (1-10)
-  AGT->>CH: INSERT INTO <table> SELECT * FROM s3('https://bucket/.../*.parquet', AK, SK, 'Parquet')
-  CH->>S3: HTTPS GET (parallel read)
-  S3-->>CH: Parquet streams
-  CH-->>AGT: Insert OK
-  AGT->>SQS: DeleteMessage (ACK)
+  S3->>EB: ObjectCreated event
+  EB->>LMB: Filtered event payload
+  LMB->>LMB: Validate & transform
+  alt valid
+    LMB->>SQS: SendMessage
+  else invalid
+    LMB-->>LMB: Skip event
+  end
 
-  Note over AGT: 실패/재시도/DLQ는 04-retry-and-dlq 참조
-  Note over CH: s3() 병렬 읽기·스키마 매핑은 05-batch-optimization 참조
+  %% External consumption (아직 구성되지 않음)
+  SQS->>AGT: ReceiveMessage (long poll)
+  AGT->>CH: INSERT ... SELECT s3(...)
+  CH->>S3: HTTPS GET Parquet
+  CH-->>AGT: Insert OK
+  AGT->>SQS: DeleteMessage
+
 ```
