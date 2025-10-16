@@ -70,6 +70,9 @@ def _render_definition(definition_prop: Any) -> str:
             joiner, parts = definition_prop["Fn::Join"]
             rendered_parts = [_render_definition(part) for part in parts]
             return str(joiner).join(rendered_parts)
+        if "Fn::ImportValue" in definition_prop:
+            # 외부 스택에서 가져온 값은 테스트 목적상 자리 표시자로 취급
+            return f"${{{definition_prop['Fn::ImportValue']}}}"
         if "Ref" in definition_prop:
             return f"${{{definition_prop['Ref']}}}"
         if "Fn::GetAtt" in definition_prop:
