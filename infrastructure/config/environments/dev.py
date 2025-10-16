@@ -53,7 +53,7 @@ dev_config = {
     "compaction_output_subdir": "compacted",
     "glue_retry_interval_seconds": 30,
     "glue_retry_backoff_rate": 2.0,
-    "glue_retry_max_attempts": 5,
+    "glue_retry_max_attempts": 3,
     "monitored_glue_jobs": [
         "daily-prices-compaction",
         "daily-prices-data-etl",
