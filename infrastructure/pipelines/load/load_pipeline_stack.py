@@ -42,6 +42,7 @@ class LoadPipelineStack(Stack):
         self.shared_storage = shared_storage_stack
         self.lambda_execution_role_arn = lambda_execution_role_arn
 
+        self.allowed_layers: List[str] = list(self.config.get("allowed_load_layers", []))
         domain_configs: List[Dict] = list(self.config.get("load_domain_configs", []))
         if not domain_configs:
             raise ValueError("load_domain_configs must be defined in environment configuration")
@@ -109,6 +110,7 @@ class LoadPipelineStack(Stack):
                 "LOAD_QUEUE_MAP": json.dumps(queue_map),
                 "PRIORITY_MAP": json.dumps(priority_map),
                 "MIN_FILE_SIZE_BYTES": str(int(self.config.get("load_min_file_size_bytes", 1024))),
+                "ALLOWED_LAYERS": json.dumps(self.allowed_layers),
             },
             layers=[self.load_layer],
         )

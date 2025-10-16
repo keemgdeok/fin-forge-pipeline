@@ -1,7 +1,7 @@
 import json
 import logging
 from pathlib import Path
-from typing import Any, Callable, Dict, Tuple
+from typing import Any, Callable, Dict, List, Optional, Tuple
 
 import pytest
 
@@ -10,6 +10,12 @@ from tests.fixtures.load_builders import build_s3_object_created_event
 TARGET = "src/lambda/functions/load_event_publisher/handler.py"
 CURATED_BUCKET = "data-pipeline-curated-dev"
 CURATED_KEY = "market/prices/interval=1d/data_source=yahoo/year=2025/month=09/day=10/layer=adjusted/part-0000.parquet"
+INDICATOR_KEY = (
+    "market/prices/interval=1d/data_source=yahoo/year=2025/month=09/day=10/layer=technical_indicator/part-0000.parquet"
+)
+COMPACTED_KEY = (
+    "market/prices/interval=1d/data_source=yahoo/year=2025/month=09/day=10/layer=compacted/part-0000.parquet"
+)
 
 
 class FakeSQSClient:
@@ -27,15 +33,18 @@ def load_publisher(monkeypatch: pytest.MonkeyPatch, load_module) -> Callable[...
         queue_map: Dict[str, str] | None = None,
         priority_map: Dict[str, str] | None = None,
         min_file_size: str = "1024",
+        allowed_layers: Optional[List[str]] = None,
     ) -> Tuple[Dict[str, Any], FakeSQSClient]:
         queue_map = queue_map or {
             "market": "https://sqs.ap-northeast-2.amazonaws.com/123456789012/dev-market-load-queue"
         }
         priority_map = priority_map or {"market": "1"}
+        allowed_layers = allowed_layers or ["adjusted", "technical_indicator"]
 
         monkeypatch.setenv("LOAD_QUEUE_MAP", json.dumps(queue_map))
         monkeypatch.setenv("PRIORITY_MAP", json.dumps(priority_map))
         monkeypatch.setenv("MIN_FILE_SIZE_BYTES", min_file_size)
+        monkeypatch.setenv("ALLOWED_LAYERS", json.dumps(allowed_layers))
         monkeypatch.setenv("AWS_ACCESS_KEY_ID", "test-access")
         monkeypatch.setenv("AWS_SECRET_ACCESS_KEY", "test-secret")
         monkeypatch.setenv("AWS_SESSION_TOKEN", "test-token")
@@ -95,6 +104,17 @@ def test_main_skips_small_file(load_publisher) -> None:
     assert fake_sqs.calls == []
 
 
+def test_main_publishes_indicator_layer(load_publisher) -> None:
+    module, fake_sqs = load_publisher()
+    event = build_s3_object_created_event(bucket=CURATED_BUCKET, key=INDICATOR_KEY, size=4096)
+
+    result = module["main"](event, None)
+
+    assert result["status"] == "SUCCESS"
+    payload = json.loads(fake_sqs.calls[0]["MessageBody"])
+    assert payload["layer"] == "technical_indicator"
+
+
 def test_main_skips_unknown_domain(load_publisher) -> None:
     # Given: 큐 매핑에 존재하지 않는 도메인의 이벤트가 주어지고
     module, fake_sqs = load_publisher()
@@ -123,4 +143,15 @@ def test_main_skips_on_validation_error(load_publisher) -> None:
     # Then: ValidationError로 인해 이벤트가 무시되고 큐 전송은 수행되지 않는다
     assert result["status"] == "SKIPPED"
     assert "Parquet" in result["reason"]
+    assert fake_sqs.calls == []
+
+
+def test_main_skips_disallowed_layer(load_publisher) -> None:
+    module, fake_sqs = load_publisher(allowed_layers=["adjusted", "technical_indicator"])
+    event = build_s3_object_created_event(bucket=CURATED_BUCKET, key=COMPACTED_KEY, size=4096)
+
+    result = module["main"](event, None)
+
+    assert result["status"] == "SKIPPED"
+    assert "Layer not allowed" in result["reason"]
     assert fake_sqs.calls == []
