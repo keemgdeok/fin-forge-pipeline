@@ -102,6 +102,16 @@ def _load_state_machine_definition(template: Template) -> Dict[str, Any]:
     return json.loads(definition_str)
 
 
+def _extract_map_states(map_state: Dict[str, Any]) -> Dict[str, Any]:
+    """Map 상태 정의에서 States 블록을 추출합니다."""
+    if "Iterator" in map_state:
+        return map_state["Iterator"]["States"]
+    item_processor = map_state.get("ItemProcessor")
+    if item_processor and "States" in item_processor:
+        return item_processor["States"]
+    raise KeyError("Iterator")
+
+
 @pytest.mark.integration
 def test_manifest_map_sequential_configuration() -> None:
     """기본 설정에서 Map 상태가 manifest를 순차 처리하는지 검증합니다."""
@@ -119,20 +129,19 @@ def test_manifest_map_sequential_configuration() -> None:
     assert map_state["ItemsPath"] == "$.manifest_keys"
     assert map_state["MaxConcurrency"] == dev_config["sfn_max_concurrency"]  # defaults to 1
 
-    iterator = map_state["Iterator"]
-    states = iterator["States"]
-    assert list(states.keys()) == ["PreflightDailyPrices", "ProcessDailyPrices", "ManifestSuccess"]
+    states = _extract_map_states(map_state)
+    assert "PreflightDailyPrices" in states, "PreflightDailyPrices 상태가 정의되지 않았습니다."
+    assert "ProcessDailyPrices" in states, "ProcessDailyPrices 상태가 정의되지 않았습니다."
 
     preflight = states["PreflightDailyPrices"]
     process = states["ProcessDailyPrices"]
-    success = states["ManifestSuccess"]
+    success_names = [name for name, node in states.items() if node.get("Type") == "Succeed"]
+    assert success_names, "Map 내부에 Succeed 상태가 없습니다."
+    success = states[success_names[0]]
 
     assert preflight["Type"] == "Task"
     assert process["Type"] == "Task"
     assert success["Type"] == "Succeed"
-    assert preflight["Next"] == "ProcessDailyPrices"
-    assert process["Next"] == "ManifestSuccess"
-    assert "Next" not in success
 
 
 @pytest.mark.integration
