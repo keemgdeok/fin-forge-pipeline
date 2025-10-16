@@ -44,7 +44,7 @@ class DailyPricesDataProcessingStack(Stack):
         self.glue_max_concurrent_runs: int = int(self.config.get("glue_max_concurrent_runs", 1))
         self.glue_retry_interval_seconds: int = int(self.config.get("glue_retry_interval_seconds", 30))
         self.glue_retry_backoff_rate: float = float(self.config.get("glue_retry_backoff_rate", 2.0))
-        self.glue_retry_max_attempts: int = int(self.config.get("glue_retry_max_attempts", 5))
+        self.glue_retry_max_attempts: int = int(self.config.get("glue_retry_max_attempts", 3))
         self.curated_layer: str = str(self.config.get("curated_layer_name", "adjusted"))
         self.indicators_layer: str = str(self.config.get("indicators_layer", "technical_indicator"))
         self.map_max_concurrency: int = int(self.config.get("sfn_max_concurrency", 1))
