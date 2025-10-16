@@ -2,8 +2,8 @@
 set -euo pipefail
 
 : "${LOCALSTACK_IMAGE:=localstack/localstack:latest}"
-: "${LOCALSTACK_NAME:=localstack-sfn}" 
-: "${LOCALSTACK_SERVICES:=stepfunctions,lambda}" 
+: "${LOCALSTACK_NAME:=localstack-sfn}"
+: "${LOCALSTACK_SERVICES:=stepfunctions,lambda,s3,sqs,dynamodb,ssm,logs}"
 
 if docker ps -a --format '{{.Names}}' | grep -q "^${LOCALSTACK_NAME}$"; then
   echo "LocalStack container '${LOCALSTACK_NAME}' already exists. Stop and remove it before restarting." >&2
