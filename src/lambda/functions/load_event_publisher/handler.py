@@ -24,6 +24,13 @@ _sqs = boto3.client("sqs")
 _QUEUE_MAP: Dict[str, str] = json.loads(os.environ["LOAD_QUEUE_MAP"])
 _PRIORITY_MAP: Dict[str, str] = json.loads(os.environ.get("PRIORITY_MAP", "{}"))
 _MIN_FILE_SIZE = int(os.environ.get("MIN_FILE_SIZE_BYTES", "1024"))
+try:
+    _ALLOWED_LAYERS = {
+        str(layer).strip() for layer in json.loads(os.environ.get("ALLOWED_LAYERS", "[]") or "[]") if str(layer).strip()
+    }
+except json.JSONDecodeError:
+    LOGGER.warning("Unable to parse ALLOWED_LAYERS; defaulting to no restrictions")
+    _ALLOWED_LAYERS = set()
 
 
 def _should_process(event: Dict[str, Any]) -> bool:
@@ -59,6 +66,11 @@ def main(event: Dict[str, Any], _context: Any) -> Dict[str, Any]:
     except ValidationError as exc:
         LOGGER.warning("Dropping event due to validation error: %s", exc)
         return {"status": "SKIPPED", "reason": str(exc)}
+
+    layer = str(message.get("layer", "")).strip()
+    if _ALLOWED_LAYERS and layer not in _ALLOWED_LAYERS:
+        LOGGER.info("Skipping event for disallowed layer %s", layer or "<missing>")
+        return {"status": "SKIPPED", "reason": f"Layer not allowed: {layer or '<missing>'}"}
 
     domain = message.get("domain")
     queue_url = _QUEUE_MAP.get(domain)

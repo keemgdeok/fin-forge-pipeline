@@ -23,12 +23,16 @@
 |----------|------|------|
 | `domain` | `market` | 도메인 |
 | `table` | `prices` | 테이블 |
-| `partition` | `ds=YYYY-MM-DD` | 날짜 파티션 (현행 Load 파서 기대값) |
+| `interval` | `interval=1d` | 파티션 간격 |
+| `data_source` | `data_source=yahoo` | 데이터 소스(선택) |
+| `year` | `year=2025` | 4자리 연도 |
+| `month` | `month=09` | 2자리 월 |
+| `day` | `day=10` | 2자리 일 |
+| `layer` | `layer=<layer>` | 허용 레이어는 `adjusted`, `technical_indicator` 두 가지 |
 | `object` | `part-0000.parquet` | Parquet 파일 |
 
 ### SQS 메시지 본문 및 속성
 
 - 메시지 본문 스키마와 메시지 속성 정의는 `docs/specs/load/load-component-contracts.md`를 단일 소스로 사용합니다.
-- Load Event Publisher Lambda는 해당 계약에 따라 메시지를 생성하며, Loader는 동일한 구조를 기대합니다.
-
-> Transform 출력이 `interval/.../layer=...` 구조인 경우 Load 파서(`ds=` 기대)를 맞추도록 Lambda 전 처리 또는 Transform 경로 정합화가 필요합니다.
+- Load Event Publisher Lambda는 해당 계약에 따라 메시지를 생성하며, Loader는 동일한 구조(`interval/year/month/day/layer` 기반)에 맞춰 소비해야 합니다.
+- `adjusted`/`technical_indicator` 외의 레이어는 허용 목록에서 제외되어 SQS로 게시되지 않습니다.

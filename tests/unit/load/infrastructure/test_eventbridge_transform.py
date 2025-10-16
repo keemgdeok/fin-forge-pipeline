@@ -23,7 +23,7 @@ def test_event_transform_to_sqs_message(load_module) -> None:
     # When: 이벤트를 SQS 메시지로 변환하면
     # Then: 스펙에 맞는 필드가 추출된다
     bucket = "data-pipeline-curated-dev"
-    key = "market/prices/ds=2025-09-10/part-001.parquet"
+    key = "market/prices/interval=1d/data_source=yahoo/year=2025/month=09/day=10/layer=adjusted/part-001.parquet"
     event = build_s3_object_created_event(bucket=bucket, key=key, size=1337)
 
     out = transform(event)
@@ -31,7 +31,13 @@ def test_event_transform_to_sqs_message(load_module) -> None:
     assert out["key"] == key
     assert out["domain"] == "market"
     assert out["table_name"] == "prices"
-    assert out["partition"] == "ds=2025-09-10"
+    assert out["interval"] == "1d"
+    assert out["data_source"] == "yahoo"
+    assert out["year"] == "2025"
+    assert out["month"] == "09"
+    assert out["day"] == "10"
+    assert out["layer"] == "adjusted"
+    assert out["ds"] == "2025-09-10"
     assert out.get("file_size") == 1337
     assert "correlation_id" in out
 
@@ -45,15 +51,49 @@ def test_event_transform_rejects_small_or_invalid_files(load_module) -> None:
     # When: 변환 함수를 호출하면
     # Then: ValidationError가 발생한다
     bucket = "data-pipeline-curated-dev"
-    bad_key = "market/prices/ds=2025-09-10/part-001.csv"
+    bad_key = "market/prices/interval=1d/data_source=yahoo/year=2025/month=09/day=10/layer=adjusted/part-001.csv"
     bad_event = build_s3_object_created_event(bucket=bucket, key=bad_key, size=1337)
 
     with pytest.raises(ValidationError or Exception):  # type: ignore[arg-type]
         transform(bad_event)
 
-    tiny_event = build_s3_object_created_event(
-        bucket=bucket, key="market/prices/ds=2025-09-10/part-001.parquet", size=1
-    )
+    valid_key = "market/prices/interval=1d/data_source=yahoo/year=2025/month=09/day=10/layer=adjusted/part-001.parquet"
+    tiny_event = build_s3_object_created_event(bucket=bucket, key=valid_key, size=1)
 
     with pytest.raises(ValidationError or Exception):  # type: ignore[arg-type]
         transform(tiny_event)
+
+
+def test_event_transform_rejects_invalid_event_type(load_module) -> None:
+    mod: Dict[str, Any] = load_module(TARGET)
+    transform = mod["transform_s3_event_to_message"]
+    ValidationError = mod.get("ValidationError")
+
+    # Given: 지원되지 않는 source 값을 가진 S3 이벤트가 있고
+    event = build_s3_object_created_event(
+        bucket="data-pipeline-curated-dev",
+        key="market/prices/interval=1d/data_source=yahoo/year=2025/month=09/day=10/layer=adjusted/part.parquet",
+        size=2048,
+    )
+    event["source"] = "custom.source"
+
+    # When: 변환 함수를 호출하면
+    with pytest.raises(ValidationError or Exception):  # type: ignore[arg-type]
+        transform(event)
+
+
+def test_event_transform_requires_object_payload(load_module) -> None:
+    mod: Dict[str, Any] = load_module(TARGET)
+    transform = mod["transform_s3_event_to_message"]
+    ValidationError = mod.get("ValidationError")
+
+    # Given: object 정보가 누락된 이벤트 페이로드가 주어지고
+    event: Dict[str, Any] = {
+        "source": "aws.s3",
+        "detail-type": "Object Created",
+        "detail": {},
+    }
+
+    # When & Then: 변환 시 ValidationError가 발생한다
+    with pytest.raises(ValidationError or Exception):  # type: ignore[arg-type]
+        transform(event)

@@ -80,10 +80,11 @@ staging_config = {
     "load_domain_configs": [
         {
             "domain": "market",
-            "s3_prefix": "market/",
+            "s3_prefix": "market/prices/",
             "priority": "1",
         },
     ],
+    "allowed_load_layers": ["adjusted", "technical_indicator"],
     "tags": {
         "Environment": "staging",
         "Project": "ServerlessDataPipeline",
