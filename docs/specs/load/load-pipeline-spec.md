@@ -28,10 +28,11 @@
 | `year` | `year=2025` | 4자리 연도 |
 | `month` | `month=09` | 2자리 월 |
 | `day` | `day=10` | 2자리 일 |
-| `layer` | `layer=adjusted` | 정제 레이어 |
+| `layer` | `layer=<layer>` | 허용 레이어는 `adjusted`, `technical_indicator` 두 가지 |
 | `object` | `part-0000.parquet` | Parquet 파일 |
 
 ### SQS 메시지 본문 및 속성
 
 - 메시지 본문 스키마와 메시지 속성 정의는 `docs/specs/load/load-component-contracts.md`를 단일 소스로 사용합니다.
 - Load Event Publisher Lambda는 해당 계약에 따라 메시지를 생성하며, Loader는 동일한 구조(`interval/year/month/day/layer` 기반)에 맞춰 소비해야 합니다.
+- `adjusted`/`technical_indicator` 외의 레이어는 허용 목록에서 제외되어 SQS로 게시되지 않습니다.

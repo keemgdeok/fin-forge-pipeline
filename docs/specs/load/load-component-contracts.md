@@ -18,13 +18,13 @@
 | `year` | string | ✅ | `\d{4}` | `2025` |
 | `month` | string | ✅ | `0[1-9]&#124;1[0-2]` | `09` |
 | `day` | string | ✅ | `0[1-9]&#124;[12]\d&#124;3[01]` | `10` |
-| `layer` | string | ✅ | `[a-z0-9_-]{1,50}` | `adjusted` |
+| `layer` | string | ✅ | `[a-z0-9_-]{1,50}` (허용 값: `adjusted`, `technical_indicator`) | `adjusted` |
 | `ds` | string | ✅ | `year-month-day` 조합한 ISO 날짜 (`YYYY-MM-DD`) | `2025-09-10` |
 | `correlation_id` | string | ✅ | UUID v4 | `550e8400-e29b-41d4-a716-446655440000` |
 | `file_size` | integer | ❌ | 존재 시 > 0 | `1048576` |
 | `presigned_url` | string | ❌ | `https://` 시작 URL | `https://signed-url` |
 
-> `data_source` 파티션이 없는 경로의 경우 `data_source` 필드는 메시지에서 생략된다. `ds` 값은 `year`, `month`, `day`를 조합해 생성하며 실제 S3 경로 세그먼트는 아니다.
+> `data_source` 파티션이 없는 경로의 경우 `data_source` 필드는 메시지에서 생략된다. `ds` 값은 `year`, `month`, `day`를 조합해 생성하며 실제 S3 경로 세그먼트는 아니다. `layer` 필드는 허용 목록(`adjusted`, `technical_indicator`)에 속하지 않으면 메시지가 발행되지 않는다.
 
 
 ### 메시지 속성
