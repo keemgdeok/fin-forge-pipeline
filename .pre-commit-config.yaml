@@ -38,3 +38,21 @@ repos:
           - infrastructure
           - scripts
         pass_filenames: false
+
+  - repo: https://github.com/executablebooks/mdformat
+    rev: 0.7.17
+    hooks:
+      - id: mdformat
+        name: mdformat-docs
+        files: ^(docs/.*|README\.md|tests/.*\.md)$
+        additional_dependencies:
+          - mdformat-gfm
+
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v4.4.0
+    hooks:
+      - id: detect-private-key          # SSH 키 등 민감 키 커밋 차단
+      - id: end-of-file-fixer           # 파일 끝 개행 보정
+      - id: check-added-large-files     # 500KB 이상 신규 파일 차단(필요하면 --maxkb 조정)
+      - id: trailing-whitespace         # 라인 끝 공백 제거
+      - id: check-merge-conflict        # 충돌 마커 잔재 차단

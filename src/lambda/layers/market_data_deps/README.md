@@ -21,4 +21,3 @@ Notes
 - Keep heavy scientific packages in this dedicated layer rather than in the function.
 - If deploying in CI, run the above in a Linux x86_64 environment to ensure manylinux wheels compatible with AWS Lambda.
 - You can also use a Docker build step with the public Lambda base image for reproducible builds.
-

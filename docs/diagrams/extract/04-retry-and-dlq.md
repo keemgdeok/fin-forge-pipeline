@@ -28,4 +28,3 @@ sequenceDiagram
   Note over SQS: visibility_timeout = worker_timeout × 6
   Note over DLQ: maxReceiveCount = config "max_retries"
 ```
-

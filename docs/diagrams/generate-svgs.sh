@@ -43,7 +43,7 @@ fi
 find "$SCRIPT_DIR" -type f -name "*.md" | while read -r mdfile; do
     svgfile="${mdfile%.md}.svg"
     echo "  - Converting: $mdfile  ->  $svgfile"
-    
+
     # Run the mmdc command with the config file path and desired width
     mmdc -p "$PUPPETEER_CONFIG" -i "$mdfile" -o "$svgfile" -w "$MERMAID_WIDTH"
 done

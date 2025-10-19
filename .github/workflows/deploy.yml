@@ -95,7 +95,7 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: ${{ env.NODE_VERSION }}
-      
+
       - name: Install Python dependencies
         shell: bash
         run: |
@@ -133,7 +133,7 @@ jobs:
       - name: Install CDK CLI (no lockfile)
         if: hashFiles('**/package-lock.json') == ''
         run: npm install --no-save aws-cdk@latest
-      
+
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
@@ -156,7 +156,7 @@ jobs:
           else
             echo "No existing GitHub OIDC provider found; stack will create one."
           fi
-      
+
       - name: Quality checks and tests
         env:
           AWS_REGION: us-east-1
@@ -245,14 +245,14 @@ jobs:
       - name: Deploy infrastructure
         run: |
           echo "🚀 Deploying to $TARGET_ENV environment..."
-          
+
           # Bootstrap if needed
           npx cdk bootstrap --context environment=$TARGET_ENV || echo "Already bootstrapped"
-          
+
           # Deploy with progress
           echo "⏳ Starting deployment..."
           npx cdk deploy --all --context environment=$TARGET_ENV --require-approval never --progress events
-          
+
           echo "✅ Deployment completed!"
           echo "🎯 Environment: $TARGET_ENV"
           echo "📅 Deployed at: $(date)"
