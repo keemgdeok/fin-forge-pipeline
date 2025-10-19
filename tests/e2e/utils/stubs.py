@@ -14,6 +14,7 @@ def stub_yahoo_finance(
 ) -> None:
     """시장 데이터 클라이언트를 고정 응답으로 스텁 처리한다."""
     from shared.clients import market_data
+    from shared.ingestion import service as ingestion_service
 
     class _StaticYahooClient:
         def fetch_prices(
@@ -42,3 +43,4 @@ def stub_yahoo_finance(
             return results
 
     monkeypatch.setattr(market_data, "YahooFinanceClient", _StaticYahooClient)
+    monkeypatch.setattr(ingestion_service, "YahooFinanceClient", _StaticYahooClient)
