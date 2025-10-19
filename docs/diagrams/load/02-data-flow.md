@@ -5,7 +5,7 @@ flowchart TD
   C -->|Validation & transform_s3_event_to_message| D["도메인별 SQS Queue"]
   D --> E["Dead Letter Queue (maxReceiveCount 초과)"]
   D --> F["Loader (미구현)"]
-  subgraph "On-prem (External)"  
+  subgraph "On-prem (External)"
     F --> G["ClickHouse INSERT ... SELECT s3(...)"]
     G --> H["S3에서 Parquet 병렬 읽기"]
   end
