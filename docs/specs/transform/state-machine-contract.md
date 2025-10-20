@@ -42,19 +42,21 @@
 
 ### Map 처리 및 동시성
 
-| 항목           | 값                                    | 설명                                  |
-| -------------- | ------------------------------------- | ------------------------------------- |
-| Map 상태       | `ProcessManifestList`                 | `manifest_keys` 배열 순회             |
-| `items_path`   | `$.manifest_keys`                     | 각 항목 `{ds, manifest_key, source?}` |
-| 최대 동시 실행 | `config.sfn_max_concurrency` (기본 1) | 배치별 순차 처리 보장 기본값          |
+| 항목           | 값                                             | 설명                                  |
+| -------------- | ---------------------------------------------- | ------------------------------------- |
+| Map 상태       | `ProcessManifestList`                          | `manifest_keys` 배열 순회             |
+| `items_path`   | `$.manifest_keys`                              | 각 항목 `{ds, manifest_key, source?}` |
+| 최대 동시 실행 | `config.sfn_max_concurrency` (기본 2)          | 서로 다른 `ds` 파티션을 병렬 처리     |
+| 결과 수집      | `manifest_results` 배열                        | 각 항목은 불리언 (`shouldRunCrawler`) |
+| 집계 로직      | `States.ArrayContains(manifest_results, true)` | 단일 크롤러 실행 여부 결정            |
 
 ### 출력/오류 처리
 
-| 항목          | 현행 동작                                                                    |
-| ------------- | ---------------------------------------------------------------------------- |
-| 성공 결과     | 모든 항목 처리 후 `Succeed` (추가 페이로드 없음)                             |
-| 오류 페이로드 | `Fail` 상태로 즉시 종료, 상세는 CloudWatch Logs 및 실행 히스토리 참고        |
-| 멱등성        | Preflight가 Curated `layer=adjusted` 경로 존재 여부 확인 (`IDEMPOTENT_SKIP`) |
+| 항목          | 현행 동작                                                                             |
+| ------------- | ------------------------------------------------------------------------------------- |
+| 성공 결과     | 모든 항목 처리 후 `crawlerShouldRun` 집계 → 필요 시 단 한 번 크롤러 실행 후 `Succeed` |
+| 오류 페이로드 | `Fail` 상태로 즉시 종료, 상세는 CloudWatch Logs 및 실행 히스토리 참고                 |
+| 멱등성        | Preflight가 Curated `layer=adjusted` 경로 존재 여부 확인 (`IDEMPOTENT_SKIP`)          |
 
 ### 재시도 정책
 
@@ -63,12 +65,17 @@
 | Glue ETL                         | `Glue.ConcurrentRunsExceededException` | 구성된 backoff/attempts 사용 |
 | Glue Compaction                  | 재시도 없음                            | 실패 시 Fail                 |
 | Lambda (Preflight/Guard/Decider) | 재시도 없음                            | 실패 시 Fail                 |
-| Glue Crawler                     | 재시도 없음                            | 실패 시 Fail                 |
+| Glue Crawler                     | 재시도 없음                            | 실패 시 Fail (집계 단계)     |
 
 ### Crawler 게이팅
 
-| 정책 값            | 실행 여부                | 비고                |
-| ------------------ | ------------------------ | ------------------- |
-| `never`            | 실행 안 함               | 운영자가 수동 관리  |
-| `force`            | 항상 실행                | 비용/시간 증가 주의 |
-| `on_schema_change` | 지문 `hash` 변경 시 실행 | 기본값              |
+| 정책 값            | 실행 여부                | 비고                     |
+| ------------------ | ------------------------ | ------------------------ |
+| `never`            | 실행 안 함               | 운영자가 수동 관리       |
+| `force`            | 항상 실행                | 비용/시간 증가 주의      |
+| `on_schema_change` | 지문 `hash` 변경 시 실행 | 기본값, 집계 후 1회 실행 |
+
+### Glue 잡 구성 메모
+
+- `daily-prices-data-etl`, `market-indicators-etl` 잡은 `--job-bookmark-option=job-bookmark-disable`로 병렬 실행 시 북마크 충돌을 방지합니다.
+- `config['sfn_max_concurrency']`를 통해 맵 동시성을 제어하며, 기본값은 2입니다.

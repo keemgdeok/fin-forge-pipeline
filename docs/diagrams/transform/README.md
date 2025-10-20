@@ -12,14 +12,14 @@
 #### \[Flow\]
 
 <img src="02-flow-1.svg" alt="Flow" style="width:50%;" />
-- 맵 상태를 통한 Preflight → Glue → Crawler 흐름
+- Map 상태가 manifest 당 불리언 결과를 수집하고, States.ArrayContains로 크롤러를 단 한 번만 실행
 
 <br>
 
 #### \[Sequence\]
 
 <img src="03-sequence-1.svg" alt="Sequence" style="width:100%;" />
-- 단일 manifest 항목 처리 시퀀스
+- 단일 manifest 항목 처리 + 맵 종료 후 크롤러 집계 시퀀스
 
 <br>
 
@@ -33,7 +33,14 @@
 #### \[Backfill Map\]
 
 <img src="05-backfill-map-1.svg" alt="Backfill" style="width:50%;" />
-- manifest 기반 Map 상태 구조
+- config 기반 동시성(Map), 결과 집계, 단일 크롤러 실행 구조
+
+<br>
+
+#### \[Concurrency & Bookmarks\]
+
+- `config['sfn_max_concurrency']` 기본값은 2로, 서로 다른 `ds` 파티션 두 개를 병렬 처리
+- Glue ETL/Indicators 잡은 `--job-bookmark-option=job-bookmark-disable`로 병렬 실행 시 북마크 충돌을 방지
 
 <br>
 

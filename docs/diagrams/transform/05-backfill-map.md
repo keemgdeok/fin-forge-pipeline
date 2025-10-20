@@ -5,7 +5,7 @@ flowchart TD
   subgraph ItemProcessor
     M --> P["Preflight Lambda"]
     P --> D{proceed?}
-    D -->|skip| SKIP(["Skip"])
+    D -->|skip| SKIP(["Return false"])
     D -->|error| FAIL(["Fail"])
     D -->|run| COMP["Glue Compaction"]
     subgraph GlueJobs
@@ -15,13 +15,17 @@ flowchart TD
       ETL --> IND["Indicators ETL"]
     end
     IND --> DECIDE["Schema decider"]
-    DECIDE -->|run crawler| CRAWLER["Start crawler"]
-    DECIDE -->|no| SKIP
-    CRAWLER --> SKIP
+    DECIDE -->|true| TRUE["Return true"]
+    DECIDE -->|false| SKIP
   end
 
   subgraph Result
-    SKIP --> Z["Map 완료"]
+    SKIP --> Z["manifest_results"]
+    TRUE --> Z
+    Z --> AGG["ArrayContains == true?"]
+    AGG -->|true| CRAWLER["Start crawler once"]
+    AGG -->|false| DONE["Succeed"]
+    CRAWLER --> DONE
   end
 
   classDef skip fill:#eef6ff,stroke:#5080c1,color:#2d5a8d;
