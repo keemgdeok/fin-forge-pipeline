@@ -5,6 +5,7 @@
 #### \[Step Functions Execution Table\]
 
 <img src="sfn-exec-table.jpeg" alt="Step Functions execution table" style="width:100%;" />
+- Transform Map 실행별 상태/소요 시간 확인
 
 <br>
 
