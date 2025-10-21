@@ -39,7 +39,7 @@
 
 #### \[Concurrency & Bookmarks\]
 
-- `config['sfn_max_concurrency']` 기본값은 2로, 서로 다른 `ds` 파티션 두 개를 병렬 처리
+- `config['sfn_max_concurrency']` 기본값은 환경 설정에서 3이며, 미설정 시 Step Functions Map 기본값 1로 동작
 - Glue ETL/Indicators 잡은 `--job-bookmark-option=job-bookmark-disable`로 병렬 실행 시 북마크 충돌을 방지
 
 <br>
