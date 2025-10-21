@@ -84,9 +84,9 @@ Curated S3 ObjectCreated → Load Event Publisher Lambda → Load SQS → On-pre
 
 <br>
 
-[### Technical Concerns](https://versed-racer-357.notion.site/technical-concerns-271cd94d4b5e80b484ede79b5e5e5c8d?source=copy_link)
+### [Technical Concerns](https://versed-racer-357.notion.site/technical-concerns-271cd94d4b5e80b484ede79b5e5e5c8d?source=copy_link)
 
-\*\*Notion 링크
+**Notion 링크**
 
 <br>
 ______________________________________________________________________
