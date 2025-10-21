@@ -199,7 +199,7 @@ python scripts/deploy/deploy.py --environment dev
 python scripts/validate/validate_pipeline.py --environment dev
 ```
 
-[ScreenShot](docs/screenshots/README.md)
+[ScreenShots](docs/screenshots/README.md)
 
 <br>
 
