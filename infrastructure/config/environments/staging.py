@@ -10,7 +10,7 @@ staging_config = {
     "lambda_memory": 512,
     "lambda_timeout": 600,
     "glue_max_capacity": 2,
-    "glue_max_concurrent_runs": 5,
+    "glue_max_concurrent_runs": 6,
     "step_function_timeout_hours": 4,
     "s3_retention_days": 90,
     "log_retention_days": 30,
@@ -61,7 +61,7 @@ staging_config = {
         "daily-prices-data-etl",
         "market-indicators-etl",
     ],
-    "sfn_max_concurrency": 1,
+    "sfn_max_concurrency": 3,
     "monitored_state_machines": [
         "daily-prices-data-processing",
     ],
