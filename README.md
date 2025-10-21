@@ -54,7 +54,7 @@ ______________________________________________________________________
 - [Quick Start](#quick-start)
   - [Prerequisites](#prerequisites)
   - [Environment setup](#environment-setup)
-- [Common Commands](#day-to-day-commands)
+- [Common Commands](#common-commands)
   - [Synthesize & deploy](#synthesize--deploy)
   - [Data validation & runbooks](#data-validation--runbooks)
 - [Testing & Quality Gates](#testing--quality-gates)
@@ -84,9 +84,7 @@ Curated S3 ObjectCreated → Load Event Publisher Lambda → Load SQS → On-pre
 
 <br>
 
-### Technical Concerns
-
-\[\[**Technical Concerns**\]\](https://versed-racer-357.notion.site/technical-concerns-271cd94d4b5e80b484ede79b5e5e5c8d?source=copy_link)\\
+[### Technical Concerns](https://versed-racer-357.notion.site/technical-concerns-271cd94d4b5e80b484ede79b5e5e5c8d?source=copy_link)
 
 \*\*Notion 링크
 
