@@ -215,7 +215,7 @@ ruff format src tests
 # 정적 타입 검사
 mypy src
 
-# pre-commit 훅(설치 및 전체 실행)
+# pre-commit hook(설치 및 전체 실행)
 pip install pre-commit && pre-commit install
 pre-commit run --all-files
 
