@@ -105,7 +105,7 @@ ______________________________________________________________________
 | ⚡️  | **Performance**   | <ul><li>SQS 팬아웃과 Step Functions Map maxConcurrency로 병렬 처리량 제어</li><li>Glue 5.0, Zstd 압축, Parquet 최적화를 통한 ETL 성능/비용 개선</li></ul>                                                     |
 | 🛡️  | **Security**      | <ul><li>SecurityStack에서 IAM 역할/정책을 중앙 관리하고 버킷/잡 단위 최소 권한 적용</li><li>KMS 암호화된 SNS와 GitHub OIDC 신뢰정책으로 CI/CD 경로 강화</li></ul>                                             |
 | 📦  | **Dependencies**  | <ul><li>Python: `requirements.txt` 및 Layer별 requirements로 환경 분리</li><li>NPM/CDK: `package.json`, `package-lock.json`으로 IaC 패키지 고정</li></ul>                                                     |
-| 🚀  | **Scalability**   | <ul><li>Extract/Transform/Load Stack 모듈화 → 신규 도메인 추가 용이</li><li> S3→SQS Load 파이프라인을 도메인별로 손쉽게 확장</li></ul>                                                                        |
+| 🚀  | **Scalability**   | <ul><li>Extract/Transform/Load Stack 모듈화 → 신규 도메인 추가 용이</li><li> S3→SQS Load 파이프라인을 도메인별로 확장 용이</li></ul>                                                                          |
 
 <br>
 
