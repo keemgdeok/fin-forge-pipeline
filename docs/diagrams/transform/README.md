@@ -11,7 +11,7 @@
 
 #### \[Flow\]
 
-<img src="02-flow-2.svg" alt="Flow" style="width:50%;" />
+<img src="02-flow-2.svg" alt="Flow" style="width:100%;" />
 - Map 상태가 manifest 당 불리언 결과를 수집하고, States.ArrayContains로 크롤러를 단 한 번만 실행
 
 <br>
