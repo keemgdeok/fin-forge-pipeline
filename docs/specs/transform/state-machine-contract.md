@@ -46,7 +46,7 @@
 | -------------- | ---------------------------------------------- | ------------------------------------- |
 | Map 상태       | `ProcessManifestList`                          | `manifest_keys` 배열 순회             |
 | `items_path`   | `$.manifest_keys`                              | 각 항목 `{ds, manifest_key, source?}` |
-| 최대 동시 실행 | `config.sfn_max_concurrency` (기본 2)          | 서로 다른 `ds` 파티션을 병렬 처리     |
+| 최대 동시 실행 | `config.sfn_max_concurrency` (기본 3)          | 서로 다른 `ds` 파티션을 병렬 처리     |
 | 결과 수집      | `manifest_results` 배열                        | 각 항목은 불리언 (`shouldRunCrawler`) |
 | 집계 로직      | `States.ArrayContains(manifest_results, true)` | 단일 크롤러 실행 여부 결정            |
 
