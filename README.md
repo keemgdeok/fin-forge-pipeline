@@ -123,7 +123,7 @@ ______________________________________________________________________
 | `src/lambda/functions/`               | 핵심 파이프라인 Lambda(Orchestrator/Worker/Preflight/Load)      |
 | `src/glue/jobs/`                      | RAW→Curated/지표 계산을 수행하는 Glue ETL 스크립트              |
 | `src/step_functions/`                 | sfn 기반 워크플로 정의                                          |
-| `docs/`                               | Architecture/Diagram/Specs 문서                                 |
+| `docs/`                               | Architecture/Diagram/Specs/Screenshots 문서                     |
 | `scripts/`                            | 배포/검증 스크립트                                              |
 | `tests/`                              | 단위/통합/E2E/성능 테스트 스위트 & 공용 fixture                 |
 
