@@ -89,6 +89,7 @@ Curated S3 ObjectCreated → Load Event Publisher Lambda → Load SQS → On-pre
 \*\*Notion 링크
 
 <br>
+
 ______________________________________________________________________
 
 ## Features
