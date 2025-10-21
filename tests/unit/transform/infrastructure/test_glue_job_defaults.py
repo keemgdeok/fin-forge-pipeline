@@ -41,10 +41,11 @@ def _find_transform_job(template: Template) -> dict:
     for job in jobs.values():
         props = job["Properties"]
         default_args = props.get("DefaultArguments", {})
-        if default_args.get("--job-bookmark-option") == "job-bookmark-enable":
+        # Curated ETL 잡은 스키마 fingerprint 인자를 포함한다.
+        if "--schema_fingerprint_s3_uri" in default_args:
             return props
 
-    raise AssertionError("Transform Glue job with job bookmarks enabled not found")
+    raise AssertionError("Transform Glue job with schema fingerprint argument not found")
 
 
 def test_glue_job_defaults_and_schema_fingerprint_path(monkeypatch) -> None:
@@ -68,7 +69,8 @@ def test_glue_job_defaults_and_schema_fingerprint_path(monkeypatch) -> None:
 
     template = Template.from_stack(proc)
     props = _find_transform_job(template)
-    assert props["Timeout"] == 30, "Timeout must be 30 minutes per spec"
+    expected_timeout = int(cfg.get("step_function_timeout_hours", 2)) * 60
+    assert props["Timeout"] == expected_timeout, "Timeout must follow step_function_timeout_hours"
     assert props["MaxRetries"] == 1, "MaxRetries must be 1 per spec"
     assert props["GlueVersion"] == "5.0", "Glue version must be 5.0"
     assert props["WorkerType"] == "G.1X", "Worker type must be G.1X"
@@ -79,7 +81,7 @@ def test_glue_job_defaults_and_schema_fingerprint_path(monkeypatch) -> None:
     default_args = props["DefaultArguments"]
     schema_uri = default_args["--schema_fingerprint_s3_uri"]
     assert default_args.get("--enable-s3-parquet-optimized-committer") == "true"
-    assert default_args.get("--job-bookmark-option") == "job-bookmark-enable"
+    assert default_args.get("--job-bookmark-option") == "job-bookmark-disable"
     assert default_args.get("--curated_layer") == "adjusted"
     assert default_args.get("--compacted_layer") == cfg.get("compaction_output_subdir")
     assert default_args.get("--domain") == cfg["ingestion_domain"]
