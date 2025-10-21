@@ -317,6 +317,14 @@ class SecurityStack(Stack):
                 existing_provider_arn,
             )
 
+        if not self._should_create_github_oidc_provider():
+            default_provider_arn = self._default_github_oidc_provider_arn()
+            return iam.OpenIdConnectProvider.from_open_id_connect_provider_arn(
+                self,
+                "GitHubOidcProviderDefault",
+                default_provider_arn,
+            )
+
         return iam.OpenIdConnectProvider(
             self,
             "GitHubOidcProvider",
@@ -340,6 +348,37 @@ class SecurityStack(Stack):
             return env_arn.strip()
 
         return None
+
+    def _should_create_github_oidc_provider(self) -> bool:
+        """Determine whether a new GitHub OIDC provider should be created."""
+
+        def _to_bool(value: object) -> bool:
+            if isinstance(value, bool):
+                return value
+            if isinstance(value, str):
+                normalized = value.strip().lower()
+                return normalized in {"1", "true", "yes", "y"}
+            return False
+
+        config_flag = _to_bool(self.config.get("github_oidc_provider_create"))
+        if config_flag:
+            return True
+
+        context_flag = _to_bool(self.node.try_get_context("githubOidcProviderCreate"))
+        if context_flag:
+            return True
+
+        env_flag = _to_bool(os.getenv("GITHUB_OIDC_PROVIDER_CREATE"))
+        return env_flag
+
+    def _default_github_oidc_provider_arn(self) -> str:
+        """Return the standard ARN for the GitHub Actions OIDC provider in this account."""
+
+        return self.format_arn(
+            service="iam",
+            region="",
+            resource="oidc-provider/token.actions.githubusercontent.com",
+        )
 
     def _create_github_actions_deploy_role(self) -> iam.Role:
         """Role assumed by GitHub Actions via OIDC for deployments.

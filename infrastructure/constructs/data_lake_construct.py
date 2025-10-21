@@ -71,6 +71,7 @@ class DataLakeConstruct(Construct):
             versioned=True,
             encryption=s3.BucketEncryption.S3_MANAGED,
             block_public_access=s3.BlockPublicAccess.BLOCK_ALL,
+            event_bridge_enabled=True,
             lifecycle_rules=[
                 s3.LifecycleRule(
                     id="TransitionToIA",

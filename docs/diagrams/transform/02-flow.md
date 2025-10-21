@@ -5,7 +5,7 @@ flowchart TD
   subgraph ItemProcessor
     B --> C["Preflight Lambda\n(인수 준비 + 멱등성)"]
     C --> D{proceed?}
-    D -->|skip| SKIP(["Skip"])
+    D -->|skip| SKIP(["Return false"])
     D -->|error| FAIL(["Fail"])
     D -->|true| COMP["Glue Compaction"]
     subgraph GlueJobs
@@ -15,14 +15,17 @@ flowchart TD
       ETL --> IND["Indicators ETL"]
   end
     IND --> DECIDE["Schema Change Decider"]
-    DECIDE -->|shouldRunCrawler=true| CRAWLER["Start Glue Crawler"]
+    DECIDE -->|shouldRunCrawler=true| TRUE(["Return true"])
     DECIDE -->|false| SKIP
-    CRAWLER --> SKIP
   end
 
   SKIP --> Z
+  TRUE --> Z
 
   subgraph Aggregation
-    Z["Map 완료 → Succeed"]
+    Z["manifest_results[]"] --> AGG["States.ArrayContains == true?"]
+    AGG -->|true| CRAWLER["Start Glue Crawler"]
+    AGG -->|false| DONE["Succeed"]
+    CRAWLER --> DONE
   end
 ```

@@ -5,10 +5,12 @@ import os
 dev_config = {
     "account_id": os.environ.get("CDK_DEFAULT_ACCOUNT"),
     "region": "ap-northeast-2",
+    # Set to True to let CDK create the GitHub OIDC provider. Defaults to reusing account-level provider.
+    "github_oidc_provider_create": False,
     "lambda_memory": 512,
     "lambda_timeout": 300,
     "glue_max_capacity": 2,
-    "glue_max_concurrent_runs": 5,
+    "glue_max_concurrent_runs": 6,
     "step_function_timeout_hours": 2,
     "s3_retention_days": 30,
     "log_retention_days": 14,
@@ -47,7 +49,7 @@ dev_config = {
     "batch_tracker_ttl_days": 7,
     "compaction_worker_type": "G.1X",
     "compaction_number_workers": 2,
-    "compaction_timeout_minutes": 15,
+    "compaction_timeout_minutes": 120,
     "compaction_target_file_mb": 256,
     "compaction_codec": "zstd",
     "compaction_output_subdir": "compacted",
@@ -59,7 +61,7 @@ dev_config = {
         "daily-prices-data-etl",
         "market-indicators-etl",
     ],
-    "sfn_max_concurrency": 1,
+    "sfn_max_concurrency": 3,
     "monitored_state_machines": [
         "daily-prices-data-processing",
     ],

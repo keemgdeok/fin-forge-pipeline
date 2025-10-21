@@ -145,7 +145,9 @@ def main() -> None:
     parser.add_argument("--environment", "-e", default="dev", help="Target environment (dev|staging|prod)")
     parser.add_argument("--ingestion-timeout", type=int, default=900, help="Seconds to wait for ingestion completion")
     parser.add_argument(
-        "--execution-timeout", type=int, default=1800, help="Seconds to wait for Step Functions success"
+        "--execution-timeout",
+        type=int,
+        help="Seconds to wait for Step Functions success (default aligns with step_function_timeout_hours + buffer)",
     )
     parser.add_argument("--queue-timeout", type=int, default=600, help="Seconds to wait for load queue growth")
     parser.add_argument(
@@ -164,6 +166,9 @@ def main() -> None:
     account_id = sts_client.get_caller_identity()["Account"]
 
     config = get_environment_config(args.environment)
+    step_fn_timeout_hours = int(config.get("step_function_timeout_hours", 2))
+    default_execution_timeout = max(1800, step_fn_timeout_hours * 3600 + 600)
+    execution_timeout = args.execution_timeout if args.execution_timeout is not None else default_execution_timeout
     domain = str(config.get("ingestion_domain", "market"))
     table_name = str(config.get("ingestion_table_name", "prices"))
     period = str(config.get("ingestion_period", "1mo"))
@@ -296,11 +301,11 @@ def main() -> None:
     execution_arn = execution_resp["executionArn"]
     print(f"Started execution {execution_arn}")
 
-    print("Waiting for Step Functions execution to succeed...")
+    print(f"Waiting for Step Functions execution to succeed (timeout {execution_timeout} seconds)...")
     execution_detail = _await_execution_success(
         sfn_client,
         execution_arn=execution_arn,
-        timeout=args.execution_timeout,
+        timeout=execution_timeout,
         interval=15,
     )
     execution_start = execution_detail.get("startDate", execution_start)

@@ -48,6 +48,8 @@ class DailyPricesDataProcessingStack(Stack):
         self.curated_layer: str = str(self.config.get("curated_layer_name", "adjusted"))
         self.indicators_layer: str = str(self.config.get("indicators_layer", "technical_indicator"))
         self.map_max_concurrency: int = int(self.config.get("sfn_max_concurrency", 1))
+        self.step_function_timeout_hours: int = int(self.config.get("step_function_timeout_hours", 2))
+        self.glue_timeout_minutes: int = max(1, self.step_function_timeout_hours * 60)
 
         # Deterministic Glue job name used across resources (avoids Optional[str] typing)
         self.etl_job_name: str = f"{self.env_name}-daily-prices-data-etl"
@@ -121,7 +123,7 @@ class DailyPricesDataProcessingStack(Stack):
             },
             glue_version="5.0",
             max_retries=1,
-            timeout=int(self.config.get("compaction_timeout_minutes", 15)),
+            timeout=int(self.config.get("compaction_timeout_minutes", self.glue_timeout_minutes)),
             worker_type=str(self.config.get("compaction_worker_type", "G.1X")),
             number_of_workers=int(self.config.get("compaction_number_workers", 2)),
             execution_property=glue.CfnJob.ExecutionPropertyProperty(max_concurrent_runs=self.glue_max_concurrent_runs),
@@ -170,7 +172,7 @@ class DailyPricesDataProcessingStack(Stack):
             ),
             default_arguments={
                 "--job-language": "python",
-                "--job-bookmark-option": "job-bookmark-enable",
+                "--job-bookmark-option": "job-bookmark-disable",
                 "--enable-s3-parquet-optimized-committer": "true",
                 "--codec": "zstd",
                 "--target_file_mb": "256",
@@ -193,7 +195,7 @@ class DailyPricesDataProcessingStack(Stack):
             # Align with docs/spec: Glue 5.0
             glue_version="5.0",
             max_retries=1,  # Spec: 1 retry
-            timeout=30,  # Spec: 30 minutes
+            timeout=self.glue_timeout_minutes,
             worker_type="G.1X",
             number_of_workers=int(self.config.get("glue_max_capacity", 2)),
             execution_property=glue.CfnJob.ExecutionPropertyProperty(max_concurrent_runs=self.glue_max_concurrent_runs),
@@ -246,7 +248,7 @@ class DailyPricesDataProcessingStack(Stack):
             ),
             default_arguments={
                 "--job-language": "python",
-                "--job-bookmark-option": "job-bookmark-enable",
+                "--job-bookmark-option": "job-bookmark-disable",
                 "--enable-s3-parquet-optimized-committer": "true",
                 "--codec": "zstd",
                 "--target_file_mb": "256",
@@ -269,7 +271,7 @@ class DailyPricesDataProcessingStack(Stack):
             },
             glue_version="5.0",
             max_retries=1,
-            timeout=30,
+            timeout=self.glue_timeout_minutes,
             worker_type="G.1X",
             number_of_workers=int(self.config.get("glue_max_capacity", 2)),
             execution_property=glue.CfnJob.ExecutionPropertyProperty(max_concurrent_runs=self.glue_max_concurrent_runs),
@@ -310,6 +312,16 @@ class DailyPricesDataProcessingStack(Stack):
         )
         fail_state = sfn.Fail(self, "ExecutionFailed", comment="Pipeline execution failed")
         fail_chain = normalize_fail.next(fail_state)
+        crawler_fail_normalize = sfn.Pass(
+            self,
+            "NormalizeCrawlerFailure",
+            parameters={
+                "ok": False,
+                "error.$": "$.error",
+            },
+        )
+        crawler_fail_state = sfn.Fail(self, "CrawlerExecutionFailed", comment="Crawler start failed")
+        crawler_fail_chain = crawler_fail_normalize.next(crawler_fail_state)
 
         domain: str = str(self.config.get("ingestion_domain", "market"))
         prices_table: str = str(self.config.get("ingestion_table_name", "prices"))
@@ -416,33 +428,26 @@ class DailyPricesDataProcessingStack(Stack):
                 }
             ),
             payload_response_only=True,
+            result_path="$.crawler_decision",
         )
-
-        crawler_name = f"{self.env_name}-curated-data-crawler"
-        start_crawler_task = tasks.CallAwsService(
+        mark_crawler_needed = sfn.Pass(
             self,
-            "StartCrawler",
-            service="glue",
-            action="startCrawler",
-            parameters={"Name": crawler_name},
-            iam_resources=[f"arn:aws:glue:{Stack.of(self).region}:{Stack.of(self).account}:crawler/{crawler_name}"],
-            result_path=sfn.JsonPath.DISCARD,
+            "MarkCrawlerNeeded",
+            result=sfn.Result.from_boolean(True),
         )
-        start_crawler_task.add_catch(handler=fail_chain, result_path="$.error")
-
-        success_task = sfn.Succeed(
+        mark_crawler_not_needed = sfn.Pass(
             self,
-            "DailyPricesProcessingSuccess",
-            comment="Daily prices data processing completed successfully",
+            "MarkCrawlerNotNeeded",
+            result=sfn.Result.from_boolean(False),
         )
 
         crawler_decision = (
             sfn.Choice(self, "ShouldRunCrawler")
             .when(
-                sfn.Condition.boolean_equals("$.shouldRunCrawler", True),
-                start_crawler_task.next(success_task),
+                sfn.Condition.boolean_equals("$.crawler_decision.shouldRunCrawler", True),
+                mark_crawler_needed,
             )
-            .otherwise(success_task)
+            .otherwise(mark_crawler_not_needed)
         )
 
         processing_sequence = (
@@ -475,7 +480,7 @@ class DailyPricesDataProcessingStack(Stack):
                 sfn.Condition.boolean_equals("$.compaction_check.shouldProcess", True),
                 processing_sequence,
             )
-            .otherwise(success_task)
+            .otherwise(mark_crawler_not_needed)
         )
 
         preflight_decision = (
@@ -486,8 +491,8 @@ class DailyPricesDataProcessingStack(Stack):
             )
             .otherwise(
                 sfn.Choice(self, "PreflightSkipOrError")
-                .when(sfn.Condition.string_equals("$.error.code", "IDEMPOTENT_SKIP"), success_task)
-                .when(sfn.Condition.string_equals("$.error.code", "IGNORED_OBJECT"), success_task)
+                .when(sfn.Condition.string_equals("$.error.code", "IDEMPOTENT_SKIP"), mark_crawler_not_needed)
+                .when(sfn.Condition.string_equals("$.error.code", "IGNORED_OBJECT"), mark_crawler_not_needed)
                 .otherwise(fail_chain)
             )
         )
@@ -497,17 +502,47 @@ class DailyPricesDataProcessingStack(Stack):
             "ProcessManifestList",
             items_path="$.manifest_keys",
             max_concurrency=self.map_max_concurrency,
-            result_path=sfn.JsonPath.DISCARD,
+            result_path="$.manifest_results",
         )
         manifest_map.item_processor(preflight_task.next(preflight_decision))
+
+        aggregate_crawler_decision = sfn.Pass(
+            self,
+            "AggregateCrawlerDecision",
+            parameters={
+                "crawlerShouldRun.$": "States.ArrayContains($.manifest_results, true)",
+            },
+            comment="Evaluate all map results and determine if any partition requires a crawler run.",
+        )
+
+        crawler_name = f"{self.env_name}-curated-data-crawler"
+        start_crawler_task = tasks.CallAwsService(
+            self,
+            "StartCrawlerOnce",
+            service="glue",
+            action="startCrawler",
+            parameters={"Name": crawler_name},
+            iam_resources=[f"arn:aws:glue:{Stack.of(self).region}:{Stack.of(self).account}:crawler/{crawler_name}"],
+            result_path=sfn.JsonPath.DISCARD,
+        )
+        start_crawler_task.add_catch(handler=crawler_fail_chain, result_path="$.error")
 
         all_done = sfn.Succeed(
             self,
             "AllManifestsProcessed",
-            comment="All manifests processed sequentially",
+            comment="All manifests processed",
         )
 
-        definition = manifest_map.next(all_done)
+        crawler_choice = (
+            sfn.Choice(self, "ShouldRunCrawlerOnce")
+            .when(
+                sfn.Condition.boolean_equals("$.crawlerShouldRun", True),
+                start_crawler_task.next(all_done),
+            )
+            .otherwise(all_done)
+        )
+
+        definition = manifest_map.next(aggregate_crawler_decision).next(crawler_choice)
 
         sm_log_group = logs.LogGroup(
             self,
@@ -527,7 +562,7 @@ class DailyPricesDataProcessingStack(Stack):
             ),
             logs=sfn.LogOptions(destination=sm_log_group, level=sfn.LogLevel.ALL, include_execution_data=True),
             tracing_enabled=bool(self.config.get("enable_xray_tracing", False)),
-            timeout=Duration.hours(2),
+            timeout=Duration.hours(self.step_function_timeout_hours),
         )
 
     def _create_preflight_function(self) -> lambda_.IFunction:

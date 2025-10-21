@@ -24,7 +24,9 @@ graph LR
 
   SFN --> PRE
   PRE --> COMP
-  COMP --> GUARD --> GLUE --> IND --> CRAWL
+  COMP --> GUARD --> GLUE --> IND --> DECIDE
+  DECIDE --> AGG["Crawler Decision Aggregator<br/>(States.ArrayContains)"]
+  AGG --> CRAWL
   GLUE --> CUR[(S3 Curated)]
   IND --> CUR
   GLUE --- RAW[(S3 Raw)]
