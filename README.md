@@ -182,6 +182,7 @@ ______________________________________________________________________
 cdk synth
 
 # 로컬 변경 사항과 배포된 스택 비교
+# environment : dev | staging | prod
 cdk diff --context environment=dev
 
 # 지정한 환경으로 전체 스택 배포
@@ -197,6 +198,8 @@ python scripts/deploy/deploy.py --environment dev
 # 배포 후 검증 실행
 python scripts/validate/validate_pipeline.py --environment dev
 ```
+
+[ScreenShot](docs/screenshots/README.md)
 
 <br>
 
