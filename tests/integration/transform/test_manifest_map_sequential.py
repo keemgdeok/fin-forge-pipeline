@@ -135,13 +135,17 @@ def test_manifest_map_sequential_configuration() -> None:
 
     preflight = states["PreflightDailyPrices"]
     process = states["ProcessDailyPrices"]
-    success_names = [name for name, node in states.items() if node.get("Type") == "Succeed"]
-    assert success_names, "Map 내부에 Succeed 상태가 없습니다."
-    success = states[success_names[0]]
-
     assert preflight["Type"] == "Task"
     assert process["Type"] == "Task"
-    assert success["Type"] == "Succeed"
+
+    # Map은 결과 배열을 수집하고 후속 단계에서 집계한다.
+    assert map_state.get("ResultPath") == "$.manifest_results"
+    assert "MarkCrawlerNeeded" in states
+    assert "MarkCrawlerNotNeeded" in states
+
+    # 전체 상태 머신에 집계 및 단일 크롤러 실행 단계가 존재해야 한다.
+    assert "AggregateCrawlerDecision" in definition["States"]
+    assert "ShouldRunCrawlerOnce" in definition["States"]
 
 
 @pytest.mark.integration
