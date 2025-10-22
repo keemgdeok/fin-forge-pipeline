@@ -68,9 +68,7 @@ prod_config = {
         "daily-prices-data-processing",
     ],
     "max_retries": 6,
-    # Enable full processing orchestration in production so Step Functions + Glue
-    # assets are synthesized and deployable by default.
-    "enable_processing_orchestration": False,
+    "processing_orchestration_mode": "dynamodb_stream",
     # Catalog update policy for crawler: on_schema_change|never|force
     "catalog_update": "on_schema_change",
     "processing_triggers": [

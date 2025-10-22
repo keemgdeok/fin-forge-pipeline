@@ -42,6 +42,7 @@ class DailyPricesDataIngestionStack(Stack):
         self.config = config
         self.shared_storage = shared_storage_stack
         self.lambda_execution_role_arn = lambda_execution_role_arn
+        self.data_source: str = str(self.config.get("ingestion_data_source") or "yahoo_finance")
 
         # Common layer for shared code
         self.common_layer = self._create_common_layer()
@@ -169,6 +170,9 @@ class DailyPricesDataIngestionStack(Stack):
         if not table_name:
             table_name = f"{self.env_name}-daily-prices-batch-tracker"
 
+        orchestration_mode = str(self.config.get("processing_orchestration_mode", "manual")).lower()
+        enable_streams = orchestration_mode == "dynamodb_stream"
+
         table = dynamodb.Table(
             self,
             "BatchTrackerTable",
@@ -176,6 +180,7 @@ class DailyPricesDataIngestionStack(Stack):
             partition_key=dynamodb.Attribute(name="pk", type=dynamodb.AttributeType.STRING),
             billing_mode=dynamodb.BillingMode.PAY_PER_REQUEST,
             time_to_live_attribute="ttl",
+            stream=dynamodb.StreamViewType.NEW_AND_OLD_IMAGES if enable_streams else None,
         )
 
         removal_policy = str(self.config.get("removal_policy", "retain")).lower()
@@ -424,7 +429,7 @@ class DailyPricesDataIngestionStack(Stack):
         trigger_type = self.config.get("ingestion_trigger_type", "schedule")
 
         return {
-            "data_source": "yahoo_finance",
+            "data_source": self.data_source,
             "data_type": "prices",
             "domain": domain,
             "table_name": table_name,

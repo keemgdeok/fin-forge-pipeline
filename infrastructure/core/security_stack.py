@@ -69,6 +69,15 @@ class SecurityStack(Stack):
         glue_job_arn = f"arn:aws:glue:{self.region}:{self.account}:job/{self.env_name}-daily-prices-data-etl"
         ingestion_queue_arn = f"arn:aws:sqs:{self.region}:{self.account}:{self.env_name}-ingestion-queue"
         load_queue_arn = f"arn:aws:sqs:{self.region}:{self.account}:{self.env_name}-*-load-queue"
+        state_machine_arns = [
+            f"arn:aws:states:{self.region}:{self.account}:stateMachine:{self.env_name}-{str(name).strip()}"
+            for name in self.config.get("monitored_state_machines", [])
+            if str(name).strip()
+        ]
+        if not state_machine_arns:
+            state_machine_arns = [
+                f"arn:aws:states:{self.region}:{self.account}:stateMachine:{self.env_name}-daily-prices-data-processing"
+            ]
 
         role = iam.Role(
             self,
@@ -116,6 +125,15 @@ class SecurityStack(Stack):
                             ],
                             resources=[glue_job_arn],
                         ),
+                    ]
+                ),
+                "StepFunctionsStartExecution": iam.PolicyDocument(
+                    statements=[
+                        iam.PolicyStatement(
+                            effect=iam.Effect.ALLOW,
+                            actions=["states:StartExecution"],
+                            resources=state_machine_arns,
+                        )
                     ]
                 ),
                 "SnsPublishAlerts": iam.PolicyDocument(

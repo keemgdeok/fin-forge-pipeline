@@ -1,7 +1,10 @@
 """Daily prices processing pipeline stack."""
 
+from __future__ import annotations
+
 from aws_cdk import (
     Stack,
+    aws_dynamodb as dynamodb,
     aws_glue as glue,
     aws_stepfunctions as sfn,
     aws_stepfunctions_tasks as tasks,
@@ -13,7 +16,9 @@ from aws_cdk import (
     CfnOutput,
 )
 from constructs import Construct
+from aws_cdk import aws_lambda_event_sources as lambda_event_sources
 from aws_cdk.aws_lambda_python_alpha import BundlingOptions, PythonFunction, PythonLayerVersion
+from typing import Optional
 
 
 class DailyPricesDataProcessingStack(Stack):
@@ -29,6 +34,7 @@ class DailyPricesDataProcessingStack(Stack):
         lambda_execution_role_arn: str,
         glue_execution_role_arn: str,
         step_functions_execution_role_arn: str,
+        batch_tracker_table: Optional[dynamodb.ITable] = None,
         **kwargs,
     ) -> None:
         super().__init__(scope, construct_id, **kwargs)
@@ -39,6 +45,8 @@ class DailyPricesDataProcessingStack(Stack):
         self.lambda_execution_role_arn = lambda_execution_role_arn
         self.glue_execution_role_arn = glue_execution_role_arn
         self.step_functions_execution_role_arn = step_functions_execution_role_arn
+        self.batch_tracker_table = batch_tracker_table
+        self.default_data_source: str = str(self.config.get("ingestion_data_source") or "yahoo_finance")
         self.compaction_output_subdir: str = str(self.config.get("compaction_output_subdir", "compacted"))
         self.compaction_codec: str = str(self.config.get("compaction_codec", "zstd"))
         self.glue_max_concurrent_runs: int = int(self.config.get("glue_max_concurrent_runs", 1))
@@ -68,6 +76,9 @@ class DailyPricesDataProcessingStack(Stack):
 
         # Step Functions workflow for orchestrating manifest-driven processing
         self.processing_workflow = self._create_processing_workflow()
+
+        # Trigger Step Functions execution when batch ingestion completes
+        self._create_processing_completion_trigger()
 
         self._create_outputs()
 
@@ -188,7 +199,7 @@ class DailyPricesDataProcessingStack(Stack):
                 "--curated_layer": self.curated_layer,
                 "--compacted_layer": self.compaction_output_subdir,
                 "--interval": str(self.config.get("ingestion_interval", "1d")),
-                "--data_source": str(self.config.get("ingestion_data_source", "yahoo_finance")),
+                "--data_source": self.default_data_source,
                 "--environment": self.env_name,
                 "--schema_fingerprint_s3_uri": schema_fp_uri,
             },
@@ -259,7 +270,7 @@ class DailyPricesDataProcessingStack(Stack):
                 "--domain": domain,
                 "--table_name": prices_table,
                 "--interval": str(self.config.get("ingestion_interval", "1d")),
-                "--data_source": str(self.config.get("ingestion_data_source", "yahoo_finance")),
+                "--data_source": self.default_data_source,
                 "--prices_curated_bucket": self.shared_storage.curated_bucket.bucket_name,
                 "--prices_layer": self.curated_layer,
                 "--output_bucket": self.shared_storage.curated_bucket.bucket_name,
@@ -564,6 +575,69 @@ class DailyPricesDataProcessingStack(Stack):
             tracing_enabled=bool(self.config.get("enable_xray_tracing", False)),
             timeout=Duration.hours(self.step_function_timeout_hours),
         )
+
+    def _create_processing_completion_trigger(self) -> None:
+        """Create Lambda trigger that starts Step Functions when ingestion completes."""
+        mode = str(self.config.get("processing_orchestration_mode", "manual")).lower()
+        if mode != "dynamodb_stream":
+            return
+
+        if self.batch_tracker_table is None:
+            raise ValueError("Batch tracker table is required when processing_orchestration_mode is dynamodb_stream")
+
+        stream_arn = getattr(self.batch_tracker_table, "table_stream_arn", None)
+        if not stream_arn:
+            raise ValueError("Batch tracker table must have streams enabled for dynamodb_stream mode")
+
+        trigger_function = PythonFunction(
+            self,
+            "ProcessingCompletionTrigger",
+            function_name=f"{self.env_name}-daily-prices-processing-trigger",
+            runtime=lambda_.Runtime.PYTHON_3_12,
+            entry="src/lambda/functions/batch_completion_trigger",
+            index="handler.py",
+            handler="main",
+            memory_size=int(self.config.get("lambda_memory", 512)),
+            timeout=Duration.seconds(int(self.config.get("processing_trigger_timeout", 60))),
+            log_retention=self._log_retention(),
+            role=iam.Role.from_role_arn(self, "ProcessingTriggerRole", self.lambda_execution_role_arn),
+            layers=[self.common_layer],
+            environment={
+                "ENVIRONMENT": self.env_name,
+                "STATE_MACHINE_ARN": self.processing_workflow.state_machine_arn,
+                "RAW_BUCKET": self.shared_storage.raw_bucket.bucket_name,
+                "BATCH_TRACKER_TABLE": self.batch_tracker_table.table_name,
+                "MANIFEST_BASENAME": str(self.config.get("raw_manifest_basename", "_batch")),
+                "MANIFEST_SUFFIX": str(self.config.get("raw_manifest_suffix", ".manifest.json")),
+                "CATALOG_UPDATE_DEFAULT": str(self.config.get("catalog_update", "on_schema_change")),
+                "DEFAULT_DOMAIN": str(self.config.get("ingestion_domain", "")),
+                "DEFAULT_TABLE_NAME": str(self.config.get("ingestion_table_name", "")),
+                "DEFAULT_INTERVAL": str(self.config.get("ingestion_interval", "")),
+                "DEFAULT_DATA_SOURCE": self.default_data_source,
+                "DEFAULT_FILE_TYPE": str(self.config.get("ingestion_file_format", "json")),
+            },
+        )
+
+        batch_size = int(self.config.get("processing_trigger_batch_size", 10))
+        max_batching_window = int(self.config.get("processing_trigger_max_batching_window_seconds", 5))
+
+        trigger_function.add_event_source(
+            lambda_event_sources.DynamoEventSource(
+                self.batch_tracker_table,
+                starting_position=lambda_.StartingPosition.TRIM_HORIZON,
+                batch_size=batch_size,
+                max_batching_window=Duration.seconds(max(0, max_batching_window)),
+                retry_attempts=int(self.config.get("processing_trigger_retry_attempts", 3)),
+                report_batch_item_failures=True,
+            )
+        )
+
+        self.batch_tracker_table.grant_read_write_data(trigger_function)
+        if hasattr(self.batch_tracker_table, "grant_stream_read"):
+            self.batch_tracker_table.grant_stream_read(trigger_function)
+        self.processing_workflow.grant_start_execution(trigger_function)
+
+        self.processing_completion_trigger = trigger_function
 
     def _create_preflight_function(self) -> lambda_.IFunction:
         """Create preflight Lambda function for ds/idempotency/args."""
