@@ -72,7 +72,7 @@ ______________________________________________________________________
 ### End-to-end flow
 
 [\[**Extract**\]](docs/diagrams/extract/README.md)\
-EventBridge → Orchestrator Lambda → Ingestion SQS → Worker Lambda → Raw S3
+EventBridge → Orchestrator Lambda → Ingestion SQS → Worker Lambda → Raw S3 + DynamoDB Stream
 
 [\[**Transform**\]](docs/diagrams/transform/README.md)\
 Manifest 기반 Step Functions → Preflight Lambda → Glue Compaction/ETL/Indicators → Curated S3 + Catalog
