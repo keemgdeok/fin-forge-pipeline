@@ -19,6 +19,7 @@
 #### \[Cost Explorer Snapshot\]
 
 <img src="cost-explorer.jpeg" alt="AWS Cost Explorer snapshot" style="width:100%;" />
-- dev 환경 30일치 데이터 처리 비용: 0$
+- dev 환경 30일치 데이터 처리 비용: 20일 2번, 21일 1번 테스트 <br>
+- 한달 약 $2 미만 비용 발생
 
 <br>
