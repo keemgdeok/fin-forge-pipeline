@@ -711,12 +711,6 @@ class DailyPricesDataProcessingStack(Stack):
         )
         return function
 
-    # Removed: _create_quality_check_function - placeholder function, DQ now in Glue ETL
-
-    # Removed: _create_schema_check_function - replaced by Glue Crawler native RecrawlPolicy
-
-    # Removed: _create_build_dates_function - 1GB daily batch doesn't need backfill complexity
-
     def _create_outputs(self) -> None:
         """Create CloudFormation outputs."""
         CfnOutput(

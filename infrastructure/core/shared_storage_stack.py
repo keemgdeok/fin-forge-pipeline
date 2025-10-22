@@ -40,10 +40,6 @@ class SharedStorageStack(Stack):
         # Additional artifacts bucket
         self.artifacts_bucket = self._create_artifacts_bucket()
 
-        # Metadata and state management - PHASE 2: Add when needed
-        # self.pipeline_state_table = self._create_pipeline_state_table()
-        # self.job_metadata_table = self._create_job_metadata_table()
-
         self._create_outputs()
 
     def _create_artifacts_bucket(self) -> s3.Bucket:
@@ -64,44 +60,6 @@ class SharedStorageStack(Stack):
             removal_policy=removal_policy,
             auto_delete_objects=auto_delete,
         )
-
-    # PHASE 2: Uncomment when advanced state management is needed
-    # def _create_pipeline_state_table(self) -> dynamodb.Table:
-    #     """Create DynamoDB table for pipeline state management."""
-    #     return dynamodb.Table(
-    #         self,
-    #         "PipelineStateTable",
-    #         table_name=f"{self.env_name}-pipeline-state",
-    #         partition_key=dynamodb.Attribute(
-    #             name="pipeline_id",
-    #             type=dynamodb.AttributeType.STRING,
-    #         ),
-    #         sort_key=dynamodb.Attribute(
-    #             name="execution_id",
-    #             type=dynamodb.AttributeType.STRING,
-    #         ),
-    #         billing_mode=dynamodb.BillingMode.PAY_PER_REQUEST,
-    #         time_to_live_attribute="ttl",
-    #         removal_policy=RemovalPolicy.DESTROY,
-    #     )
-
-    # def _create_job_metadata_table(self) -> dynamodb.Table:
-    #     """Create DynamoDB table for job metadata and lineage."""
-    #     return dynamodb.Table(
-    #         self,
-    #         "JobMetadataTable",
-    #         table_name=f"{self.env_name}-job-metadata",
-    #         partition_key=dynamodb.Attribute(
-    #             name="job_id",
-    #             type=dynamodb.AttributeType.STRING,
-    #         ),
-    #         sort_key=dynamodb.Attribute(
-    #             name="timestamp",
-    #             type=dynamodb.AttributeType.STRING,
-    #         ),
-    #         billing_mode=dynamodb.BillingMode.PAY_PER_REQUEST,
-    #         removal_policy=RemovalPolicy.DESTROY,
-    #     )
 
     def _create_outputs(self) -> None:
         """Create CloudFormation outputs."""
@@ -125,18 +83,3 @@ class SharedStorageStack(Stack):
             value=self.artifacts_bucket.bucket_name,
             description="Artifacts S3 bucket name",
         )
-
-        # PHASE 2: Uncomment when DynamoDB tables are enabled
-        # CfnOutput(
-        #     self,
-        #     "PipelineStateTableName",
-        #     value=self.pipeline_state_table.table_name,
-        #     description="Pipeline state DynamoDB table name",
-        # )
-
-        # CfnOutput(
-        #     self,
-        #     "JobMetadataTableName",
-        #     value=self.job_metadata_table.table_name,
-        #     description="Job metadata DynamoDB table name",
-        # )

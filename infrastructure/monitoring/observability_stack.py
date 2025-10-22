@@ -203,29 +203,6 @@ class ObservabilityStack(Stack):
             )
             alarm.add_alarm_action(cw_actions.SnsAction(self.alerts_topic))
 
-    # OPTIONAL: AWS automatically creates log groups with default retention
-    # def _create_log_groups(self) -> dict:
-    #     """Create standardized log groups for platform components."""
-    #     log_groups = {}
-    #
-    #     # Platform-wide log groups
-    #     components = ["lambda", "glue", "stepfunctions", "pipeline-orchestration"]
-    #
-    #     for component in components:
-    #         log_groups[component] = logs.LogGroup(
-    #             self,
-    #             f"{component.title()}LogGroup",
-    #             log_group_name=
-    #                 f"/aws/{component}/{self.env_name}-data-platform",
-    #             retention=(
-    #                 logs.RetentionDays.ONE_MONTH
-    #                 if self.env_name != "prod"
-    #                 else logs.RetentionDays.THREE_MONTHS
-    #             ),
-    #         )
-    #
-    #     return log_groups
-
     def _create_outputs(self) -> None:
         """Create CloudFormation outputs."""
         CfnOutput(

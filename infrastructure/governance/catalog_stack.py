@@ -57,27 +57,6 @@ class DataCatalogStack(Stack):
             ),
         )
 
-    # OPTIONAL: Uncomment if you need workgroup for larger teams or cost control
-    # def _create_athena_workgroup(self) -> athena.CfnWorkGroup:
-    #     """Create Athena workgroup for data queries."""
-    #     return athena.CfnWorkGroup(
-    #         self,
-    #         "DataPlatformWorkgroup",
-    #         name=f"{self.env_name}-data-platform-workgroup",
-    #         description="Athena workgroup for data platform queries",
-    #         work_group_configuration=athena.CfnWorkGroup.WorkGroupConfigurationProperty(
-    #             result_configuration=athena.CfnWorkGroup.ResultConfigurationProperty(
-    #                 output_location=f"s3://{self.shared_storage.artifacts_bucket}/athena-results/",
-    #                 encryption_configuration=athena.CfnWorkGroup.EncryptionConfigurationProperty(
-    #                     encryption_option="SSE_S3",
-    #                 ),
-    #             ),
-    #             enforce_work_group_configuration=True,
-    #             publish_cloud_watch_metrics=True,
-    #             bytes_scanned_cutoff_per_query=1000000000,  # 1GB limit
-    #         ),
-    #     )
-
     def _create_data_crawlers(self) -> dict:
         """Create Glue crawlers for automatic schema discovery."""
         crawlers = {}
