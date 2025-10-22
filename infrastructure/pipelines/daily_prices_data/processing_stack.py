@@ -46,6 +46,7 @@ class DailyPricesDataProcessingStack(Stack):
         self.glue_execution_role_arn = glue_execution_role_arn
         self.step_functions_execution_role_arn = step_functions_execution_role_arn
         self.batch_tracker_table = batch_tracker_table
+        self.default_data_source: str = str(self.config.get("ingestion_data_source") or "yahoo_finance")
         self.compaction_output_subdir: str = str(self.config.get("compaction_output_subdir", "compacted"))
         self.compaction_codec: str = str(self.config.get("compaction_codec", "zstd"))
         self.glue_max_concurrent_runs: int = int(self.config.get("glue_max_concurrent_runs", 1))
@@ -198,7 +199,7 @@ class DailyPricesDataProcessingStack(Stack):
                 "--curated_layer": self.curated_layer,
                 "--compacted_layer": self.compaction_output_subdir,
                 "--interval": str(self.config.get("ingestion_interval", "1d")),
-                "--data_source": str(self.config.get("ingestion_data_source", "yahoo_finance")),
+                "--data_source": self.default_data_source,
                 "--environment": self.env_name,
                 "--schema_fingerprint_s3_uri": schema_fp_uri,
             },
@@ -269,7 +270,7 @@ class DailyPricesDataProcessingStack(Stack):
                 "--domain": domain,
                 "--table_name": prices_table,
                 "--interval": str(self.config.get("ingestion_interval", "1d")),
-                "--data_source": str(self.config.get("ingestion_data_source", "yahoo_finance")),
+                "--data_source": self.default_data_source,
                 "--prices_curated_bucket": self.shared_storage.curated_bucket.bucket_name,
                 "--prices_layer": self.curated_layer,
                 "--output_bucket": self.shared_storage.curated_bucket.bucket_name,
@@ -612,7 +613,7 @@ class DailyPricesDataProcessingStack(Stack):
                 "DEFAULT_DOMAIN": str(self.config.get("ingestion_domain", "")),
                 "DEFAULT_TABLE_NAME": str(self.config.get("ingestion_table_name", "")),
                 "DEFAULT_INTERVAL": str(self.config.get("ingestion_interval", "")),
-                "DEFAULT_DATA_SOURCE": str(self.config.get("ingestion_data_source", "")),
+                "DEFAULT_DATA_SOURCE": self.default_data_source,
                 "DEFAULT_FILE_TYPE": str(self.config.get("ingestion_file_format", "json")),
             },
         )

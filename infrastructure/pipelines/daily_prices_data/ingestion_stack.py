@@ -42,6 +42,7 @@ class DailyPricesDataIngestionStack(Stack):
         self.config = config
         self.shared_storage = shared_storage_stack
         self.lambda_execution_role_arn = lambda_execution_role_arn
+        self.data_source: str = str(self.config.get("ingestion_data_source") or "yahoo_finance")
 
         # Common layer for shared code
         self.common_layer = self._create_common_layer()
@@ -428,7 +429,7 @@ class DailyPricesDataIngestionStack(Stack):
         trigger_type = self.config.get("ingestion_trigger_type", "schedule")
 
         return {
-            "data_source": "yahoo_finance",
+            "data_source": self.data_source,
             "data_type": "prices",
             "domain": domain,
             "table_name": table_name,
