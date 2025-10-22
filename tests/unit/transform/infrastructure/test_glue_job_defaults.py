@@ -1,5 +1,6 @@
 from aws_cdk import App
 from aws_cdk.assertions import Template
+from aws_cdk import aws_dynamodb as dynamodb
 
 from infrastructure.core.shared_storage_stack import SharedStorageStack
 from infrastructure.pipelines.daily_prices_data import processing_stack as ps
@@ -17,7 +18,7 @@ def _base_config():
         "ingestion_data_source": "yahoo_finance",
         "compaction_output_subdir": "compacted",
         "indicators_layer": "technical_indicator",
-        "enable_processing_orchestration": False,
+        "processing_orchestration_mode": "manual",
     }
 
 
@@ -132,3 +133,41 @@ def test_glue_job_includes_shared_package_via_extra_py_files(monkeypatch) -> Non
     props = _find_transform_job(template)
     default_args = props["DefaultArguments"]
     assert "--extra-py-files" in default_args, "Glue job must include extra py files for shared package"
+
+
+def test_processing_stack_creates_stream_trigger_when_enabled(monkeypatch) -> None:
+    app = App()
+    cfg = _base_config()
+    cfg["processing_orchestration_mode"] = "dynamodb_stream"
+
+    monkeypatch.setattr(ps, "PythonFunction", _fake_python_function, raising=False)
+
+    shared = SharedStorageStack(app, "SharedStorageDynamo", environment="dev", config=cfg)
+    tracker_table = dynamodb.Table(
+        shared,
+        "BatchTrackerStream",
+        partition_key=dynamodb.Attribute(name="pk", type=dynamodb.AttributeType.STRING),
+        billing_mode=dynamodb.BillingMode.PAY_PER_REQUEST,
+        stream=dynamodb.StreamViewType.NEW_AND_OLD_IMAGES,
+    )
+
+    proc = ps.DailyPricesDataProcessingStack(
+        app,
+        "ProcStackDynamoTrigger",
+        environment="dev",
+        config=cfg,
+        shared_storage_stack=shared,
+        lambda_execution_role_arn="arn:aws:iam::111122223333:role/lambda",
+        glue_execution_role_arn="arn:aws:iam::111122223333:role/glue",
+        step_functions_execution_role_arn="arn:aws:iam::111122223333:role/sfn",
+        batch_tracker_table=tracker_table,
+    )
+
+    template = Template.from_stack(proc)
+    mappings = template.find_resources("AWS::Lambda::EventSourceMapping")
+    assert mappings, "DynamoDB stream trigger must create an EventSourceMapping"
+    mapping = next(iter(mappings.values()))
+    arn_ref = mapping["Properties"]["EventSourceArn"]
+    assert any(key in arn_ref for key in ("Fn::GetAtt", "Fn::ImportValue")), (
+        "EventSourceArn must reference the batch tracker stream ARN"
+    )

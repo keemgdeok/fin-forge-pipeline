@@ -44,8 +44,8 @@ def _build_processing_stack(config_override: Dict[str, Any] | None = None) -> Da
     if config_override:
         config.update(config_override)
 
-    # Ensure the processing workflow synthesizes (even if dev config disables it)
-    config["enable_processing_orchestration"] = True
+    # Disable stream-triggered orchestration for template inspection tests
+    config["processing_orchestration_mode"] = "manual"
 
     processing_stack = DailyPricesDataProcessingStack(
         app,
