@@ -169,6 +169,9 @@ class DailyPricesDataIngestionStack(Stack):
         if not table_name:
             table_name = f"{self.env_name}-daily-prices-batch-tracker"
 
+        orchestration_mode = str(self.config.get("processing_orchestration_mode", "manual")).lower()
+        enable_streams = orchestration_mode == "dynamodb_stream"
+
         table = dynamodb.Table(
             self,
             "BatchTrackerTable",
@@ -176,6 +179,7 @@ class DailyPricesDataIngestionStack(Stack):
             partition_key=dynamodb.Attribute(name="pk", type=dynamodb.AttributeType.STRING),
             billing_mode=dynamodb.BillingMode.PAY_PER_REQUEST,
             time_to_live_attribute="ttl",
+            stream=dynamodb.StreamViewType.NEW_AND_OLD_IMAGES if enable_streams else None,
         )
 
         removal_policy = str(self.config.get("removal_policy", "retain")).lower()
