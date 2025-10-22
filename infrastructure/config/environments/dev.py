@@ -66,7 +66,7 @@ dev_config = {
         "daily-prices-data-processing",
     ],
     "max_retries": 5,
-    "enable_processing_orchestration": False,
+    "processing_orchestration_mode": "dynamodb_stream",
     # Catalog update policy for crawler: on_schema_change|never|force
     "catalog_update": "on_schema_change",
     # Processing triggers (S3->EventBridge->SFN). Supports multiple domain/table pairs.

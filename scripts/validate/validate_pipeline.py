@@ -23,7 +23,7 @@ import uuid
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 import boto3
 from botocore.exceptions import BotoCoreError, ClientError
@@ -95,6 +95,23 @@ def _wait_for_batch_completion(table, batch_id: str, timeout: int, interval: int
     )
 
 
+def _wait_for_processing_execution(
+    table,
+    batch_id: str,
+    timeout: int,
+    interval: int,
+) -> Tuple[str, Dict[str, Any]]:
+    deadline = _now() + timedelta(seconds=timeout)
+    while _now() < deadline:
+        resp = table.get_item(Key={"pk": batch_id})
+        item = resp.get("Item") or {}
+        execution_arn = item.get("processing_execution_arn")
+        if execution_arn:
+            return str(execution_arn), item
+        time.sleep(interval)
+    raise TimeoutError("Timed out waiting for processing execution to start")
+
+
 def _await_execution_success(sfn_client, execution_arn: str, timeout: int, interval: int) -> Dict[str, Any]:
     deadline = _now() + timedelta(seconds=timeout)
     while _now() < deadline:
@@ -151,6 +168,11 @@ def main() -> None:
     )
     parser.add_argument("--queue-timeout", type=int, default=600, help="Seconds to wait for load queue growth")
     parser.add_argument(
+        "--manual-stepfunctions",
+        action="store_true",
+        help="Force manual Step Functions execution even when automatic orchestration is enabled",
+    )
+    parser.add_argument(
         "--expected-visible-increase",
         type=int,
         default=1,
@@ -176,6 +198,8 @@ def main() -> None:
     file_format = str(config.get("ingestion_file_format", "json"))
     data_source = str(config.get("ingestion_data_source", "yahoo_finance"))
     symbols = list(config.get("ingestion_symbols", ["AAPL", "MSFT"]))
+    processing_mode = str(config.get("processing_orchestration_mode", "manual")).lower()
+    auto_processing_enabled = processing_mode == "dynamodb_stream" and not args.manual_stepfunctions
 
     load_configs = list(config.get("load_domain_configs", []))
     if not load_configs:
@@ -292,14 +316,31 @@ def main() -> None:
         "environment": args.environment,
     }
 
-    print("Starting Step Functions execution with manifest list...")
-    execution_start = _now()
-    execution_resp = sfn_client.start_execution(
-        stateMachineArn=state_machine_arn,
-        input=json.dumps(execution_input),
-    )
-    execution_arn = execution_resp["executionArn"]
-    print(f"Started execution {execution_arn}")
+    execution_start_marker = _now()
+    if auto_processing_enabled:
+        print("Waiting for Step Functions execution triggered by DynamoDB stream...")
+        try:
+            execution_arn, batch_record = _wait_for_processing_execution(
+                batch_tracker_table,
+                batch_id=batch_id,
+                timeout=execution_timeout,
+                interval=5,
+            )
+        except TimeoutError as exc:  # pragma: no cover - surfaced via CLI usage
+            raise RuntimeError("Timed out waiting for automatic processing execution to start") from exc
+        print(f"Detected execution {execution_arn}")
+    else:
+        if processing_mode == "dynamodb_stream" and args.manual_stepfunctions:
+            print("Manual Step Functions override requested; starting execution directly.")
+        else:
+            print("Starting Step Functions execution with manifest list...")
+        execution_start_marker = _now()
+        execution_resp = sfn_client.start_execution(
+            stateMachineArn=state_machine_arn,
+            input=json.dumps(execution_input),
+        )
+        execution_arn = execution_resp["executionArn"]
+        print(f"Started execution {execution_arn}")
 
     print(f"Waiting for Step Functions execution to succeed (timeout {execution_timeout} seconds)...")
     execution_detail = _await_execution_success(
@@ -308,7 +349,7 @@ def main() -> None:
         timeout=execution_timeout,
         interval=15,
     )
-    execution_start = execution_detail.get("startDate", execution_start)
+    execution_start = execution_detail.get("startDate", execution_start_marker)
     execution_stop: datetime = execution_detail.get("stopDate", _now())
 
     print("Validating Glue job runs...")
