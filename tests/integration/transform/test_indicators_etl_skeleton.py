@@ -18,7 +18,12 @@ from moto import mock_aws
 from shared.paths import build_curated_layer_path
 
 
-@pytest.mark.integration
+pytestmark = [
+    pytest.mark.integration,
+    pytest.mark.skip(reason="문서용 예시로, 실제 Glue 실행은 별도 환경에서 검증합니다."),
+]
+
+
 @mock_aws
 def test_indicators_etl_skeleton() -> None:
     s3 = boto3.client("s3", region_name="us-east-1")

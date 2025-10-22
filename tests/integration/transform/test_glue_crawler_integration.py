@@ -47,7 +47,7 @@ def crawler_test_config():
 
 
 @pytest.fixture
-def test_buckets():
+def bucket_names():
     """테스트용 S3 버킷"""
     return {"curated": "test-curated-bucket", "artifacts": "test-artifacts-bucket"}
 
@@ -57,7 +57,7 @@ class TestGlueCrawlerIntegration:
     """Glue Crawler 통합 테스트 클래스"""
 
     @mock_aws
-    def test_crawler_creates_table_for_new_data(self, aws_credentials, crawler_test_config, test_buckets):
+    def test_crawler_creates_table_for_new_data(self, aws_credentials, crawler_test_config, bucket_names):
         """
         Given: Curated S3에 새로운 Parquet 데이터가 있고 테이블이 존재하지 않으면
         When: Glue 크롤러를 실행하면
@@ -68,7 +68,7 @@ class TestGlueCrawlerIntegration:
         iam_client = boto3.client("iam", region_name="us-east-1")
 
         # Setup S3 bucket
-        s3_client.create_bucket(Bucket=test_buckets["curated"])
+        s3_client.create_bucket(Bucket=bucket_names["curated"])
 
         # Create IAM role for crawler
         assume_role_policy = {
@@ -102,7 +102,7 @@ class TestGlueCrawlerIntegration:
         df.to_parquet(parquet_buffer, engine="pyarrow", index=False)
 
         s3_client.put_object(
-            Bucket=test_buckets["curated"],
+            Bucket=bucket_names["curated"],
             Key="market/prices/ds=2025-09-07/data.parquet",
             Body=parquet_buffer.getvalue(),
             ContentType="application/octet-stream",
@@ -179,7 +179,7 @@ class TestGlueCrawlerIntegration:
         assert "**/quarantine/**" in crawler["Targets"]["S3Targets"][0]["Exclusions"]
 
     @mock_aws
-    def test_crawler_detects_schema_changes(self, aws_credentials, crawler_test_config, test_buckets):
+    def test_crawler_detects_schema_changes(self, aws_credentials, crawler_test_config, bucket_names):
         """
         Given: 기존 테이블이 있고 새로운 컬럼이 추가된 데이터가 있으면
         When: 크롤러가 실행되면
@@ -189,7 +189,7 @@ class TestGlueCrawlerIntegration:
         s3_client = boto3.client("s3", region_name="us-east-1")
 
         # Setup
-        s3_client.create_bucket(Bucket=test_buckets["curated"])
+        s3_client.create_bucket(Bucket=bucket_names["curated"])
 
         glue_client.create_database(DatabaseInput={"Name": crawler_test_config["database_name"]})
 
@@ -240,7 +240,7 @@ class TestGlueCrawlerIntegration:
         df_evolved.to_parquet(parquet_buffer, engine="pyarrow", index=False)
 
         s3_client.put_object(
-            Bucket=test_buckets["curated"],
+            Bucket=bucket_names["curated"],
             Key="market/prices/ds=2025-09-08/evolved_data.parquet",
             Body=parquet_buffer.getvalue(),
             ContentType="application/octet-stream",
@@ -297,7 +297,7 @@ class TestGlueCrawlerIntegration:
         assert "currency" in column_names, "Should include new 'currency' column"
 
     @mock_aws
-    def test_crawler_partition_discovery(self, aws_credentials, crawler_test_config, test_buckets):
+    def test_crawler_partition_discovery(self, aws_credentials, crawler_test_config, bucket_names):
         """
         Given: 여러 파티션의 데이터가 S3에 있으면
         When: 크롤러가 실행되면
@@ -307,7 +307,7 @@ class TestGlueCrawlerIntegration:
         s3_client = boto3.client("s3", region_name="us-east-1")
 
         # Setup
-        s3_client.create_bucket(Bucket=test_buckets["curated"])
+        s3_client.create_bucket(Bucket=bucket_names["curated"])
         glue_client.create_database(DatabaseInput={"Name": crawler_test_config["database_name"]})
 
         # Create data for multiple partitions
@@ -327,7 +327,7 @@ class TestGlueCrawlerIntegration:
             df.to_parquet(parquet_buffer, engine="pyarrow", index=False)
 
             s3_client.put_object(
-                Bucket=test_buckets["curated"],
+                Bucket=bucket_names["curated"],
                 Key=f"market/prices/ds={partition_date}/data.parquet",
                 Body=parquet_buffer.getvalue(),
                 ContentType="application/octet-stream",
@@ -406,7 +406,7 @@ class TestGlueCrawlerIntegration:
             assert expected_date in discovered_dates, f"Should discover partition {expected_date}"
 
     @mock_aws
-    def test_crawler_should_not_run_without_schema_change(self, aws_credentials, crawler_test_config, test_buckets):
+    def test_crawler_should_not_run_without_schema_change(self, aws_credentials, crawler_test_config, bucket_names):
         """
         Given: 스키마가 변경되지 않은 상태에서
         When: 크롤러 실행 여부를 결정하면
@@ -440,7 +440,7 @@ class TestGlueCrawlerIntegration:
         assert crawler_should_run, "Crawler should run when schema has changed"
 
     @mock_aws
-    def test_crawler_excludes_quarantine_data(self, aws_credentials, crawler_test_config, test_buckets):
+    def test_crawler_excludes_quarantine_data(self, aws_credentials, crawler_test_config, bucket_names):
         """
         Given: Curated 버킷에 정상 데이터와 quarantine 데이터가 모두 있으면
         When: 크롤러가 실행되면
@@ -450,7 +450,7 @@ class TestGlueCrawlerIntegration:
         s3_client = boto3.client("s3", region_name="us-east-1")
 
         # Setup
-        s3_client.create_bucket(Bucket=test_buckets["curated"])
+        s3_client.create_bucket(Bucket=bucket_names["curated"])
         glue_client.create_database(DatabaseInput={"Name": crawler_test_config["database_name"]})
 
         # Upload normal data
@@ -466,7 +466,7 @@ class TestGlueCrawlerIntegration:
         df_normal.to_parquet(normal_buffer, engine="pyarrow", index=False)
 
         s3_client.put_object(
-            Bucket=test_buckets["curated"],
+            Bucket=bucket_names["curated"],
             Key="market/prices/ds=2025-09-07/normal_data.parquet",
             Body=normal_buffer.getvalue(),
             ContentType="application/octet-stream",
@@ -482,7 +482,7 @@ class TestGlueCrawlerIntegration:
         df_quarantine.to_parquet(quarantine_buffer, engine="pyarrow", index=False)
 
         s3_client.put_object(
-            Bucket=test_buckets["curated"],
+            Bucket=bucket_names["curated"],
             Key="market/prices/quarantine/ds=2025-09-07/bad_data.parquet",
             Body=quarantine_buffer.getvalue(),
             ContentType="application/octet-stream",
@@ -557,7 +557,7 @@ class TestGlueCrawlerIntegration:
         assert error_handled is True, "Error handling should be implemented for crawler failures"
 
     @mock_aws
-    def test_crawler_performance_optimization(self, aws_credentials, crawler_test_config, test_buckets):
+    def test_crawler_performance_optimization(self, aws_credentials, crawler_test_config, bucket_names):
         """
         Given: 대량의 파티션과 파일이 있는 상황에서
         When: 크롤러 최적화 설정을 적용하면
@@ -567,7 +567,7 @@ class TestGlueCrawlerIntegration:
         s3_client = boto3.client("s3", region_name="us-east-1")
 
         # Setup
-        s3_client.create_bucket(Bucket=test_buckets["curated"])
+        s3_client.create_bucket(Bucket=bucket_names["curated"])
         glue_client.create_database(DatabaseInput={"Name": crawler_test_config["database_name"]})
 
         # Simulate large number of partitions (100 days)
@@ -595,7 +595,7 @@ class TestGlueCrawlerIntegration:
             df.to_parquet(parquet_buffer, engine="pyarrow", index=False)
 
             s3_client.put_object(
-                Bucket=test_buckets["curated"],
+                Bucket=bucket_names["curated"],
                 Key=f"market/prices/ds={partition_date}/data.parquet",
                 Body=parquet_buffer.getvalue(),
                 ContentType="application/octet-stream",

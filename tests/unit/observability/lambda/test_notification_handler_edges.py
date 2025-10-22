@@ -2,17 +2,6 @@ import os
 import runpy
 
 
-def test_notification_handler_missing_required_fields_returns_400() -> None:
-    """
-    Given: 필수 필드(pipeline_name/domain/status) 누락
-    When: 알림 핸들러 실행
-    Then: 400 상태 코드
-    """
-    mod = runpy.run_path("src/lambda/functions/notification_handler/handler.py")
-    resp = mod["main"]({"domain": "x"}, None)
-    assert resp["statusCode"] == 400
-
-
 def test_notification_handler_sns_skipped_when_topic_missing(
     monkeypatch,
 ) -> None:

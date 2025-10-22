@@ -36,7 +36,7 @@ def aws_credentials():
 
 
 @pytest.fixture
-def test_buckets():
+def buckets_config():
     """테스트용 S3 버킷 설정"""
     return {
         "raw_bucket": "test-raw-bucket-dev-123456789012",
@@ -89,7 +89,7 @@ class TestAWSServiceIntegration:
 
     @mock_aws
     def test_s3_eventbridge_stepfunctions_trigger_chain(
-        self, aws_credentials, test_buckets, eventbridge_rule_config, step_functions_definition
+        self, aws_credentials, buckets_config, eventbridge_rule_config, step_functions_definition
     ):
         """
         Given: S3 버킷에 파일이 업로드되면
@@ -106,7 +106,7 @@ class TestAWSServiceIntegration:
         iam_client = boto3.client("iam", region_name="us-east-1")
 
         # Create S3 bucket
-        s3_client.create_bucket(Bucket=test_buckets["raw_bucket"])
+        s3_client.create_bucket(Bucket=buckets_config["raw_bucket"])
 
         # Create IAM role for Step Functions
         assume_role_policy = {
@@ -177,12 +177,12 @@ class TestAWSServiceIntegration:
         )
 
         s3_client.put_object(
-            Bucket=test_buckets["raw_bucket"],
+            Bucket=buckets_config["raw_bucket"],
             Key=aapl_key,
             Body=json.dumps({"symbol": "AAPL", "price": 150.25}).encode(),
         )
         s3_client.put_object(
-            Bucket=test_buckets["raw_bucket"],
+            Bucket=buckets_config["raw_bucket"],
             Key=googl_key,
             Body=json.dumps({"symbol": "GOOGL", "price": 2750.00}).encode(),
         )
@@ -199,7 +199,7 @@ class TestAWSServiceIntegration:
             "account": "123456789012",
             "time": "2025-09-07T10:00:00Z",
             "region": "us-east-1",
-            "detail": {"bucket": {"name": test_buckets["raw_bucket"]}, "object": {"key": test_key}},
+            "detail": {"bucket": {"name": buckets_config["raw_bucket"]}, "object": {"key": test_key}},
         }
 
         # Put event to EventBridge (simulates S3 notification)
@@ -236,7 +236,7 @@ class TestAWSServiceIntegration:
         assert sm_arn in targets[0]["Arn"], "Target should be our state machine"
 
     @mock_aws
-    def test_multi_prefix_suffix_event_filtering(self, aws_credentials, test_buckets, eventbridge_rule_config):
+    def test_multi_prefix_suffix_event_filtering(self, aws_credentials, buckets_config, eventbridge_rule_config):
         """
         Given: 여러 prefix/suffix 조합의 파일들이 업로드되면
         When: EventBridge 규칙 필터링이 적용되면
@@ -246,14 +246,14 @@ class TestAWSServiceIntegration:
         s3_client = boto3.client("s3", region_name="us-east-1")
 
         # Create bucket
-        s3_client.create_bucket(Bucket=test_buckets["raw_bucket"])
+        s3_client.create_bucket(Bucket=buckets_config["raw_bucket"])
 
         # Create EventBridge rule with multiple prefix/suffix patterns
         multi_pattern_rule = {
             "source": ["aws.s3"],
             "detail-type": ["Object Created"],
             "detail": {
-                "bucket": {"name": [test_buckets["raw_bucket"]]},
+                "bucket": {"name": [buckets_config["raw_bucket"]]},
                 "object": {
                     "key": [
                         {"prefix": "market/prices/", "suffix": ".json"},
@@ -359,11 +359,11 @@ class TestAWSServiceIntegration:
         matched_files = []
         for scenario in test_scenarios:
             # Upload file
-            s3_client.put_object(Bucket=test_buckets["raw_bucket"], Key=scenario["key"], Body=b"test data")
+            s3_client.put_object(Bucket=buckets_config["raw_bucket"], Key=scenario["key"], Body=b"test data")
 
             # Simulate event pattern matching (manual verification in moto)
             # In real AWS, EventBridge would automatically filter
-            event_detail = {"bucket": {"name": test_buckets["raw_bucket"]}, "object": {"key": scenario["key"]}}
+            event_detail = {"bucket": {"name": buckets_config["raw_bucket"]}, "object": {"key": scenario["key"]}}
 
             # Manual pattern matching logic to verify rule behavior
             would_match = self._would_event_match_pattern(event_detail, multi_pattern_rule["detail"])
@@ -605,7 +605,7 @@ class TestAWSServiceIntegration:
             return "states.amazonaws.com"
 
     @mock_aws
-    def test_eventbridge_rule_error_handling(self, aws_credentials, test_buckets):
+    def test_eventbridge_rule_error_handling(self, aws_credentials, buckets_config):
         """
         Given: EventBridge 규칙 설정에 오류가 있으면
         When: 규칙 생성 또는 타겟 설정을 시도하면
@@ -618,7 +618,7 @@ class TestAWSServiceIntegration:
             "source": ["aws.s3"],
             "detail-type": ["Object Created"],
             "detail": {
-                "bucket": {"name": [test_buckets["raw_bucket"]]},
+                "bucket": {"name": [buckets_config["raw_bucket"]]},
                 "object": {
                     # Invalid key pattern structure
                     "key": "invalid-pattern-format"
