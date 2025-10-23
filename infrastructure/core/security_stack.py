@@ -314,6 +314,7 @@ class SecurityStack(Stack):
             description="GitHub Actions OIDC deploy role ARN",
         )
 
+    # Decide whether to reuse, default, or create the GitHub Actions OIDC provider.
     def _create_github_oidc_provider(self) -> iam.IOpenIdConnectProvider:
         """Import an existing GitHub OIDC provider or create a new one.
 
@@ -350,6 +351,7 @@ class SecurityStack(Stack):
             client_ids=["sts.amazonaws.com"],
         )
 
+    # Pull an explicit GitHub OIDC provider ARN from config, context, or environment.
     def _resolve_github_oidc_provider_arn(self) -> Optional[str]:
         """Resolve GitHub OIDC provider ARN from config, context, or environment."""
 
@@ -367,6 +369,7 @@ class SecurityStack(Stack):
 
         return None
 
+    # Check deployment knobs to see if a new GitHub OIDC provider should be created.
     def _should_create_github_oidc_provider(self) -> bool:
         """Determine whether a new GitHub OIDC provider should be created."""
 
@@ -389,6 +392,7 @@ class SecurityStack(Stack):
         env_flag = _to_bool(os.getenv("GITHUB_OIDC_PROVIDER_CREATE"))
         return env_flag
 
+    # Build the canonical ARN for the token.actions.githubusercontent.com provider in this account.
     def _default_github_oidc_provider_arn(self) -> str:
         """Return the standard ARN for the GitHub Actions OIDC provider in this account."""
 
@@ -398,6 +402,7 @@ class SecurityStack(Stack):
             resource="oidc-provider/token.actions.githubusercontent.com",
         )
 
+    # Define the GitHub Actions deploy role that trusts the resolved OIDC provider.
     def _create_github_actions_deploy_role(self) -> iam.Role:
         """Role assumed by GitHub Actions via OIDC for deployments.
 
