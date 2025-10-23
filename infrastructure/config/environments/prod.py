@@ -38,10 +38,10 @@ prod_config = {
     "indicators_lookback_days": 150,
     "indicators_layer": "technical_indicator",
     # Fan-out (Extract) defaults
-    "orchestrator_chunk_size": 20,
+    "orchestrator_chunk_size": 100,
     "sqs_send_batch_size": 10,
-    "sqs_batch_size": 2,
-    "worker_reserved_concurrency": 15,
+    "sqs_batch_size": 3,
+    "worker_reserved_concurrency": 30,
     "worker_timeout": 900,
     "worker_memory": 1024,
     "enable_gzip": True,
@@ -49,7 +49,7 @@ prod_config = {
     "raw_manifest_suffix": ".manifest.json",
     "batch_tracker_table_name": "",
     "batch_tracker_ttl_days": 7,
-    "compaction_worker_type": "G.2X",
+    "compaction_worker_type": "G.1X",
     "compaction_number_workers": 4,
     "compaction_timeout_minutes": 240,
     "compaction_target_file_mb": 256,
@@ -67,7 +67,7 @@ prod_config = {
     "monitored_state_machines": [
         "daily-prices-data-processing",
     ],
-    "max_retries": 6,
+    "max_retries": 5,
     "processing_orchestration_mode": "dynamodb_stream",
     # Catalog update policy for crawler: on_schema_change|never|force
     "catalog_update": "on_schema_change",
