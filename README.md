@@ -158,7 +158,7 @@ ______________________________________________________________________
    ```bash
    pip install -r requirements.txt
    pip install -r src/lambda/layers/common/requirements.txt
-   pip install -r src/lambda/layers/market_data/dependencies/requirements.txt
+   pip install -r src/lambda/layers/data/market/dependencies/requirements.txt
    pip install -r src/lambda/functions/data_ingestion/requirements.txt
    ```
 1. **CDK 의존성 설치**

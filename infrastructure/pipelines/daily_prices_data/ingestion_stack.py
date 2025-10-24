@@ -414,7 +414,7 @@ class DailyPricesDataIngestionStack(Stack):
             layer_version_name=f"{self.env_name}-market-data-dependencies",
             description="Third-party dependencies for market data (yfinance, pandas, etc.)",
             compatible_runtimes=[lambda_.Runtime.PYTHON_3_12],
-            code=lambda_.Code.from_asset("src/lambda/layers/market_data/dependencies"),
+            code=lambda_.Code.from_asset("src/lambda/layers/data/market/dependencies"),
         )
 
     def _default_ingestion_event(self) -> dict:
