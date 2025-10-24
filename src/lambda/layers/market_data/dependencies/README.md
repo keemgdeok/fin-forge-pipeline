@@ -13,8 +13,8 @@ Build locally
 Commands
 ```bash
 # From repository root
-pip install -r src/lambda/layers/market_data_deps/requirements.txt \
-    -t src/lambda/layers/market_data_deps/python
+pip install -r src/lambda/layers/market_data/dependencies/requirements.txt \
+    -t src/lambda/layers/market_data/dependencies/python
 ```
 
 Notes
