@@ -8,7 +8,7 @@ from tests.fixtures.load_builders import build_s3_object_created_event
 pytestmark = [pytest.mark.unit, pytest.mark.infrastructure, pytest.mark.load]
 
 
-TARGET = "src/lambda/shared/layers/core/python/load_contracts.py"
+TARGET = "src/lambda/layers/load/contracts/python/load_contracts.py"
 
 
 if not os.path.exists(TARGET):

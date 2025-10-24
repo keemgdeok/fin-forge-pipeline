@@ -6,7 +6,7 @@ from typing import Any, Dict
 pytestmark = [pytest.mark.unit, pytest.mark.load]
 
 
-TARGET = "src/lambda/shared/layers/core/python/load_contracts.py"
+TARGET = "src/lambda/layers/load/contracts/python/load_contracts.py"
 VALID_KEY = "market/prices/interval=1d/data_source=yahoo/year=2025/month=09/day=10/layer=adjusted/part-001.parquet"
 VALID_CORRELATION_ID = "550e8400-e29b-41d4-a716-446655440000"
 

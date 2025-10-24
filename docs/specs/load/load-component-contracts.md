@@ -1,9 +1,9 @@
 # Load Component Contracts (Pull Model)
 
-| 항목      | 내용                                                                                                             |
-| --------- | ---------------------------------------------------------------------------------------------------------------- |
-| 목적      | Load Event Publisher Lambda, SQS 메시지 계약, 온프레미스 로더 요구사항 명세                                      |
-| 코드 기준 | `src/lambda/functions/load_event_publisher/handler.py`, `src/lambda/shared/layers/core/python/load_contracts.py` |
+| 항목      | 내용                                                                                                                |
+| --------- | ------------------------------------------------------------------------------------------------------------------- |
+| 목적      | Load Event Publisher Lambda, SQS 메시지 계약, 온프레미스 로더 요구사항 명세                                         |
+| 코드 기준 | `src/lambda/functions/load_event_publisher/handler.py`, `src/lambda/layers/load/contracts/python/load_contracts.py` |
 
 ### SQS 메시지 본문 계약
 

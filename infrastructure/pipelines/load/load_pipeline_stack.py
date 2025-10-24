@@ -124,7 +124,7 @@ class LoadPipelineStack(Stack):
         return lambda_.LayerVersion(
             self,
             "LoadContractsLayer",
-            code=lambda_.Code.from_asset("src/lambda/shared/layers/core"),
+            code=lambda_.Code.from_asset("src/lambda/layers/load/contracts"),
             compatible_runtimes=[lambda_.Runtime.PYTHON_3_12],
             description="Shared load pipeline contracts",
         )
