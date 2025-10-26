@@ -121,7 +121,7 @@ ______________________________________________________________________
 | `infrastructure/constructs/`          | Storage/Orchestrator/Security 패턴을 위한 재사용 CDK constructs |
 | `infrastructure/core/`                | IAM, 스토리지, 모니터링 기반을 제공하는 공유 스택               |
 | `infrastructure/pipelines/`           | 도메인별 ingestion/processing 스택 (도메인당 디렉토리)          |
-| `src/lambda/layers/`                  | 공용/도메인별 Lambda Layer (common, data/<domain>/…)            |
+| `src/lambda/layers/`                  | 공용/도메인별 Lambda Layer (common, data/<domain>/, load)       |
 | `src/lambda/functions/`               | 핵심 파이프라인 Lambda(Orchestrator/Worker/Preflight/Load)      |
 | `src/glue/jobs/`                      | RAW→Curated/지표 계산을 수행하는 Glue ETL 스크립트              |
 | `src/step_functions/`                 | sfn 기반 워크플로 정의                                          |
@@ -158,8 +158,7 @@ ______________________________________________________________________
    ```bash
    pip install -r requirements.txt
    pip install -r src/lambda/layers/common/requirements.txt
-   pip install -r src/lambda/layers/data/market/dependencies/requirements.txt  # 선택: 도메인 서드파티 레이어용
-   pip install -r src/lambda/functions/data_ingestion/requirements.txt
+   pip install -r src/lambda/layers/data/market/dependencies/requirements.txt  # Domain Third-Party layer
    ```
 1. **CDK 의존성 설치**
    ```bash
