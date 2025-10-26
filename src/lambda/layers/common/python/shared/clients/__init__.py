@@ -1,12 +1,10 @@
 """Shared external data source clients.
 
-This package hosts lightweight client facades used by Lambda functions.
-Keep implementations dependency-light; optional third-party deps should be
-imported lazily and handled gracefully when absent.
+This package hosts lightweight client facades shared across domains.
+Domain-specific clients reside in their respective data layers to avoid
+cross-domain coupling.
 """
 
 from __future__ import annotations
 
-__all__ = [
-    "market_data",
-]
+__all__: list[str] = []

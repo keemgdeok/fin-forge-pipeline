@@ -1,43 +1,46 @@
-"""Standard validation rules factory (canonical path)."""
+"""Validation rule provider registry."""
 
 from __future__ import annotations
 
-from typing import Any, Dict
+from typing import Any, Dict, Protocol
 
 
-class StandardValidationRules:
-    @staticmethod
-    def get_validation_rules_by_domain(domain: str, table_name: str) -> Dict[str, Any]:
-        key = f"{domain.lower()}/{table_name.lower()}"
-        presets: Dict[str, Dict[str, Any]] = {
-            "customer/transactions": {
-                "required_columns": [
-                    "transaction_id",
-                    "customer_id",
-                    "amount",
-                    "timestamp",
-                ],
-                "non_null": ["transaction_id", "customer_id", "amount"],
-                "dtypes": {
-                    "transaction_id": "str",
-                    "customer_id": "str",
-                    "amount": "float",
-                },
-                "ranges": {"amount": {"min": 0}},
-                "allow_duplicates": False,
-            },
-            "market/prices": {
-                "required_columns": ["symbol", "date", "close"],
-                "non_null": ["symbol", "date", "close"],
-                "dtypes": {"symbol": "str", "date": "date", "close": "float"},
-                "allow_duplicates": False,
-            },
-        }
-        default_rules: Dict[str, Any] = {
+class ValidationRuleProvider(Protocol):
+    """Protocol representing configurable validation rule providers."""
+
+    def get_validation_rules(self, *, domain: str, table_name: str) -> Dict[str, Any]:
+        ...
+
+
+class _DefaultValidationRuleProvider:
+    def get_validation_rules(self, *, domain: str, table_name: str) -> Dict[str, Any]:  # noqa: D401
+        return {
             "required_columns": [],
             "non_null": [],
             "dtypes": {},
             "ranges": {},
             "allow_duplicates": True,
         }
-        return presets.get(key, default_rules)
+
+
+_provider: ValidationRuleProvider = _DefaultValidationRuleProvider()
+
+
+def register_validation_rule_provider(provider: ValidationRuleProvider) -> None:
+    """Register the active validation rule provider."""
+
+    global _provider
+    _provider = provider
+
+
+def get_validation_rule_provider() -> ValidationRuleProvider:
+    """Return the currently registered validation rule provider."""
+
+    return _provider
+
+
+class StandardValidationRules:
+    @staticmethod
+    def get_validation_rules_by_domain(domain: str, table_name: str) -> Dict[str, Any]:
+        provider = get_validation_rule_provider()
+        return provider.get_validation_rules(domain=domain, table_name=table_name)
