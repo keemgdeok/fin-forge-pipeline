@@ -57,10 +57,10 @@ def ensure_localstack_available(config: LocalStackConfig | None = None) -> None:
 
 
 def ensure_load_contracts_path() -> None:
-    layer_root = Path(__file__).resolve().parents[3] / "src" / "lambda" / "shared" / "layers" / "core" / "python"
+    layer_root = Path(__file__).resolve().parents[3] / "src" / "lambda" / "layers" / "load" / "contracts" / "python"
     layer_str = str(layer_root)
     if layer_str not in sys.path:
-        sys.path.append(layer_str)
+        sys.path.insert(0, layer_str)
 
 
 def patch_boto3(monkeypatch: pytest.MonkeyPatch, config: LocalStackConfig) -> None:

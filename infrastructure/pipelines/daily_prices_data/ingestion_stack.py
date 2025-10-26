@@ -47,6 +47,9 @@ class DailyPricesDataIngestionStack(Stack):
         # Common layer for shared code
         self.common_layer = self._create_common_layer()
 
+        # Market domain layer for pipeline-specific code
+        self.market_domain_layer = self._create_market_domain_layer()
+
         # Market data dependency layer (e.g., yfinance/pandas)
         self.market_data_dependencies_layer = self._create_market_data_dependencies_layer()
 
@@ -100,7 +103,7 @@ class DailyPricesDataIngestionStack(Stack):
             timeout=timeout,
             log_retention=self._log_retention(),
             role=iam.Role.from_role_arn(self, "IngestionWorkerRole", self.lambda_execution_role_arn),
-            layers=[self.common_layer, self.market_data_dependencies_layer],
+            layers=[self.common_layer, self.market_domain_layer, self.market_data_dependencies_layer],
             environment={
                 "ENVIRONMENT": self.env_name,
                 "RAW_BUCKET": self.shared_storage.raw_bucket.bucket_name,
@@ -388,6 +391,29 @@ class DailyPricesDataIngestionStack(Stack):
             entry="src/lambda/layers/common",
             layer_version_name=f"{self.env_name}-common-layer",
             description="Shared common models and utilities",
+            compatible_runtimes=[lambda_.Runtime.PYTHON_3_12],
+            bundling=BundlingOptions(
+                command=[
+                    "bash",
+                    "-c",
+                    "set -euxo pipefail; "
+                    "mkdir -p /asset-output/python; "
+                    "cp -R /asset-input/python/. /asset-output/python/; "
+                    "if [ -f requirements.txt ]; then pip install -q -r requirements.txt -t /asset-output/python; fi",
+                ],
+                asset_excludes=["tests", "__pycache__", "*.pyc"],
+            ),
+        )
+
+    def _create_market_domain_layer(self) -> lambda_.LayerVersion:
+        """Create market domain layer bundling ingestion services and providers."""
+
+        return PythonLayerVersion(
+            self,
+            "MarketDomainLayer",
+            entry="src/lambda/layers/data/market",
+            layer_version_name=f"{self.env_name}-market-domain-layer",
+            description="Market domain shared logic (ingestion, validation)",
             compatible_runtimes=[lambda_.Runtime.PYTHON_3_12],
             bundling=BundlingOptions(
                 command=[

@@ -24,6 +24,10 @@ _shared_path = _repo_root / "src" / "lambda" / "layers" / "common" / "python"
 _shared_str = str(_shared_path)
 if _shared_str not in sys.path:
     sys.path.insert(0, _shared_str)
+_market_path = _repo_root / "src" / "lambda" / "layers" / "data" / "market" / "python"
+_market_str = str(_market_path)
+if _market_str not in sys.path:
+    sys.path.insert(0, _market_str)
 
 
 @pytest.fixture(autouse=True)
@@ -62,6 +66,10 @@ def pythonpath() -> Iterator[None]:
     shared_str = str(shared_path)
     if shared_str not in sys.path:
         sys.path.insert(0, shared_str)
+    market_path = repo_root / "src" / "lambda" / "layers" / "data" / "market" / "python"
+    market_str = str(market_path)
+    if market_str not in sys.path:
+        sys.path.insert(0, market_str)
     yield
 
 
@@ -349,12 +357,12 @@ def yf_stub(monkeypatch):
 
         # Safely import and patch YahooFinanceClient
         try:
-            from shared.clients.market_data import YahooFinanceClient
+            from market_shared.clients import YahooFinanceClient
         except ImportError:
             import sys
 
-            sys.path.insert(0, "src/lambda/layers/common/python")
-            from shared.clients.market_data import YahooFinanceClient
+            sys.path.insert(0, "src/lambda/layers/data/market/python")
+            from market_shared.clients import YahooFinanceClient
 
         monkeypatch.setattr(YahooFinanceClient, "fetch_prices", mock_fetch_prices)
 
