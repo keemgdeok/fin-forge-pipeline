@@ -39,7 +39,7 @@ exclude = "(?x)(^src/lambda/layers/[^/]+/python/.*$)"
 branch = true
 omit = [
   # Optional external provider client; behavior validated via higher-level tests
-  "src/lambda/layers/common/python/shared/clients/market_data.py",
+  "src/lambda/layers/data/market/python/market_shared/clients/market_data.py",
   # Glue ETL jobs run in AWS Glue runtime; exclude from local coverage
   "src/glue/jobs/*",
   # Glue support libraries are exercised in AWS Glue context; exclude from load-focused coverage
