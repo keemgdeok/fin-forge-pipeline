@@ -1,10 +1,10 @@
 # Raw Data Schema — Data Contract
 
-| 항목      | 값                                                                   |
-| --------- | -------------------------------------------------------------------- |
-| 목적      | Ingestion Worker가 생성하는 RAW S3 객체의 경로 및 레코드 스키마 정의 |
-| 코드 기준 | `src/lambda/layers/common/python/shared/ingestion/service.py`        |
-| 소비자    | Transform/Compaction Glue Jobs, Preflight Lambda                     |
+| 항목      | 값                                                                        |
+| --------- | ------------------------------------------------------------------------- |
+| 목적      | Ingestion Worker가 생성하는 RAW S3 객체의 경로 및 레코드 스키마 정의      |
+| 코드 기준 | `src/lambda/layers/data/market/python/market_shared/ingestion/service.py` |
+| 소비자    | Transform/Compaction Glue Jobs, Preflight Lambda                          |
 
 ### S3 경로 구조
 
