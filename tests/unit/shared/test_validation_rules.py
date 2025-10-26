@@ -1,3 +1,5 @@
+import market_shared  # noqa: F401  # Ensure provider registration
+
 from shared.validation.validation_rules import StandardValidationRules
 
 

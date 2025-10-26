@@ -47,8 +47,11 @@ class DailyPricesDataIngestionStack(Stack):
         # Common layer for shared code
         self.common_layer = self._create_common_layer()
 
+        # Market domain layer for pipeline-specific code
+        self.market_domain_layer = self._create_market_domain_layer()
+
         # Market data dependency layer (e.g., yfinance/pandas)
-        self.market_data_deps_layer = self._create_market_data_deps_layer()
+        self.market_data_dependencies_layer = self._create_market_data_dependencies_layer()
 
         # Queues for fan-out processing
         self.dlq, self.queue = self._create_queues()
@@ -100,7 +103,7 @@ class DailyPricesDataIngestionStack(Stack):
             timeout=timeout,
             log_retention=self._log_retention(),
             role=iam.Role.from_role_arn(self, "IngestionWorkerRole", self.lambda_execution_role_arn),
-            layers=[self.common_layer, self.market_data_deps_layer],
+            layers=[self.common_layer, self.market_domain_layer, self.market_data_dependencies_layer],
             environment={
                 "ENVIRONMENT": self.env_name,
                 "RAW_BUCKET": self.shared_storage.raw_bucket.bucket_name,
@@ -402,7 +405,30 @@ class DailyPricesDataIngestionStack(Stack):
             ),
         )
 
-    def _create_market_data_deps_layer(self) -> lambda_.LayerVersion:
+    def _create_market_domain_layer(self) -> lambda_.LayerVersion:
+        """Create market domain layer bundling ingestion services and providers."""
+
+        return PythonLayerVersion(
+            self,
+            "MarketDomainLayer",
+            entry="src/lambda/layers/data/market",
+            layer_version_name=f"{self.env_name}-market-domain-layer",
+            description="Market domain shared logic (ingestion, validation)",
+            compatible_runtimes=[lambda_.Runtime.PYTHON_3_12],
+            bundling=BundlingOptions(
+                command=[
+                    "bash",
+                    "-c",
+                    "set -euxo pipefail; "
+                    "mkdir -p /asset-output/python; "
+                    "cp -R /asset-input/python/. /asset-output/python/; "
+                    "if [ -f requirements.txt ]; then pip install -q -r requirements.txt -t /asset-output/python; fi",
+                ],
+                asset_excludes=["tests", "__pycache__", "*.pyc"],
+            ),
+        )
+
+    def _create_market_data_dependencies_layer(self) -> lambda_.LayerVersion:
         """Create a dedicated layer for market data third-party dependencies.
 
         Best practice: keep heavy deps (yfinance/pandas/numpy) in a separate layer
@@ -410,11 +436,11 @@ class DailyPricesDataIngestionStack(Stack):
         """
         return lambda_.LayerVersion(
             self,
-            "MarketDataDepsLayer",
-            layer_version_name=f"{self.env_name}-market-data-deps",
-            description="Third-party deps for market data (yfinance, pandas, etc.)",
+            "MarketDataDependenciesLayer",
+            layer_version_name=f"{self.env_name}-market-data-dependencies",
+            description="Third-party dependencies for market data (yfinance, pandas, etc.)",
             compatible_runtimes=[lambda_.Runtime.PYTHON_3_12],
-            code=lambda_.Code.from_asset("src/lambda/layers/market_data_deps"),
+            code=lambda_.Code.from_asset("src/lambda/layers/data/market/dependencies"),
         )
 
     def _default_ingestion_event(self) -> dict:

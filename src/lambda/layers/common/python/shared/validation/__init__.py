@@ -5,4 +5,17 @@ Canonical import path:
 """
 
 from .data_validator import DataValidator  # noqa: F401
-from .validation_rules import StandardValidationRules  # noqa: F401
+from .validation_rules import (  # noqa: F401
+    StandardValidationRules,
+    ValidationRuleProvider,
+    get_validation_rule_provider,
+    register_validation_rule_provider,
+)
+
+__all__ = [
+    "DataValidator",
+    "StandardValidationRules",
+    "ValidationRuleProvider",
+    "get_validation_rule_provider",
+    "register_validation_rule_provider",
+]

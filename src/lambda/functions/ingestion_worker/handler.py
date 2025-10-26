@@ -23,7 +23,7 @@ from shared.ingestion.manifests import (
     load_chunk_summaries as _load_chunk_summaries,
     persist_chunk_summary as _persist_chunk_summary,
 )
-from shared.ingestion.service import process_event
+from market_shared.ingestion.service import process_event
 from shared.utils.logger import get_logger, extract_correlation_id
 
 

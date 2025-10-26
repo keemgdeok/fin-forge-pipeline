@@ -13,8 +13,8 @@ def stub_yahoo_finance(
     days: int = 20,
 ) -> None:
     """시장 데이터 클라이언트를 고정 응답으로 스텁 처리한다."""
-    from shared.clients import market_data
-    from shared.ingestion import service as ingestion_service
+    from market_shared.clients import PriceRecord
+    from market_shared.ingestion import service as ingestion_service
 
     class _StaticYahooClient:
         def fetch_prices(
@@ -22,14 +22,14 @@ def stub_yahoo_finance(
             symbols: Iterable[str],
             period: str,
             interval: str,
-        ) -> List["market_data.PriceRecord"]:
+        ) -> List[PriceRecord]:
             now = datetime(2025, 9, 7, tzinfo=timezone.utc)
-            results: List["market_data.PriceRecord"] = []
+            results: List[PriceRecord] = []
             for day_offset in range(days):
                 ts = now - timedelta(days=day_offset)
                 for idx, symbol in enumerate(symbols):
                     results.append(
-                        market_data.PriceRecord(
+                        PriceRecord(
                             symbol=symbol,
                             timestamp=ts,
                             close=price + idx,
@@ -42,5 +42,5 @@ def stub_yahoo_finance(
                     )
             return results
 
-    monkeypatch.setattr(market_data, "YahooFinanceClient", _StaticYahooClient)
+    monkeypatch.setattr("market_shared.clients.YahooFinanceClient", _StaticYahooClient)
     monkeypatch.setattr(ingestion_service, "YahooFinanceClient", _StaticYahooClient)

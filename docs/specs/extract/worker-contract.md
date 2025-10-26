@@ -1,9 +1,9 @@
 # Worker Lambda — Data Contracts
 
-| 항목      | 값                                                                                                                |
-| --------- | ----------------------------------------------------------------------------------------------------------------- |
-| 목적      | Ingestion Worker Lambda의 입력/출력 데이터 구조와 산출물 명세                                                     |
-| 코드 기준 | `src/lambda/functions/ingestion_worker/handler.py`, `src/lambda/layers/common/python/shared/ingestion/service.py` |
+| 항목      | 값                                                                                                                            |
+| --------- | ----------------------------------------------------------------------------------------------------------------------------- |
+| 목적      | Ingestion Worker Lambda의 입력/출력 데이터 구조와 산출물 명세                                                                 |
+| 코드 기준 | `src/lambda/functions/ingestion_worker/handler.py`, `src/lambda/layers/data/market/python/market_shared/ingestion/service.py` |
 
 ### 입력: SQS 메시지 본문
 

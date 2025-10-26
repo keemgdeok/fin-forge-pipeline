@@ -5,7 +5,7 @@ exclude_dirs:
   - venv
   - node_modules
   - cdk.out
-  - src/lambda/layers/market_data_deps/python
+  - src/lambda/layers/data/market/dependencies/python
   - tests/
 skips: []
 targets:
