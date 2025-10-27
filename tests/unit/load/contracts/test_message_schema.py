@@ -1,4 +1,3 @@
-import os
 import pytest
 from typing import Any, Dict
 
@@ -28,10 +27,6 @@ def _payload(**overrides: Any) -> Dict[str, Any]:
     }
     base.update(overrides)
     return base
-
-
-if not os.path.exists(TARGET):
-    pytest.skip("Load contracts module not yet implemented", allow_module_level=True)
 
 
 def test_valid_message_schema(load_module) -> None:
