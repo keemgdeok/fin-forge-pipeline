@@ -124,14 +124,6 @@ load_pipeline_stack = LoadPipelineStack(
     env=cdk_env,
 )
 
-# TODO: Add more domain pipelines
-# - ProductAnalyticsIngestionStack
-# - ProductAnalyticsProcessingStack
-# - OrderProcessingIngestionStack
-# - OrderProcessingProcessingStack
-# - FinanceReportingIngestionStack
-# - FinanceReportingProcessingStack
-
 # ========================================
 # STACK DEPENDENCIES
 # ========================================
