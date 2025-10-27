@@ -437,7 +437,10 @@ def compute_indicators_pandas(pdf: pd.DataFrame) -> pd.DataFrame:
         if candidate in pdf.columns:
             vwap_col = pd.to_numeric(pdf[candidate], errors="coerce")
             break
-    result["vwap_d"] = vwap_col
+    if isinstance(vwap_col, pd.Series):
+        result["vwap_d"] = pd.to_numeric(vwap_col, errors="coerce")
+    else:
+        result["vwap_d"] = np.nan
 
     avg_volume_20 = volume.rolling(window=20, min_periods=20).mean()
     result["rvol_20"] = volume / avg_volume_20.replace(0.0, np.nan)
@@ -455,8 +458,7 @@ def compute_indicators_pandas(pdf: pd.DataFrame) -> pd.DataFrame:
     result["beta_60"] = beta_60
     result["corr_mkt_60"] = corr_60
 
-    vwap_default = result["vwap_d"].fillna(np.nan)
-    result["vwap_d"] = vwap_default
+    result["vwap_d"] = result["vwap_d"].astype(float, copy=False)
 
     violation_masks: Dict[str, pd.Series] = {}
 
