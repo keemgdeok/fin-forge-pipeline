@@ -229,4 +229,9 @@ pytest tests/integration
 pytest tests/integration
 pytest tests/e2e
 ./scripts/localstack/stop_localstack.sh
+
+# Spark 통합 테스트 (PySpark 컨테이너 필요)
+./scripts/spark/run_tests.sh pytest tests/integration/transform/test_indicators_etl_local_spark.py
+# 테스트 후 이미지 제거(선택)
+./scripts/spark/clean.sh
 ```
