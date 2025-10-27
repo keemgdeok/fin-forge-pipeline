@@ -3,7 +3,7 @@ from __future__ import annotations
 import hashlib
 import json
 import sys
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Tuple
 
 import boto3  # type: ignore
@@ -251,7 +251,7 @@ ds_str = str(args["ds"]).strip()
 lookback_days = int(args.get("lookback_days", "252"))
 ds_dt = datetime.strptime(ds_str, "%Y-%m-%d").date()
 start_dt = ds_dt - timedelta(days=max(lookback_days - 1, 0))
-now_utc = datetime.utcnow()
+now_utc = datetime.now(timezone.utc)
 batch_id_value = int(abs(now_utc.timestamp()) * 1_000_000)
 created_at_value = now_utc
 updated_at_value = now_utc

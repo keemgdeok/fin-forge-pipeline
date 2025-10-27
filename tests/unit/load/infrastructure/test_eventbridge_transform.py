@@ -1,4 +1,3 @@
-import os
 import pytest
 from typing import Any, Dict
 
@@ -9,10 +8,6 @@ pytestmark = [pytest.mark.unit, pytest.mark.infrastructure, pytest.mark.load]
 
 
 TARGET = "src/lambda/layers/load/contracts/python/load_contracts.py"
-
-
-if not os.path.exists(TARGET):
-    pytest.skip("Load contracts module not yet implemented", allow_module_level=True)
 
 
 def test_event_transform_to_sqs_message(load_module) -> None:
