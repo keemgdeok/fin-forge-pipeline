@@ -215,21 +215,29 @@ ruff format src tests
 
 # 정적 타입 검사
 mypy src
+```
 
+```bash
 # pre-commit hook(설치 및 전체 실행)
 pip install pre-commit && pre-commit install
 pre-commit run --all-files
+```
 
+```bash
 # 단위/통합/e2e 테스트 실행
 pytest tests/unit
 pytest tests/integration
+```
 
+```bash
 # LocalStack 기반 통합/E2E 실행 (사전 Docker 필요)
 ./scripts/localstack/start_localstack.sh
 pytest tests/integration
 pytest tests/e2e
 ./scripts/localstack/stop_localstack.sh
+```
 
+```bash
 # Spark 통합 테스트 (PySpark 컨테이너 필요)
 ./scripts/spark/run_tests.sh pytest tests/integration/transform/test_indicators_etl_local_spark.py
 # 테스트 후 이미지 제거(선택)
