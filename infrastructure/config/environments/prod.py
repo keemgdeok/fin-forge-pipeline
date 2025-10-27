@@ -22,7 +22,7 @@ prod_config = {
     "enable_point_in_time_recovery": True,
     # Ingestion defaults (conservative by default; adjust to production needs)
     "ingestion_symbols": ["AAPL", "MSFT", "GOOG", "AMZN"],
-    "ingestion_period": "6mo",
+    "ingestion_period": "1mo",
     "ingestion_interval": "1d",
     "ingestion_file_format": "json",
     "ingestion_trigger_type": "schedule",
