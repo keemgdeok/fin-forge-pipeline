@@ -44,6 +44,11 @@ def _make_series(n: int = 260) -> pd.DataFrame:
 
 
 def test_sma_bollinger_obv_basic() -> None:
+    """
+    Given: 단조 증가 종가 시계열
+    When: compute_indicators_pandas 실행
+    Then: SMA/Bollinger/OBV 값이 계산식과 일치
+    """
     pdf = _make_series()
     out = compute_indicators_pandas(pdf)
     last_row = out.iloc[-1]
@@ -69,6 +74,11 @@ def test_sma_bollinger_obv_basic() -> None:
 
 
 def test_macd_signal_histogram_consistency() -> None:
+    """
+    Given: 동일 입력 데이터프레임
+    When: MACD/Signal/Histogram 계산
+    Then: macd_hist == macd - signal
+    """
     pdf = _make_series()
     out = compute_indicators_pandas(pdf)
     macd = out["macd_12_26"].iloc[-1]
@@ -78,6 +88,11 @@ def test_macd_signal_histogram_consistency() -> None:
 
 
 def test_stochastic_rsi_ranges_and_nans() -> None:
+    """
+    Given: 최소 기간 충족 시계열
+    When: RSI와 Stochastic K/D 계산
+    Then: 유효 구간 0~100, 초기 행 NaN
+    """
     pdf = _make_series()
     out = compute_indicators_pandas(pdf)
 
@@ -96,6 +111,11 @@ def test_stochastic_rsi_ranges_and_nans() -> None:
 
 
 def test_quality_score_and_validation() -> None:
+    """
+    Given: 지표 출력 데이터프레임
+    When: 마지막 행 품질 필드 확인
+    Then: is_validated 1, quality_score 100
+    """
     pdf = _make_series()
     out = compute_indicators_pandas(pdf)
     tail = out.iloc[-1]
@@ -104,6 +124,11 @@ def test_quality_score_and_validation() -> None:
 
 
 def test_expected_columns_present() -> None:
+    """
+    Given: 지표 계산 결과
+    When: 컬럼 목록 비교
+    Then: 예상된 컬럼 모두 존재
+    """
     pdf = _make_series()
     out = compute_indicators_pandas(pdf)
     expected_columns = {
@@ -130,6 +155,11 @@ def test_expected_columns_present() -> None:
 
 
 def test_ichimoku_is_non_negative() -> None:
+    """
+    Given: Ichimoku 지표 계산 결과
+    When: 마지막 행 Ichimoku 컬럼 검증
+    Then: NaN 제외 값은 0 이상
+    """
     pdf = _make_series()
     out = compute_indicators_pandas(pdf)
     tail = out.iloc[-1]

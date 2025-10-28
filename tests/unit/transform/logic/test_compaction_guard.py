@@ -21,6 +21,11 @@ def _load_guard_module() -> ModuleType:
 
 
 def test_guard_detects_compacted_output(monkeypatch):
+    """
+    Given: S3 KeyCount 3인 compaction 파티션
+    When: compaction_guard lambda_handler 호출
+    Then: shouldProcess True, objectCount 3
+    """
     guard = _load_guard_module()
     client = MagicMock()
     client.list_objects_v2.return_value = {"KeyCount": 3}
@@ -43,6 +48,11 @@ def test_guard_detects_compacted_output(monkeypatch):
 
 
 def test_guard_handles_empty_output(monkeypatch):
+    """
+    Given: 대상 프리픽스 KeyCount 0
+    When: compaction_guard lambda_handler 실행
+    Then: shouldProcess False, objectCount 0
+    """
     guard = _load_guard_module()
     client = MagicMock()
     client.list_objects_v2.return_value = {"KeyCount": 0}
@@ -64,6 +74,11 @@ def test_guard_handles_empty_output(monkeypatch):
 
 
 def test_guard_requires_bucket_and_ds(monkeypatch):
+    """
+    Given: bucket 또는 ds 누락 이벤트
+    When: compaction_guard lambda_handler 실행
+    Then: ValueError 발생
+    """
     guard = _load_guard_module()
     client = MagicMock()
     client.list_objects_v2.return_value = {"KeyCount": 1}
@@ -88,6 +103,11 @@ def test_guard_requires_bucket_and_ds(monkeypatch):
 
 
 def test_guard_surfaces_s3_errors():
+    """
+    Given: S3 list_objects_v2 AccessDenied
+    When: compaction_guard 파티션 검사
+    Then: RuntimeError 래핑 후 전파
+    """
     guard = _load_guard_module()
     client = MagicMock()
     error = ClientError({"Error": {"Code": "AccessDenied", "Message": "Denied"}}, "ListObjectsV2")

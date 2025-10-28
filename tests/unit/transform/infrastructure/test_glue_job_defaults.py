@@ -50,6 +50,11 @@ def _find_transform_job(template: Template) -> dict:
 
 
 def test_glue_job_defaults_and_schema_fingerprint_path(monkeypatch) -> None:
+    """
+    Given: 기본 DailyPricesDataProcessingStack 구성
+    When: Glue Job 리소스 조회
+    Then: 타임아웃/재시도/기본 인자와 스키마 경로 모두 기대값
+    """
     app = App()
     cfg = _base_config()
 
@@ -111,6 +116,11 @@ def test_glue_job_defaults_and_schema_fingerprint_path(monkeypatch) -> None:
 
 
 def test_glue_job_includes_shared_package_via_extra_py_files(monkeypatch) -> None:
+    """
+    Given: 공유 패키지 참조 설정된 프로세싱 스택
+    When: Glue Job 기본 인자 확인
+    Then: --extra-py-files 인자 포함
+    """
     app = App()
     cfg = _base_config()
 
@@ -136,6 +146,11 @@ def test_glue_job_includes_shared_package_via_extra_py_files(monkeypatch) -> Non
 
 
 def test_processing_stack_creates_stream_trigger_when_enabled(monkeypatch) -> None:
+    """
+    Given: processing_orchestration_mode=dynamodb_stream 구성
+    When: 스택 합성
+    Then: 배치 트래커 스트림 EventSourceMapping 생성
+    """
     app = App()
     cfg = _base_config()
     cfg["processing_orchestration_mode"] = "dynamodb_stream"

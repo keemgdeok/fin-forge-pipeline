@@ -29,6 +29,11 @@ class _Boto:
 def test_missing_required_fields_returns_pre_validation_failed(
     monkeypatch,
 ) -> None:
+    """
+    Given: 필수 필드가 비어 있는 이벤트와 필수 버킷 env 설정
+    When: preflight lambda_handler 검증 실행
+    Then: proceed False, PRE_VALIDATION_FAILED 코드
+    """
     mod = _load_module()
     os.environ["ENVIRONMENT"] = "dev"
     os.environ["RAW_BUCKET"] = "raw-bucket-dev"
@@ -46,6 +51,11 @@ def test_missing_required_fields_returns_pre_validation_failed(
 def test_missing_date_segments_in_key_returns_pre_validation_failed(
     monkeypatch,
 ) -> None:
+    """
+    Given: 날짜 파티션 경로가 없는 source_key
+    When: preflight lambda_handler 검증 실행
+    Then: PRE_VALIDATION_FAILED 코드
+    """
     mod = _load_module()
     os.environ["ENVIRONMENT"] = "dev"
     os.environ["RAW_BUCKET"] = "raw-bucket-dev"
@@ -68,6 +78,11 @@ def test_missing_date_segments_in_key_returns_pre_validation_failed(
 
 
 def test_missing_bucket_env_returns_pre_validation_failed(monkeypatch) -> None:
+    """
+    Given: RAW/CURATED/ARTIFACTS env 미설정
+    When: 유효한 이벤트로 preflight 호출
+    Then: proceed False, PRE_VALIDATION_FAILED 코드
+    """
     mod = _load_module()
     # Intentionally do not set bucket envs
     os.environ.pop("RAW_BUCKET", None)
@@ -91,6 +106,11 @@ def test_missing_bucket_env_returns_pre_validation_failed(monkeypatch) -> None:
 
 
 def test_idempotent_skip_returns_expected_code_and_ds(monkeypatch) -> None:
+    """
+    Given: 대상 파티션이 이미 curated에 존재
+    When: preflight lambda_handler 호출
+    Then: proceed False, ds 유지, IDEMPOTENT_SKIP 코드
+    """
     mod = _load_module()
     os.environ["ENVIRONMENT"] = "dev"
     os.environ["RAW_BUCKET"] = "raw-bucket-dev"
@@ -115,6 +135,11 @@ def test_idempotent_skip_returns_expected_code_and_ds(monkeypatch) -> None:
 
 
 def test_valid_builds_glue_args_with_schema_path(monkeypatch) -> None:
+    """
+    Given: 정상 파티션 키와 필수 버킷 env
+    When: preflight lambda_handler 검증 통과
+    Then: proceed True, schema_fingerprint_s3_uri 최신 경로
+    """
     mod = _load_module()
     os.environ["ENVIRONMENT"] = "dev"
     os.environ["RAW_BUCKET"] = "raw-bucket-dev"
@@ -139,6 +164,11 @@ def test_valid_builds_glue_args_with_schema_path(monkeypatch) -> None:
 
 
 def test_valid_includes_threshold_args(monkeypatch) -> None:
+    """
+    Given: 커스텀 임계값 env 값
+    When: preflight lambda_handler Glue 인자 생성
+    Then: expected_min_records, max_critical_error_rate 지정 값 유지
+    """
     mod = _load_module()
     os.environ["ENVIRONMENT"] = "dev"
     os.environ["RAW_BUCKET"] = "raw-bucket-dev"
