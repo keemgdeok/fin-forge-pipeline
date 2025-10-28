@@ -113,11 +113,11 @@ def _extract_map_states(map_state: Dict[str, Any]) -> Dict[str, Any]:
 
 
 @pytest.mark.integration
-def test_manifest_map_sequential_configuration() -> None:
+def test_manifest_map_configuration_matches_config() -> None:
     """
     Given: 기본 환경 설정으로 합성한 DailyPrices 처리 스택
     When: 상태 머신 정의를 분석
-    Then: manifest Map 상태가 순차 처리와 필수 태스크 구성을 유지
+    Then: manifest Map 상태가 환경 설정의 MaxConcurrency와 필수 태스크 구성을 유지
     """
 
     processing_stack = _build_processing_stack()
@@ -126,11 +126,11 @@ def test_manifest_map_sequential_configuration() -> None:
     # When: 합성된 상태 머신 정의를 로드할 때
     definition = _load_state_machine_definition(template)
 
-    # Then: Map 상태가 순차 처리 구성을 유지해야 함
+    # Then: Map 상태가 설정된 동시성 값과 구성 요소를 유지해야 함
     map_state = definition["States"]["ProcessManifestList"]
     assert map_state["Type"] == "Map"
     assert map_state["ItemsPath"] == "$.manifest_keys"
-    assert map_state["MaxConcurrency"] == dev_config["sfn_max_concurrency"]  # defaults to 1
+    assert map_state["MaxConcurrency"] == dev_config["sfn_max_concurrency"]
 
     states = _extract_map_states(map_state)
     assert "PreflightDailyPrices" in states, "PreflightDailyPrices 상태가 정의되지 않았습니다."
