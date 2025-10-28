@@ -66,7 +66,11 @@ def test_fanout_resources(fake_python_function) -> None:
 
 
 def test_symbol_universe_deployment(fake_python_function) -> None:
-    """Symbol universe asset should be deployed via BucketDeployment when configured."""
+    """
+    Given: 팬아웃 스택 설정에 심볼 유니버스 에셋 옵션 제공
+    When: 스택을 합성하면
+    Then: BucketDeployment 커스텀 리소스가 에셋 배포
+    """
 
     app = App()
     cfg = {
