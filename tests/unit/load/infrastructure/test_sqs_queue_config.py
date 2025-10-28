@@ -14,13 +14,15 @@ pytestmark = [pytest.mark.unit, pytest.mark.infrastructure, pytest.mark.load]
 
 @mock_aws
 def test_queue_naming_and_redrive_policy(make_load_queues) -> None:
+    """
+    Given: 로드 도메인 큐와 DLQ를 생성
+    When: 큐 이름과 속성을 조회
+    Then: 네이밍 규칙과 redrive 정책이 스펙과 일치
+    """
     env = "dev"
     domain = "market"
     main_url, dlq_url = make_load_queues(env, domain)
 
-    # Given: Load용 메인 큐와 DLQ가 생성되고
-    # When: 큐 이름 및 속성을 조회하면
-    # Then: 스펙의 네이밍 규칙과 redrive 설정을 만족해야 한다
     # Assert queue names follow the spec
     expected = build_queue_names(env=env, domain=domain)
 
