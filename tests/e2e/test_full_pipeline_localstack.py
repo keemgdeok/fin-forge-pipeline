@@ -54,73 +54,19 @@ def _build_workflow_input(
     }
 
 
-def _materialize_precomputed_outputs(
-    config: LocalStackConfig,
-    ingestion: IngestionContext,
-    *,
-    curated_layer: str,
-    indicator_layer: str,
-) -> None:
-    """경량 모드에서 Step Functions 실행 대신 필요한 산출물을 직접 작성한다."""
-    s3 = config.client("s3")
-    for manifest_key in ingestion.manifest_keys:
-        ds = localstack_ops.parse_manifest_ds(manifest_key)
-        base_prefix = (
-            f"{ingestion.domain}/{ingestion.table_name}/"
-            f"interval={ingestion.interval}/data_source={ingestion.data_source}/"
-            f"year={ds[0:4]}/month={ds[5:7]}/day={ds[8:10]}"
-        )
-        curated_prefix = f"{base_prefix}/layer={curated_layer}"
-        parquet_key = f"{curated_prefix}/part-{ds.replace('-', '')}.parquet"
-        summary_key = f"{curated_prefix}/dataset.json"
-        indicator_prefix = f"{base_prefix}/layer={indicator_layer}"
-        indicator_key = f"{indicator_prefix}/indicators.json"
-
-        s3.put_object(
-            Bucket=ingestion.curated_bucket,
-            Key=parquet_key,
-            Body=b"X" * 2048,
-            ContentType="application/octet-stream",
-        )
-        summary_payload = {
-            "domain": ingestion.domain,
-            "table_name": ingestion.table_name,
-            "ds": ds,
-            "interval": ingestion.interval,
-            "data_source": ingestion.data_source,
-            "records": 1,
-        }
-        s3.put_object(
-            Bucket=ingestion.curated_bucket,
-            Key=summary_key,
-            Body=json.dumps(summary_payload).encode("utf-8"),
-            ContentType="application/json",
-        )
-        indicator_payload = summary_payload | {"layer": indicator_layer}
-        s3.put_object(
-            Bucket=ingestion.curated_bucket,
-            Key=indicator_key,
-            Body=json.dumps(indicator_payload).encode("utf-8"),
-            ContentType="application/json",
-        )
-
-    schema_key = f"{ingestion.domain}/{ingestion.table_name}/_schema/latest.json"
-    schema_payload = {"hash": "precomputed", "columns": ["symbol", "price", "timestamp"]}
-    s3.put_object(
-        Bucket=ingestion.artifacts_bucket,
-        Key=schema_key,
-        Body=json.dumps(schema_payload).encode("utf-8"),
-        ContentType="application/json",
-    )
-
-
 @pytest.mark.e2e
 def test_full_pipeline_end_to_end_with_localstack(
     monkeypatch: pytest.MonkeyPatch,
     localstack_config: LocalStackConfig,
     transform_workflow: WorkflowDeployment,
 ) -> None:
-    """LocalStack에서 Step Functions와 Lambda를 포함한 데이터 파이프라인을 검증합니다."""
+    """
+    Given: LocalStack 환경과 인제스트/트랜스폼 파이프라인이 준비됨
+    When: 전체 파이프라인을 실행하고 Load 이벤트까지 처리
+    Then: 상태 머신이 성공하고 S3/SQS 산출물이 예상대로 생성되어야 함
+    """
+    if PIPELINE_LIGHT_MODE:
+        pytest.skip("PIPELINE_LIGHT_MODE 활성화 시 실제 워크플로우가 실행되지 않습니다")
     config = localstack_config
     ensure_load_contracts_path()
     stub_yahoo_finance(monkeypatch, days=EXPECTED_MANIFEST_COUNT)
@@ -143,40 +89,39 @@ def test_full_pipeline_end_to_end_with_localstack(
         manifest_days=EXPECTED_MANIFEST_COUNT,
     )
 
-    if PIPELINE_LIGHT_MODE:
-        _materialize_precomputed_outputs(
-            config,
-            ingestion,
-            curated_layer="adjusted",
-            indicator_layer=indicator_layer,
-        )
-        history: list[dict[str, Any]] = []
-    else:
-        workflow_input = _build_workflow_input(
-            ingestion,
-            ingestion.manifest_keys,
-            compacted_layer="compacted",
-            curated_layer="adjusted",
-            indicator_layer=indicator_layer,
-        )
+    workflow_input = _build_workflow_input(
+        ingestion,
+        ingestion.manifest_keys,
+        compacted_layer="compacted",
+        curated_layer="adjusted",
+        indicator_layer=indicator_layer,
+    )
 
-        execution_arn = start_state_machine_execution(config, transform_workflow.state_machine_arn, workflow_input)
-        execution_result = wait_for_execution(config, execution_arn)
-        history = collect_execution_history(config, execution_arn)
+    execution_arn = start_state_machine_execution(config, transform_workflow.state_machine_arn, workflow_input)
+    execution_result = wait_for_execution(config, execution_arn)
+    history = collect_execution_history(config, execution_arn)
 
-        if execution_result.get("status") != "SUCCEEDED":
-            details = collect_failure_events(history)
-            pytest.fail(f"State machine execution failed: {execution_result.get('status')}\n{details}")
+    if execution_result.get("status") != "SUCCEEDED":
+        details = collect_failure_events(history)
+        pytest.fail(f"State machine execution failed: {execution_result.get('status')}\n{details}")
 
-        preflight_entries = [
-            event
-            for event in history
-            if event.get("type") == "TaskStateEntered"
-            and event.get("stateEnteredEventDetails", {}).get("name") == "Preflight"
-        ]
-        assert len(preflight_entries) == EXPECTED_MANIFEST_COUNT, (
-            f"Expected {EXPECTED_MANIFEST_COUNT} Preflight invocations, found {len(preflight_entries)}"
-        )
+    preflight_entries = [
+        event
+        for event in history
+        if event.get("type") == "TaskStateEntered"
+        and event.get("stateEnteredEventDetails", {}).get("name") == "Preflight"
+    ]
+    assert len(preflight_entries) == EXPECTED_MANIFEST_COUNT, (
+        f"Expected {EXPECTED_MANIFEST_COUNT} Preflight invocations, found {len(preflight_entries)}"
+    )
+
+    indicator_entries = [
+        event
+        for event in history
+        if event.get("type") == "TaskStateEntered"
+        and event.get("stateEnteredEventDetails", {}).get("name") == "Indicators"
+    ]
+    assert indicator_entries, "Indicators 단계가 실행되어야 합니다"
 
     first_manifest = ingestion.manifest_keys[0]
     first_ds = localstack_ops.parse_manifest_ds(first_manifest)
@@ -186,8 +131,18 @@ def test_full_pipeline_end_to_end_with_localstack(
     assert parquet_candidates, "Expected at least one curated parquet object"
     curated_object_key = parquet_candidates[0]
 
-    head_resp = config.client("s3").head_object(Bucket=ingestion.curated_bucket, Key=curated_object_key)
+    s3_client = config.client("s3")
+    head_resp = s3_client.head_object(Bucket=ingestion.curated_bucket, Key=curated_object_key)
     curated_size = int(head_resp["ContentLength"])
+
+    curated_prefix = curated_object_key.rsplit("/", 1)[0]
+    summary_key = f"{curated_prefix}/dataset.json"
+    summary_resp = s3_client.get_object(Bucket=ingestion.curated_bucket, Key=summary_key)
+    summary_payload = json.loads(summary_resp["Body"].read().decode("utf-8"))
+    assert summary_payload["domain"] == domain
+    assert summary_payload["table_name"] == table_name
+    assert summary_payload["ds"] == first_ds
+    assert summary_payload["records"] >= 1
 
     load_event = {
         "source": "aws.s3",
@@ -218,6 +173,9 @@ def test_full_pipeline_end_to_end_with_localstack(
     assert message_body["domain"] == domain
     assert message_body["table_name"] == table_name
     assert message_body["layer"] == "adjusted"
+    assert message_body["bucket"] == ingestion.curated_bucket
+    assert message_body["key"] == curated_object_key
+    assert message_body["file_size"] == curated_size
 
     attributes = first_message.get("MessageAttributes", {})
     assert attributes.get("Priority", {}).get("StringValue") == "1"
@@ -226,10 +184,19 @@ def test_full_pipeline_end_to_end_with_localstack(
     localstack_ops.delete_messages(config, ingestion.load_queue_url, load_messages)
 
     artifacts_keys = localstack_ops.list_objects(config, ingestion.artifacts_bucket, f"{domain}/{table_name}/")
-    assert any(key.endswith("_schema/latest.json") for key in artifacts_keys)
+    latest_schema = next((key for key in artifacts_keys if key.endswith("_schema/latest.json")), None)
+    assert latest_schema, "Schema latest.json should exist"
+    schema_obj = s3_client.get_object(Bucket=ingestion.artifacts_bucket, Key=latest_schema)
+    schema_payload = json.loads(schema_obj["Body"].read().decode("utf-8"))
+    assert "columns" in schema_payload
+    assert schema_payload.get("hash")
+
     indicator_prefix = (
         f"{domain}/{table_name}/interval={interval}/data_source={data_source}/"
         f"year={first_ds[0:4]}/month={first_ds[5:7]}/day={first_ds[8:10]}/layer={indicator_layer}/"
     )
     indicator_objects = localstack_ops.list_objects(config, ingestion.curated_bucket, indicator_prefix)
     assert indicator_objects, "Indicator layer should contain output files"
+    indicator_obj = s3_client.get_object(Bucket=ingestion.curated_bucket, Key=indicator_objects[0])
+    indicator_payload = json.loads(indicator_obj["Body"].read().decode("utf-8"))
+    assert indicator_payload["layer"] == indicator_layer

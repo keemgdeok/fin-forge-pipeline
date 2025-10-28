@@ -46,6 +46,7 @@ def lambda_handler(event: Dict[str, Any], _context: Any) -> Dict[str, Any]:
         "table_name": table,
         "interval": interval,
         "data_source": data_source,
+        "layer": indicator_layer,
     }
     s3.put_object(
         Bucket=curated_bucket,
