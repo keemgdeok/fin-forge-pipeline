@@ -5,8 +5,8 @@ from tests.fixtures.clients import S3Stub, BotoStub
 def test_validate_file_type_allowed(monkeypatch) -> None:
     """
     Given: S3 head 성공 스텁과 허용된 파일 타입(csv)
-    When: 종합 검증을 수행하면
-    Then: overall_valid가 True여야 함
+    When: 종합 검증 실행
+    Then: overall_valid True
     """
     # Patch boto3 in module to avoid real AWS calls
     monkeypatch.setitem(dv.__dict__, "boto3", BotoStub(s3=S3Stub(head_ok=True)))
@@ -25,8 +25,8 @@ def test_validate_file_type_allowed(monkeypatch) -> None:
 def test_validate_file_type_rejected(monkeypatch) -> None:
     """
     Given: S3 head 성공 스텁과 허용되지 않은 파일 타입(xlsx)
-    When: 종합 검증을 수행하면
-    Then: overall_valid가 False이고 InvalidFileType 오류가 포함되어야 함
+    When: 종합 검증 실행
+    Then: overall_valid False, InvalidFileType 포함
     """
     monkeypatch.setitem(dv.__dict__, "boto3", BotoStub(s3=S3Stub(head_ok=True)))
     validator = dv.DataValidator()
@@ -45,8 +45,8 @@ def test_validate_file_type_rejected(monkeypatch) -> None:
 def test_validate_s3_head_failure(monkeypatch) -> None:
     """
     Given: S3 head 404 실패 스텁과 허용된 파일 타입(csv)
-    When: 종합 검증을 수행하면
-    Then: overall_valid가 False이고 S3AccessError 오류가 포함되어야 함
+    When: 종합 검증 실행
+    Then: overall_valid False, S3AccessError 포함
     """
     monkeypatch.setitem(dv.__dict__, "boto3", BotoStub(s3=S3Stub(head_ok=False)))
     validator = dv.DataValidator()

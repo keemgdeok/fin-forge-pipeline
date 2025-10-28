@@ -14,6 +14,11 @@ from shared.ingestion.manifests import (
 
 @mock_aws
 def test_collect_manifest_entries_prefers_tracker_manifest_keys() -> None:
+    """
+    Given: 배치 트래커에 manifest_keys가 저장된 상태
+    When: collect_manifest_entries 호출
+    Then: 트래커 manifest가 우선 반환
+    """
     raw_bucket = "test-manifest-bucket"
     s3 = boto3.client("s3", region_name="us-east-1")
     s3.create_bucket(Bucket=raw_bucket)
@@ -57,6 +62,11 @@ def test_collect_manifest_entries_prefers_tracker_manifest_keys() -> None:
 
 @mock_aws
 def test_collect_manifest_entries_falls_back_to_chunk_summaries() -> None:
+    """
+    Given: 트래커에 키가 없고 청크 요약만 존재
+    When: collect_manifest_entries 호출
+    Then: 청크 요약 기반 manifest가 반환
+    """
     raw_bucket = "test-manifest-bucket"
     s3 = boto3.client("s3", region_name="us-east-1")
     s3.create_bucket(Bucket=raw_bucket)
