@@ -3,7 +3,7 @@ set -euo pipefail
 
 # Run transform Spark tests inside the PySpark container.
 # Usage:
-#   ./scripts/spark/run_tests.sh                       # default test target
+#   ./scripts/spark/run_tests.sh                       # default Spark tests (runs with --runslow)
 #   ./scripts/spark/run_tests.sh pytest tests/integration/transform -m integration
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -16,10 +16,19 @@ if ! docker image inspect "${IMAGE_TAG}" >/dev/null 2>&1; then
   "${SCRIPT_DIR}/build.sh"
 fi
 
+# Ensure Spark-specific defaults propagate into the container.
+export RUN_SPARK_TESTS="${RUN_SPARK_TESTS:-1}"
+export AWS_DEFAULT_REGION="${AWS_DEFAULT_REGION:-us-east-1}"
+
 if [[ $# -gt 0 ]]; then
   CMD=("$@")
 else
-  CMD=("pytest" "tests/integration/transform/test_etl_data_quality.py")
+  CMD=(
+    "pytest"
+    "--runslow"
+    "tests/integration/transform/test_etl_data_quality.py"
+    "tests/integration/transform/test_indicators_etl_local_spark.py"
+  )
 fi
 
 DOCKER_FLAGS=(--rm -i)

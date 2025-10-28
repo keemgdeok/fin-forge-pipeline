@@ -227,13 +227,11 @@ pytest tests/integration
 
 # LocalStack 기반 통합/E2E 실행 (사전 Docker 필요)
 ./scripts/localstack/start_localstack.sh
-pytest tests/integration
-pytest tests/e2e
+pytest --runslow tests/integration
+pytest --runslow tests/e2e
 ./scripts/localstack/stop_localstack.sh
 
 # Spark 통합 테스트 (PySpark 컨테이너 필요)
-./scripts/spark/run_tests.sh \
-pytest tests/integration/transform/test_indicators_etl_local_spark.py
-# 테스트 후 이미지 제거(선택)
-./scripts/spark/clean.sh
+./scripts/spark/run_tests.sh
+./scripts/spark/clean.sh    # 이미지 제거
 ```
