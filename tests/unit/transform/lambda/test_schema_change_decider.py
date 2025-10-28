@@ -30,6 +30,11 @@ def _event(bucket: str, key: str, policy: str | None = None) -> Dict:
 
 @mock_aws
 def test_policy_never_returns_false(monkeypatch: pytest.MonkeyPatch) -> None:
+    """
+    Given: catalog_update=never 이벤트
+    When: schema_change_decider lambda_handler 실행
+    Then: shouldRunCrawler False
+    """
     lambda_handler = import_module("src.lambda.functions.schema_change_decider.handler").lambda_handler
 
     s3 = boto3.client("s3", region_name="us-east-1")
@@ -44,6 +49,11 @@ def test_policy_never_returns_false(monkeypatch: pytest.MonkeyPatch) -> None:
 
 @mock_aws
 def test_policy_force_returns_true(monkeypatch: pytest.MonkeyPatch) -> None:
+    """
+    Given: catalog_update=force 이벤트
+    When: schema_change_decider lambda_handler 실행
+    Then: shouldRunCrawler True
+    """
     lambda_handler = import_module("src.lambda.functions.schema_change_decider.handler").lambda_handler
 
     s3 = boto3.client("s3", region_name="us-east-1")
@@ -58,6 +68,11 @@ def test_policy_force_returns_true(monkeypatch: pytest.MonkeyPatch) -> None:
 
 @mock_aws
 def test_on_schema_change_no_latest_returns_true(monkeypatch: pytest.MonkeyPatch) -> None:
+    """
+    Given: latest.json 부재, catalog_update=on_schema_change
+    When: schema_change_decider 최신 스키마 조회
+    Then: shouldRunCrawler True
+    """
     lambda_handler = import_module("src.lambda.functions.schema_change_decider.handler").lambda_handler
 
     s3 = boto3.client("s3", region_name="us-east-1")
@@ -72,6 +87,11 @@ def test_on_schema_change_no_latest_returns_true(monkeypatch: pytest.MonkeyPatch
 
 @mock_aws
 def test_on_schema_change_equal_hash_returns_false(monkeypatch: pytest.MonkeyPatch) -> None:
+    """
+    Given: latest/previous 해시 동일, catalog_update=on_schema_change
+    When: schema_change_decider 비교
+    Then: shouldRunCrawler False
+    """
     lambda_handler = import_module("src.lambda.functions.schema_change_decider.handler").lambda_handler
 
     s3 = boto3.client("s3", region_name="us-east-1")
@@ -93,6 +113,11 @@ def test_on_schema_change_equal_hash_returns_false(monkeypatch: pytest.MonkeyPat
 
 @mock_aws
 def test_on_schema_change_diff_hash_returns_true(monkeypatch: pytest.MonkeyPatch) -> None:
+    """
+    Given: latest/previous 해시 다름, catalog_update=on_schema_change
+    When: schema_change_decider 비교
+    Then: shouldRunCrawler True
+    """
     lambda_handler = import_module("src.lambda.functions.schema_change_decider.handler").lambda_handler
 
     s3 = boto3.client("s3", region_name="us-east-1")

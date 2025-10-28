@@ -33,6 +33,11 @@ def _set_pipeline_env(monkeypatch: pytest.MonkeyPatch, *, raw: str, curated: str
 
 @mock_aws
 def test_date_range_expands_items_with_idempotency_and_glue_args(monkeypatch: pytest.MonkeyPatch) -> None:
+    """
+    Given: 3일 date_range와 일부 기존 curated 파티션
+    When: preflight lambda_handler 날짜 확장
+    Then: 신규 날짜는 Glue 인자 포함, 기존 날짜는 IDEMPOTENT_SKIP
+    """
     lambda_handler = import_module("src.lambda.functions.preflight.handler").lambda_handler
 
     s3 = boto3.client("s3", region_name="us-east-1")
@@ -100,6 +105,11 @@ def test_date_range_expands_items_with_idempotency_and_glue_args(monkeypatch: py
 
 @mock_aws
 def test_date_range_respects_max_backfill_days(monkeypatch: pytest.MonkeyPatch) -> None:
+    """
+    Given: MAX_BACKFILL_DAYS=2, 5일 date_range 이벤트
+    When: preflight lambda_handler 날짜 확장
+    Then: 반환된 날짜 수 2일로 제한
+    """
     lambda_handler = import_module("src.lambda.functions.preflight.handler").lambda_handler
 
     s3 = boto3.client("s3", region_name="us-east-1")

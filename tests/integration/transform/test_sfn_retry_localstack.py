@@ -26,6 +26,8 @@ import boto3
 import pytest
 from botocore.exceptions import BotoCoreError, ClientError, EndpointConnectionError
 
+pytestmark = pytest.mark.slow
+
 # LocalStack 접속 기본값(환경 변수로 재정의 가능)
 LOCALSTACK_ENDPOINT = os.environ.get("LOCALSTACK_ENDPOINT", "http://localhost:4566")
 LOCALSTACK_REGION = os.environ.get("AWS_DEFAULT_REGION", "us-east-1")
@@ -258,7 +260,11 @@ def retry_environment() -> Iterable[RetryTestEnvironment]:
 @pytest.mark.integration
 @pytest.mark.localstack
 def test_retry_eventually_succeeds(retry_environment: RetryTestEnvironment) -> None:
-    """재시도 허용 횟수 이내에서 성공으로 전환되는지 검증합니다."""
+    """
+    Given: 최대 두 번까지 실패하도록 구성된 상태 머신
+    When: 실행 완료까지 대기
+    Then: 세 번째 시도에서 성공하고 TaskFailed 이벤트가 두 번만 기록됨
+    """
     # Given: 최대 실패 횟수가 2인 입력으로 상태 머신 실행
     stepfunctions = _client("stepfunctions")
 
@@ -292,7 +298,11 @@ def test_retry_eventually_succeeds(retry_environment: RetryTestEnvironment) -> N
 @pytest.mark.integration
 @pytest.mark.localstack
 def test_retry_hits_max_attempts_and_fails(retry_environment: RetryTestEnvironment) -> None:
-    """재시도 한도를 초과했을 때 실행이 실패로 종료되는지 검증합니다."""
+    """
+    Given: 허용 실패 횟수가 재시도 한도를 초과하도록 설정된 상태 머신
+    When: 실행 완료까지 대기
+    Then: 재시도 예산이 모두 소진되고 ExecutionFailed 이벤트가 발생
+    """
     # Given: 최대 실패 횟수가 5인 입력으로 상태 머신 실행
     stepfunctions = _client("stepfunctions")
 
@@ -323,7 +333,11 @@ def test_retry_hits_max_attempts_and_fails(retry_environment: RetryTestEnvironme
 @pytest.mark.integration
 @pytest.mark.localstack
 def test_manifest_map_processes_all_entries_once() -> None:
-    """Map 상태가 각 manifest를 재시도 없이 한 번씩 처리하는지 검증합니다."""
+    """
+    Given: 10개의 manifest 항목과 순차 실행으로 구성된 상태 머신
+    When: Map 상태 실행이 완료될 때까지 대기
+    Then: 각 manifest가 정확히 한 번씩 성공하고 추가 실패가 없어야 함
+    """
     _ensure_localstack()
     stepfunctions = _client("stepfunctions")
 

@@ -43,6 +43,11 @@ def _load_module(
 
 
 def test_main_publishes_message_for_valid_event(monkeypatch: pytest.MonkeyPatch) -> None:
+    """
+    Given: 도메인 큐 매핑과 유효한 S3 객체 이벤트
+    When: load_event_publisher main 실행
+    Then: 메시지가 큐로 전송되고 우선순위가 설정됨
+    """
     queue_url = "https://sqs.us-east-1.amazonaws.com/123456789012/dev-market-load-queue"
     module, fake_sqs = _load_module(
         monkeypatch,
@@ -72,6 +77,11 @@ def test_main_publishes_message_for_valid_event(monkeypatch: pytest.MonkeyPatch)
 
 
 def test_main_skips_when_below_size_threshold(monkeypatch: pytest.MonkeyPatch) -> None:
+    """
+    Given: 파일 크기가 임계값보다 작은 이벤트
+    When: load_event_publisher main 실행
+    Then: 상태가 SKIPPED이고 메시지 전송이 없음
+    """
     module, fake_sqs = _load_module(
         monkeypatch,
         queue_map={"market": "https://example.com/queue"},
@@ -93,6 +103,11 @@ def test_main_skips_when_below_size_threshold(monkeypatch: pytest.MonkeyPatch) -
 
 
 def test_main_skips_on_validation_error(monkeypatch: pytest.MonkeyPatch) -> None:
+    """
+    Given: 포맷이 잘못된 키를 가진 이벤트
+    When: load_event_publisher main 실행
+    Then: 상태가 SKIPPED이고 메시지 전송이 없음
+    """
     module, fake_sqs = _load_module(
         monkeypatch,
         queue_map={"market": "https://example.com/queue"},

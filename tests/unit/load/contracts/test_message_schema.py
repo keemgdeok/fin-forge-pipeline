@@ -30,14 +30,16 @@ def _payload(**overrides: Any) -> Dict[str, Any]:
 
 
 def test_valid_message_schema(load_module) -> None:
+    """
+    Given: 유효한 LoadMessage 필드 세트
+    When: LoadMessage 인스턴스를 생성
+    Then: 속성이 기대값과 일치
+    """
     mod: Dict[str, Any] = load_module(TARGET)
     LoadMessage = mod["LoadMessage"]
 
-    # Given: 유효한 LoadMessage 필드값 세트가 있고
     msg = LoadMessage(**_payload(file_size=1048576, presigned_url="https://example.com/presigned"))
 
-    # When: LoadMessage 인스턴스를 생성하면
-    # Then: 각 속성이 기대값과 정확히 일치한다
     assert msg.bucket == "data-pipeline-curated-dev"
     assert msg.domain == "market"
     assert msg.table_name == "prices"
@@ -50,13 +52,15 @@ def test_valid_message_schema(load_module) -> None:
 
 
 def test_invalid_date_segment(load_module) -> None:
+    """
+    Given: 날짜 세그먼트가 잘못된 입력
+    When: LoadMessage를 생성
+    Then: ValidationError 발생
+    """
     mod: Dict[str, Any] = load_module(TARGET)
     LoadMessage = mod["LoadMessage"]
     ValidationError = mod.get("ValidationError")
 
-    # Given: 날짜 세그먼트가 잘못된 입력이 있고
-    # When: LoadMessage를 생성하면
-    # Then: ValidationError가 발생한다
     with pytest.raises(ValidationError or Exception):  # type: ignore[arg-type]
         LoadMessage(
             **_payload(
@@ -70,22 +74,28 @@ def test_invalid_date_segment(load_module) -> None:
 
 
 def test_correlation_id_uuid_v4(load_module) -> None:
+    """
+    Given: UUID v4 형식이 아닌 correlation_id
+    When: LoadMessage 생성 시도
+    Then: ValidationError 발생
+    """
     mod: Dict[str, Any] = load_module(TARGET)
     LoadMessage = mod["LoadMessage"]
     ValidationError = mod.get("ValidationError")
 
-    # Given: UUID v4 형식이 아닌 correlation_id가 주어지고
-    # When: LoadMessage를 생성하려고 하면
-    # Then: ValidationError가 발생한다
     with pytest.raises(ValidationError or Exception):  # type: ignore[arg-type]
         LoadMessage(**_payload(bucket="b", correlation_id="not-a-uuid"))
 
 
 def test_message_allows_missing_data_source(load_module) -> None:
+    """
+    Given: data_source 파티션이 없는 키
+    When: LoadMessage를 생성
+    Then: data_source가 None이고 dict에서 제외됨
+    """
     mod: Dict[str, Any] = load_module(TARGET)
     LoadMessage = mod["LoadMessage"]
 
-    # Given: data_source 파티션이 없는 키가 있고
     msg = LoadMessage(
         **_payload(
             key="market/prices/interval=1d/year=2025/month=09/day=10/layer=adjusted/part-001.parquet",
@@ -93,12 +103,16 @@ def test_message_allows_missing_data_source(load_module) -> None:
         )
     )
 
-    # Then: data_source는 None으로 유지되고 dict에서도 제외된다
     assert msg.data_source is None
     assert "data_source" not in msg.to_dict()
 
 
 def test_presigned_url_must_be_https(load_module) -> None:
+    """
+    Given: presigned_url이 HTTPS로 설정된 메시지
+    When: 값을 HTTP로 변경해 검증
+    Then: ValidationError 발생
+    """
     mod: Dict[str, Any] = load_module(TARGET)
     LoadMessage = mod["LoadMessage"]
     ValidationError = mod.get("ValidationError")
@@ -112,13 +126,15 @@ def test_presigned_url_must_be_https(load_module) -> None:
 
 
 def test_invalid_bucket_and_table_formats(load_module) -> None:
+    """
+    Given: 버킷/도메인/테이블 포맷이 스펙을 위반
+    When: LoadMessage를 생성
+    Then: ValidationError 발생
+    """
     mod: Dict[str, Any] = load_module(TARGET)
     LoadMessage = mod["LoadMessage"]
     ValidationError = mod.get("ValidationError")
 
-    # Given: 버킷/도메인/테이블 포맷이 스펙을 위반하고
-    # When: LoadMessage를 생성하면
-    # Then: ValidationError가 발생한다
     with pytest.raises(ValidationError or Exception):  # type: ignore[arg-type]
         LoadMessage(
             **_payload(
@@ -132,25 +148,29 @@ def test_invalid_bucket_and_table_formats(load_module) -> None:
 
 
 def test_file_size_must_be_positive(load_module) -> None:
+    """
+    Given: file_size가 0으로 제공됨
+    When: LoadMessage 생성 시도
+    Then: ValidationError 발생
+    """
     mod: Dict[str, Any] = load_module(TARGET)
     LoadMessage = mod["LoadMessage"]
     ValidationError = mod.get("ValidationError")
 
-    # Given: file_size 값이 0으로 주어지고
-    # When: LoadMessage를 생성하려고 하면
-    # Then: ValidationError가 발생한다
     with pytest.raises(ValidationError or Exception):  # type: ignore[arg-type]
         LoadMessage(**_payload(file_size=0))
 
 
 def test_domain_and_partitions_must_match_key(load_module) -> None:
+    """
+    Given: S3 키와 입력 도메인이 불일치
+    When: LoadMessage를 생성
+    Then: ValidationError 발생
+    """
     mod: Dict[str, Any] = load_module(TARGET)
     LoadMessage = mod["LoadMessage"]
     ValidationError = mod.get("ValidationError")
 
-    # Given: S3 키와 입력된 도메인이 일치하지 않고
-    # When: LoadMessage를 생성하면
-    # Then: ValidationError가 발생한다
     with pytest.raises(ValidationError or Exception):  # type: ignore[arg-type]
         LoadMessage(**_payload(domain="daily-prices-data"))
 
@@ -169,6 +189,11 @@ def test_domain_and_partitions_must_match_key(load_module) -> None:
     ],
 )
 def test_attribute_mismatch_against_key(load_module, overrides: Dict[str, Any]) -> None:
+    """
+    Given: S3 키와 속성 값이 불일치
+    When: LoadMessage를 생성
+    Then: ValidationError 발생
+    """
     mod: Dict[str, Any] = load_module(TARGET)
     LoadMessage = mod["LoadMessage"]
     ValidationError = mod.get("ValidationError")
@@ -197,6 +222,11 @@ def test_attribute_mismatch_against_key(load_module, overrides: Dict[str, Any]) 
     ],
 )
 def test_validate_fields_rejects_invalid_values(load_module, field: str, value: Any) -> None:
+    """
+    Given: 필드 값이 허용 범위를 벗어남
+    When: LoadMessage 필드 검증 실행
+    Then: ValidationError 발생
+    """
     mod: Dict[str, Any] = load_module(TARGET)
     LoadMessage = mod["LoadMessage"]
     ValidationError = mod.get("ValidationError")

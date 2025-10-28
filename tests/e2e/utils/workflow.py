@@ -221,7 +221,7 @@ def build_state_machine_definition(lambda_arns: Mapping[str, str]) -> Dict[str, 
         "States": {
             "ProcessManifestList": {
                 "Type": "Map",
-                "MaxConcurrency": 1,
+                "MaxConcurrency": 3,
                 "ItemsPath": "$.manifest_items",
                 "Parameters": {
                     "manifest_key.$": "$$.Map.Item.Value.manifest_key",

@@ -113,21 +113,24 @@ def _extract_map_states(map_state: Dict[str, Any]) -> Dict[str, Any]:
 
 
 @pytest.mark.integration
-def test_manifest_map_sequential_configuration() -> None:
-    """기본 설정에서 Map 상태가 manifest를 순차 처리하는지 검증합니다."""
+def test_manifest_map_configuration_matches_config() -> None:
+    """
+    Given: 기본 환경 설정으로 합성한 DailyPrices 처리 스택
+    When: 상태 머신 정의를 분석
+    Then: manifest Map 상태가 환경 설정의 MaxConcurrency와 필수 태스크 구성을 유지
+    """
 
-    # Given: 기본 환경 설정으로 생성한 DailyPrices 처리 스택
     processing_stack = _build_processing_stack()
     template = Template.from_stack(processing_stack)
 
     # When: 합성된 상태 머신 정의를 로드할 때
     definition = _load_state_machine_definition(template)
 
-    # Then: Map 상태가 순차 처리 구성을 유지해야 함
+    # Then: Map 상태가 설정된 동시성 값과 구성 요소를 유지해야 함
     map_state = definition["States"]["ProcessManifestList"]
     assert map_state["Type"] == "Map"
     assert map_state["ItemsPath"] == "$.manifest_keys"
-    assert map_state["MaxConcurrency"] == dev_config["sfn_max_concurrency"]  # defaults to 1
+    assert map_state["MaxConcurrency"] == dev_config["sfn_max_concurrency"]
 
     states = _extract_map_states(map_state)
     assert "PreflightDailyPrices" in states, "PreflightDailyPrices 상태가 정의되지 않았습니다."
@@ -150,9 +153,12 @@ def test_manifest_map_sequential_configuration() -> None:
 
 @pytest.mark.integration
 def test_manifest_map_respects_overridden_concurrency() -> None:
-    """`sfn_max_concurrency`를 덮어썼을 때 정의에 반영되는지 검증합니다."""
+    """
+    Given: sfn_max_concurrency 값을 3으로 덮어쓴 구성
+    When: 합성된 상태 머신 정의를 확인
+    Then: Map 상태의 MaxConcurrency가 3으로 설정
+    """
 
-    # Given: `sfn_max_concurrency` 값을 3으로 설정한 상태 머신 정의
     processing_stack = _build_processing_stack({"sfn_max_concurrency": 3})
     template = Template.from_stack(processing_stack)
 

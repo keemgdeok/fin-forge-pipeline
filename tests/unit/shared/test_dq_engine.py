@@ -3,6 +3,11 @@ import pytest
 
 
 def test_empty_dataset_quarantine() -> None:
+    """
+    Given: 레코드가 0개인 메트릭
+    When: evaluate 실행
+    Then: ok False, action quarantine
+    """
     cfg = DQConfig(expected_min_records=10, max_critical_error_rate=5.0)
     metrics = DQMetrics(record_count=0)
     result = evaluate(metrics, cfg)
@@ -12,6 +17,11 @@ def test_empty_dataset_quarantine() -> None:
 
 
 def test_critical_rate_exceeds_threshold_quarantine() -> None:
+    """
+    Given: 임계 오류율이 한도를 초과한 메트릭
+    When: evaluate 실행
+    Then: ok False, action quarantine
+    """
     cfg = DQConfig(expected_min_records=50, max_critical_error_rate=5.0)
     metrics = DQMetrics(
         record_count=100,
@@ -29,6 +39,11 @@ def test_critical_rate_exceeds_threshold_quarantine() -> None:
 
 
 def test_within_threshold_proceed_with_warnings() -> None:
+    """
+    Given: 임계 오류율이 한도 이하인 메트릭
+    When: evaluate 실행
+    Then: ok True, action proceed, 경고 존재
+    """
     cfg = DQConfig(expected_min_records=50, max_critical_error_rate=5.0)
     metrics = DQMetrics(
         record_count=100,
@@ -47,6 +62,11 @@ def test_within_threshold_proceed_with_warnings() -> None:
 
 
 def test_low_record_count_is_warning_not_critical() -> None:
+    """
+    Given: 기대치보다 적은 레코드 수
+    When: evaluate 실행
+    Then: ok True, 경고만 추가
+    """
     cfg = DQConfig(expected_min_records=10, max_critical_error_rate=5.0)
     metrics = DQMetrics(record_count=9)
     result = evaluate(metrics, cfg)
@@ -68,6 +88,11 @@ def test_low_record_count_is_warning_not_critical() -> None:
 def test_threshold_boundaries(
     record_count: int, critical: int, total_expected_rate: float, expect_quarantine: bool
 ) -> None:
+    """
+    Given: 다양한 임계 오류율 조합
+    When: evaluate 실행
+    Then: 임계율에 따라 quarantine 여부가 예상과 일치
+    """
     cfg = DQConfig(expected_min_records=1, max_critical_error_rate=5.0)
     # Split critical into two sources to ensure summation behavior
     ns = critical // 2
@@ -83,6 +108,11 @@ def test_threshold_boundaries(
 
 
 def test_no_violations_returns_ok_message() -> None:
+    """
+    Given: 위반이 없는 메트릭
+    When: evaluate 실행
+    Then: ok True, 메시지 DQ OK
+    """
     cfg = DQConfig(expected_min_records=1, max_critical_error_rate=5.0)
     metrics = DQMetrics(record_count=10)
     result = evaluate(metrics, cfg)
@@ -94,6 +124,11 @@ def test_no_violations_returns_ok_message() -> None:
 
 
 def test_warning_sources_increment_only_warnings() -> None:
+    """
+    Given: 경고만 발생시키는 메트릭
+    When: evaluate 실행
+    Then: critical_violations 0, warning_violations 증가
+    """
     cfg = DQConfig(expected_min_records=50, max_critical_error_rate=5.0)
     metrics = DQMetrics(
         record_count=100,

@@ -9,13 +9,15 @@ TARGET = "src/lambda/layers/load/contracts/python/load_contracts.py"
 
 
 def test_loader_config_defaults(load_module) -> None:
+    """
+    Given: 최소 필수 입력만 제공
+    When: LoaderConfig를 생성
+    Then: 모든 기본값이 스펙과 일치
+    """
     mod: Dict[str, Any] = load_module(TARGET)
     LoaderConfig = mod["LoaderConfig"]
 
-    # Given: 최소 필수 입력으로 LoaderConfig를 생성하고
     cfg = LoaderConfig(queue_url="https://sqs.us-east-1.amazonaws.com/123456789012/dev-domain-load-queue")
-    # When: 기본 속성을 확인하면
-    # Then: 스펙에서 정의한 기본값을 따르는지 검증한다
     assert cfg.wait_time_seconds == 20
     assert cfg.max_messages == 10
     assert cfg.visibility_timeout == 1800
@@ -52,13 +54,15 @@ def test_loader_config_defaults(load_module) -> None:
     ],
 )
 def test_loader_config_validation(load_module, field: str, kwargs: Dict[str, Any]) -> None:
+    """
+    Given: 특정 필드가 허용 범위를 벗어남
+    When: LoaderConfig를 생성
+    Then: ValidationError 발생
+    """
     mod: Dict[str, Any] = load_module(TARGET)
     LoaderConfig = mod["LoaderConfig"]
     ValidationError = mod.get("ValidationError")
 
-    # Given: 각 필드를 스펙에 어긋나게 설정하고
-    # When: LoaderConfig를 생성하면
-    # Then: ValidationError가 발생한다
     base = {"queue_url": "https://sqs.us-east-1.amazonaws.com/123456789012/dev-domain-load-queue"}
     base.update(kwargs)
 
@@ -67,13 +71,15 @@ def test_loader_config_validation(load_module, field: str, kwargs: Dict[str, Any
 
 
 def test_loader_config_visibility_multiple(load_module) -> None:
+    """
+    Given: visibility_timeout과 query_timeout 조합이 스펙을 위반
+    When: LoaderConfig를 생성
+    Then: ValidationError 발생 후 유효한 값은 그대로 적용
+    """
     mod: Dict[str, Any] = load_module(TARGET)
     LoaderConfig = mod["LoaderConfig"]
     ValidationError = mod.get("ValidationError")
 
-    # Given: visibility_timeout이 최소 조건을 만족하지 않고
-    # When: LoaderConfig를 생성하면
-    # Then: ValidationError가 발생한다
     with pytest.raises(ValidationError or Exception):  # type: ignore[arg-type]
         LoaderConfig(
             queue_url="https://sqs.us-east-1.amazonaws.com/123456789012/dev-domain-load-queue",
@@ -81,9 +87,6 @@ def test_loader_config_visibility_multiple(load_module) -> None:
             visibility_timeout=1800,
         )
 
-    # Given: 유효한 가시성과 백오프 값을 제공하고
-    # When: LoaderConfig를 생성하면
-    # Then: backoff_seconds가 설정값 그대로 유지된다
     cfg = LoaderConfig(
         queue_url="https://sqs.us-east-1.amazonaws.com/123456789012/dev-domain-load-queue",
         query_timeout=200,

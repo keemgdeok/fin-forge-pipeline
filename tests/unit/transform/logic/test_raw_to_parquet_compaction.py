@@ -111,6 +111,11 @@ def _load_compaction_module() -> ModuleType:
 
 
 def test_compaction_writes_parquet(monkeypatch):
+    """
+    Given: raw 버킷에 대상 파티션 객체 존재, file_type=json
+    When: compaction.main 실행
+    Then: JSON 읽기, 단일 Parquet 저장, Job.commit 호출
+    """
     compaction = _load_compaction_module()
     args = _base_args()
 
@@ -145,6 +150,11 @@ def test_compaction_writes_parquet(monkeypatch):
 
 
 def test_compaction_skips_when_no_raw_objects(monkeypatch):
+    """
+    Given: list_objects_v2 KeyCount 0
+    When: compaction.main 실행
+    Then: 입력 미읽기, 저장 없음, Job.commit 1회
+    """
     compaction = _load_compaction_module()
     args = _base_args()
 
@@ -170,6 +180,11 @@ def test_compaction_skips_when_no_raw_objects(monkeypatch):
 
 
 def test_compaction_raises_for_unknown_file_type(monkeypatch):
+    """
+    Given: file_type=xml 작업 인자
+    When: compaction.main 실행
+    Then: ValueError 발생, Job.commit 미호출
+    """
     compaction = _load_compaction_module()
     args = _base_args(file_type="xml")
 

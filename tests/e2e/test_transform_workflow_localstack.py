@@ -42,7 +42,11 @@ def test_transform_state_machine_localstack(
     transform_workflow: WorkflowDeployment,
     manifest_count: int,
 ) -> None:
-    """Transform Step Functions 워크플로가 LocalStack에서 순차적으로 매니페스트를 처리하는지 검증합니다."""
+    """
+    Given: LocalStack에 Step Functions 워크플로와 인제스트 데이터가 준비됨
+    When: manifest 개수에 맞춰 상태 머신 실행
+    Then: 각 manifest에 대해 Preflight가 호출되고 Curated 산출물이 생성되어야 함
+    """
     config = localstack_config
     stub_yahoo_finance(monkeypatch, days=manifest_count)
 

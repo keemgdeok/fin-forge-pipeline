@@ -100,6 +100,11 @@ def _env(monkeypatch) -> None:
 
 
 def test_stream_record_starts_execution(monkeypatch) -> None:
+    """
+    Given: 상태가 complete로 전환된 DynamoDB 스트림 레코드
+    When: batch_completion_trigger main 호출
+    Then: Step Functions 실행, processed 1
+    """
     fake_table = FakeDynamoTable()
     fake_resource = FakeDynamoResource(fake_table)
     fake_sfn = FakeStepFunctionsClient()
@@ -138,6 +143,11 @@ def test_stream_record_starts_execution(monkeypatch) -> None:
 
 
 def test_skip_when_lock_already_exists(monkeypatch) -> None:
+    """
+    Given: ConditionalCheckFailedException을 유발하는 스트림 레코드
+    When: batch_completion_trigger 처리
+    Then: Step Functions 미호출, processed 0
+    """
     fake_table = FakeDynamoTable(fail_lock=True)
     fake_resource = FakeDynamoResource(fake_table)
     fake_sfn = FakeStepFunctionsClient()
@@ -166,6 +176,11 @@ def test_skip_when_lock_already_exists(monkeypatch) -> None:
 
 
 def test_step_functions_failure_marks_batch_failure(monkeypatch) -> None:
+    """
+    Given: Step Functions start_execution 실패를 유발하는 스트림 레코드
+    When: batch_completion_trigger 처리
+    Then: batchItemFailures에 레코드 ID, DynamoDB 업데이트 롤백
+    """
     fake_table = FakeDynamoTable()
     fake_resource = FakeDynamoResource(fake_table)
     fake_sfn = FakeStepFunctionsClient(should_fail=True)
