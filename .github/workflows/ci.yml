@@ -117,3 +117,130 @@ jobs:
           AWS_DEFAULT_REGION: us-east-1
         run: |
           pytest tests -v
+
+  heavy-integration:
+    name: Heavy integration (main)
+    needs: tests
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    # Run LocalStack + Spark heavy suites only on main to keep PR feedback fast.
+    timeout-minutes: 45
+    env:
+      PY_VERSION: '3.12'
+      AWS_DEFAULT_REGION: us-east-1
+      AWS_ACCESS_KEY_ID: test
+      AWS_SECRET_ACCESS_KEY: test
+      AWS_SESSION_TOKEN: test
+      LOCALSTACK_ENDPOINT: http://localhost:4566
+      LOCALSTACK_INTERNAL_ENDPOINT: http://localhost:4566
+      LOCALSTACK_ACCOUNT_ID: '000000000000'
+      PIPELINE_LIGHT_MODE: '0'
+      E2E_PIPELINE_LIGHT_MODE: '0'
+      RUN_SPARK_TESTS: '1'
+      PYTEST_ADDOPTS: "-vv --maxfail=1"
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python ${{ env.PY_VERSION }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PY_VERSION }}
+
+      - name: Restore cached virtualenv
+        id: heavy-venv-cache
+        uses: actions/cache@v4
+        with:
+          path: .venv
+          key: venv-${{ runner.os }}-${{ env.PY_VERSION }}-${{ hashFiles('requirements.txt') }}
+
+      - name: Install Python dependencies
+        if: ${{ steps.heavy-venv-cache.outputs.cache-hit != 'true' }}
+        shell: bash
+        run: |
+          python -m venv .venv
+          source .venv/bin/activate
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Configure virtualenv
+        run: |
+          echo "VIRTUAL_ENV=$(pwd)/.venv" >> $GITHUB_ENV
+          echo "$(pwd)/.venv/bin" >> $GITHUB_PATH
+          echo "CDK_PYTHON=$(pwd)/.venv/bin/python" >> $GITHUB_ENV
+
+      - name: Set up Java (for PySpark)
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '11'
+
+      - name: Ensure helper scripts executable
+        run: |
+          chmod +x scripts/localstack/*.sh
+          chmod +x scripts/spark/*.sh
+
+      - name: Start LocalStack
+        run: |
+          ./scripts/localstack/start_localstack.sh
+
+      - name: Wait for LocalStack readiness
+        run: |
+          python - <<'PY'
+          import json
+          import time
+          import urllib.request
+
+          url = "http://localhost:4566/_localstack/health"
+          for attempt in range(30):
+              try:
+                  with urllib.request.urlopen(url, timeout=2) as resp:
+                      data = json.load(resp)
+                  if data.get("services", {}).get("stepfunctions") == "running":
+                      print("LocalStack ready")
+                      break
+                  print(f"Waiting for LocalStack: services={data.get('services')}")
+              except Exception as exc:
+                  print(f"LocalStack not ready ({exc}); retrying...")
+              time.sleep(5)
+          else:
+              raise SystemExit("LocalStack did not become ready in time")
+          PY
+
+      - name: Prepare artifacts directory
+        run: mkdir -p artifacts
+
+      - name: Run LocalStack slow tests
+        shell: bash
+        env:
+          PYTEST_ADDOPTS: "-vv --maxfail=1 --junitxml=artifacts/heavy_localstack.xml"
+        run: |
+          source .venv/bin/activate
+          pytest --runslow tests/integration/transform/test_sfn_retry_localstack.py tests/e2e/test_full_pipeline_localstack.py
+
+      - name: Build Spark test image
+        run: |
+          ./scripts/spark/build.sh
+
+      - name: Run Spark integration tests
+        env:
+          PYTEST_ADDOPTS: "--maxfail=1 -vv --junitxml=/workspace/artifacts/heavy_spark.xml"
+        run: |
+          ./scripts/spark/run_tests.sh
+
+      - name: Upload heavy test artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: heavy-test-artifacts
+          path: artifacts
+
+      - name: Docker status
+        if: always()
+        run: docker ps -a
+
+      - name: Stop LocalStack
+        if: always()
+        run: |
+          ./scripts/localstack/stop_localstack.sh
