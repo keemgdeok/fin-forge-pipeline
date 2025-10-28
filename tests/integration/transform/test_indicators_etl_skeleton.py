@@ -26,6 +26,11 @@ pytestmark = [
 
 @mock_aws
 def test_indicators_etl_skeleton() -> None:
+    """
+    Given: 예시용 curated 가격 데이터를 S3에 준비
+    When: Glue 작업에 전달할 인자를 구성
+    Then: 설정이 예상대로 구성되었음을 단순 검증
+    """
     s3 = boto3.client("s3", region_name="us-east-1")
 
     curated_bucket = "test-curated-bucket"

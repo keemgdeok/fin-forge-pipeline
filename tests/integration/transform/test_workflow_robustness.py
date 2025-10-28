@@ -32,7 +32,10 @@ try:
 except Exception:  # pragma: no cover - optional test deps
     pd = None  # type: ignore
 
-pytestmark = pytest.mark.skipif(pd is None, reason="pandas/pyarrow not available")
+pytestmark = [
+    pytest.mark.skipif(pd is None, reason="pandas/pyarrow not available"),
+    pytest.mark.slow,
+]
 
 
 @pytest.fixture

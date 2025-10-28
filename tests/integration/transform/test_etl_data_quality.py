@@ -12,6 +12,8 @@ from typing import Iterator, TYPE_CHECKING
 
 import pytest
 
+pytestmark = pytest.mark.slow
+
 
 @contextmanager
 def _spark_session(app_name: str, master: str = "local[1]") -> Iterator["SparkSession"]:

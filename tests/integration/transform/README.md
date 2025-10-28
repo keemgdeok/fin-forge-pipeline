@@ -47,6 +47,9 @@ pytest tests/integration/transform/test_workflow_robustness.py -v
 
 # End-to-End 파이프라인만 테스트
 pytest tests/integration/transform/test_end_to_end_pipeline.py -v
+
+# 느린(LocalStack/Spark 등) 통합 테스트까지 실행
+pytest tests/integration/transform/ -v --runslow
 ```
 
 ### 마커 기반 실행

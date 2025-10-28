@@ -37,7 +37,10 @@ os.environ.setdefault("PYSPARK_PYTHON", sys.executable)
 os.environ.setdefault("PYSPARK_DRIVER_PYTHON", sys.executable)
 
 
-pytestmark = pytest.mark.skipif(not RUN_LOCAL, reason="Set RUN_SPARK_TESTS=1 to run Spark-local test")
+pytestmark = [
+    pytest.mark.skipif(not RUN_LOCAL, reason="Set RUN_SPARK_TESTS=1 to run Spark-local test"),
+    pytest.mark.slow,
+]
 
 
 @contextmanager
@@ -113,6 +116,11 @@ def _stub_awsglue_modules() -> None:
 @pytest.mark.glue
 @mock_aws
 def test_indicators_etl_with_file_scheme() -> None:
+    """
+    Given: 로컬 file:// 기반 curared 입력과 Spark 실행 환경
+    When: market_indicators_etl 스크립트를 실행
+    Then: 기술 지표 Parquet과 최신 스키마 파일이 생성됨
+    """
     s3 = boto3.client("s3", region_name="us-east-1")
     artifacts_bucket = "test-artifacts-bucket"
     s3.create_bucket(Bucket=artifacts_bucket)
