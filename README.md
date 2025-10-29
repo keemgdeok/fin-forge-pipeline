@@ -105,7 +105,7 @@ ______________________________________________________________________
 | 🧩  | **Modularity**    | <ul><li>인프라 재사용 (공유 Construct + 도메인별 Stack)</li><li>공통 로직 & Third-party 의존성 분리 (Lambda Layer)</li></ul>                                                                      |
 | 🧪  | **Testing**       | <ul><li>단위/통합 테스트 스위트 (pytest 기반)</li><li>Shared Manifest/DQ 유틸 재사용</li></ul>                                                                                                    |
 | ⚡️  | **Performance**   | <ul><li>병렬 처리량 제어 (SQS Fan-Out, SFN Map maxConcurrency)</li><li>ETL 성능/비용 개선 (Glue 5.0, Zstd 압축, Parquet 최적화)</li></ul>                                                         |
-| 🛡️  | **Security**      | <ul><li>IAM 역할/정책 중앙 관리, 버킷/잡 단위 최소 권한 적용(SecurityStack)</li><li>KMS 암호화 SNS, CI/CD 경로 강화 (GitHub OIDC 적용)</li></ul>                                                  |
+| 🛡️  | **Security**      | <ul><li>IAM 역할/정책 중앙 관리, 버킷/잡 단위 최소 권한 적용 (SecurityStack)</li><li>KMS 암호화 SNS, CI/CD 경로 강화 (GitHub OIDC 적용)</li></ul>                                                 |
 | 📦  | **Dependencies**  | <ul><li> Python 환경 분리 (`requirements.txt` & Layer requirements)</li><li>NPM/CDK IaC 패키지 고정 (`package.json`, `package-lock.json`)</li></ul>                                               |
 | 🚀  | **Scalability**   | <ul><li>신규 도메인 확장성 제공 (Extract/Transform/Load Stack 모듈화)</li></ul>                                                                                                                   |
 
@@ -118,7 +118,7 @@ ______________________________________________________________________
 | Path                                  | Purpose                                                     |
 | ------------------------------------- | ----------------------------------------------------------- |
 | `infrastructure/config/environments/` | 환경별 타입 세이프 설정 모듈                                |
-| `infrastructure/constructs/`          | 재사용 CDK constructs (Storage 패턴 캡슐화)                 |
+| `infrastructure/constructs/`          | 재사용 CDK constructs (Storage 패턴)                        |
 | `infrastructure/core/`                | 공유 스택 (IAM, Storage Stack 기반)                         |
 | `infrastructure/pipelines/`           | 도메인별 ingestion/processing + load 스택                   |
 | `src/lambda/functions/`               | 핵심 파이프라인 Lambda (Orchestrator/Worker/Preflight/Load) |
