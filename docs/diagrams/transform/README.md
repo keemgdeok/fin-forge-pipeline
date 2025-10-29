@@ -6,6 +6,7 @@
 
 <img src="01-components-1.svg" alt="Components" style="width:100%;" />
 - 리소스 및 구성요소
+- Compaction Guard가 Lambda로 동작하며 Step Functions 맵 내에서 Glue job 이전 검증 수행
 
 <br>
 
@@ -47,13 +48,6 @@
 #### \[Glue Internals\]
 
 <img src="06-glue-job-internals-1.svg" alt="Glue Internals" style="width:50%;" />
-- Glue Job 단계별 작업 요약
-
-<br>
-
-#### \[IO & Schema (Curated)\]
-
-<img src="07-io-and-schema-1.svg" alt="IO Curated" style="width:100%;" />
-- RAW → Curated 경로와 파티션 구조
+- Glue Job 단계별 작업 요약 (Compaction 잡에서 Spark 파티션/셔플 설정, Transform 잡은 압축/DQ 중심)
 
 <br>

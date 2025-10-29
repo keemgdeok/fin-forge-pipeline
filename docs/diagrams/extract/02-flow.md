@@ -18,6 +18,6 @@ flowchart TD
   O -->|No| P["Await remaining chunks"]
   O -->|Yes| Q["Emit partition manifests"]
   Q --> R["Collect manifests"]
-  R --> S["Start Step Functions execution"]
-
+  R --> S["DynamoDB stream → Processing trigger Lambda"]
+  S --> T["Start Step Functions execution"]
 ```

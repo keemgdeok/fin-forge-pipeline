@@ -4,7 +4,7 @@ sequenceDiagram
   participant EV as EventBridge Rule
   participant ORC as Orchestrator Lambda
   participant SQS as SQS Queue
-  participant WRK as Ingestion Worker Lambda
+  participant WRK as Worker Lambda
   participant DLQ as SQS DLQ
 
   EV->>ORC: Scheduled event

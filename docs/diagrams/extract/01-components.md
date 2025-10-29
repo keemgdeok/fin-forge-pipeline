@@ -11,6 +11,7 @@ graph LR
     WRK["Ingestion Worker Lambda"]
     DDB["Batch Tracker<br/>DynamoDB Table"]
     MAN["_batch.manifest.json<br/>(RAW bucket)"]
+    TRG["Processing Completion Trigger Lambda<br/> (DynamoDB Stream)"]
     SFN["Transform Step Functions<br/>(manifest-driven)"]
   end
 
@@ -24,5 +25,7 @@ graph LR
   WRK -->|Put/List RAW objects| SS
   WRK -->|UpdateItem processed_chunks| DDB
   WRK --> MAN
-  MAN -->|Runner scripts trigger| SFN
+  MAN -->|Collect manifest_keys| TRG
+  DDB -->|Streams| TRG
+  TRG -->|StartExecution| SFN
 ```

@@ -11,10 +11,10 @@ graph LR
     PRE["Preflight Lambda<br/>(구성/멱등/인수 구성)"]
     subgraph Glue_Jobs["Glue Jobs"]
       COMP["Compaction<br/>(# JSON → 1 Parquet)"]
-      GUARD["Compaction Guard"]
       GLUE["Curated ETL"]
       IND["Indicators ETL"]
     end
+    GUARD["Compaction Guard<br/>(Lambda)"]
     CRAWL["Glue Crawler<br/>(스키마 변경 시)"]
   end
 

@@ -28,6 +28,7 @@ classDiagram
     +Function ingestion_worker
     +Rule ingestion_schedule
     +Dashboard ingestion_dashboard
+    +Alarms ingestion_sqs_alarms
   }
 
   class DailyPricesDataProcessingStack {
@@ -36,6 +37,7 @@ classDiagram
     +CfnJob indicators_job
     +StateMachine processing_workflow
     +LogGroup sm_log_group
+    +Function processing_completion_trigger
   }
 
   class LoadPipelineStack {
@@ -51,7 +53,6 @@ classDiagram
     +Dashboard platform_dashboard
     +Alarms glue_job_alarms
     +Alarms state_machine_alarms
-    +Alarms sqs_depth_alarms
   }
 
   class CatalogStack {

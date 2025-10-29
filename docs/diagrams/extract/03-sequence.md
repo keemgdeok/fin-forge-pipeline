@@ -5,9 +5,10 @@ sequenceDiagram
   participant ORC as Orchestrator Lambda
   participant DDB as DynamoDB Batch Tracker
   participant SQS as SQS Queue
-  participant WRK as Ingestion Worker Lambda
+  participant WRK as Worker Lambda
   participant PRV as Market Data Provider
   participant S3 as RAW Bucket
+  participant TRG as Processing Trigger Lambda
   participant SF as Transform Step Functions
 
   EV->>ORC: Scheduled event
@@ -27,17 +28,20 @@ sequenceDiagram
         WRK->>S3: PutObject(symbol partition, optional .gz)
       end
     end
-    WRK->>DDB: UpdateItem ADD processed_chunks
-    alt processed_chunks < expected
-      WRK-->>SQS: ack message
-    else
-      WRK->>S3: PutObject partition manifest(s)
-      Note over WRK,S3: 파티션 매니페스트 업로드 후 파이프라인 종료
+      WRK->>DDB: UpdateItem ADD processed_chunks
+      alt processed_chunks < expected
+        WRK-->>SQS: ack message
+      else
+        WRK->>S3: PutObject partition manifest(s)
+      Note over WRK,S3: 파티션 매니페스트 업로드 후 트리거가 실행 조건 확인
     end
   and
     Note over SQS: Messages redelivered until chunk success or DLQ
   end
 
-  S3-->>SF: Start execution (manifest_keys)
-  Note over S3,SF: 매니페스트 스크립트가 실행을 시작
+  WRK->>DDB: UpdateItem status=complete
+  DDB-->>TRG: Stream event (status change)
+  TRG->>S3: collect_manifest_entries(batch_id)
+  TRG->>SF: StartExecution(manifest_keys)
+  Note over TRG,SF: DynamoDB Stream trigger가 SFN 실행
 ```

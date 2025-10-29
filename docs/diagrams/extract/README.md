@@ -12,6 +12,7 @@
 
 <img src="02-flow-1.svg" alt="Flow" style="width:50%;" />
 - EventBridge → Orchestrator → Worker 전체 흐름
+- 배치 완료 시 DynamoDB Stream → Trigger Lambda → Step Functions 실행
 <br>
 
 #### \[Sequence\]

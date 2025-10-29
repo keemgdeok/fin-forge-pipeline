@@ -5,7 +5,7 @@ sequenceDiagram
   participant AGG as Step Functions (Aggregator)
   participant PRE as Preflight Lambda
   participant COMP as Glue Compaction
-  participant GUARD as Compaction Guard
+  participant GUARD as Compaction Guard (Lambda)
   participant ETL as Curated ETL
   participant IND as Indicators ETL
   participant DEC as Schema Decider

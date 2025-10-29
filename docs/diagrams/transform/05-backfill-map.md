@@ -1,6 +1,6 @@
 ```mermaid
 flowchart TD
-  A["Backfill 입력<br/>manifest_keys[...]"] --> M["Map 상태<br/>(동시성 = config.sfn_max_concurrency)"]
+  A["Backfill 입력<br/>manifest_keys[...]"] --> M["Map 상태"]
 
   subgraph ItemProcessor
     M --> P["Preflight Lambda"]
