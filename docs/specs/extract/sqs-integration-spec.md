@@ -22,7 +22,7 @@
 | `batch_total_chunks` | integer         |  ✅  | 전체 청크 수                     |
 | `correlation_id`     | string          |  ❌  | 현재 메시지 본문에 포함하지 않음 |
 
-메시지 속성(`MessageAttributes`)은 사용하지 않음
+메시지 속성(`MessageAttributes`)은 사용하지 않음 <br>
 모든 데이터는 Body(JSON)로 전달
 
 ### SQS 이벤트 → Worker Lambda
@@ -40,5 +40,5 @@
 | `batchItemFailures`                  | array\<object> | 실패 메시지 식별자 목록     |
 | `batchItemFailures[].itemIdentifier` | string         | 실패한 메시지의 `messageId` |
 
-빈 배열을 반환하면 모든 메시지를 성공으로 간주하고 삭제
+빈 배열을 반환하면 모든 메시지를 성공으로 간주하고 삭제 <br>
 실패 목록이 있으면 해당 항목만 재전달되며, 응답이 없거나 예외가 발생하면 전체 배치가 재시도

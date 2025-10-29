@@ -24,8 +24,8 @@
 | `file_size`      | integer      |  ❌  | 존재 시 > 0                                                                                                                                          | `1048576`                                                                                                                                         |
 | `presigned_url`  | string       |  ❌  | `https://` 시작 URL                                                                                                                                  | `https://signed-url`                                                                                                                              |
 
-`data_source` 파티션이 없는 경로의 경우 `data_source` 필드는 메시지에서 생략
-`ds` 값은 `year`, `month`, `day`를 조합해 생성/ 실제 S3 경로 세그먼트는 X
+`data_source` 파티션이 없는 경로의 경우 `data_source` 필드는 메시지에서 생략 <br>
+`ds` 값은 `year`, `month`, `day`를 조합해 생성/ 실제 S3 경로 세그먼트는 X <br>
 `layer` 필드는 허용 목록(`adjusted`, `technical_indicator`)에 속하지 않으면 메시지가 발행되지 않음
 
 ### 메시지 속성
