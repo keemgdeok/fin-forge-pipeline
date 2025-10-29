@@ -96,18 +96,18 @@ ______________________________________________________________________
 
 ## Features
 
-|     | Component         | Details                                                                                                                                                                                                  |
-| :-- | :---------------- | :------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| ⚙️  | **Architecture**  | <ul><li>AWS CDK 기반 Pipeline-as-a-Product Design</li><li>공유 스택(Security/Storage/Governance) + 도메인 스택 조합</li><li>Lambda + Step Functions + Glue로 구성된 서버리스 데이터 파이프라인</li></ul> |
-| 🔩  | **Code Quality**  | <ul><li>Ruff/mypy 으로 정적 분석 & 타입 검증 수행</li><li>pre-commit hook으로 일관된 스타일 적용</li></ul>                                                                                               |
-| 📄  | **Documentation** | <ul><li>Architecture/Diagram/Specs 문서 수록</li></ul>                                                                                                                                                   |
-| 🔌  | **Integrations**  | <ul><li>GitHub Actions + OIDC AssumeRole → Secretless CI/CD 구현</li><li>CloudWatch Alarms + SNS 연동으로 SFN/Glue 실패 통합 모니터링 </li></ul>                                                         |
-| 🧩  | **Modularity**    | <ul><li>공유 Construct + 도메인별 Stack으로 인프라 재사용</li><li>Lambda Layer로 공통 로직과 third-party 의존성 분리</li></ul>                                                                           |
-| 🧪  | **Testing**       | <ul><li>pytest 기반 단위/통합 테스트 스위트</li><li>Shared Manifest/DQ 유틸 재사용</li></ul>                                                                                                             |
-| ⚡️  | **Performance**   | <ul><li>SQS Fan-Out과 SFN Map maxConcurrency로 병렬 처리량 제어</li><li>Glue 5.0, Zstd 압축, Parquet 최적화를 통한 ETL 성능/비용 개선</li></ul>                                                          |
-| 🛡️  | **Security**      | <ul><li>SecurityStack에서 IAM 역할/정책을 중앙 관리, 버킷/잡 단위 최소 권한 적용</li><li>KMS 암호화된 SNS와 GitHub OIDC 으로 CI/CD 경로 강화</li></ul>                                                   |
-| 📦  | **Dependencies**  | <ul><li>Python: `requirements.txt` 및 layer별 requirements로 환경 분리</li><li>NPM/CDK: `package.json`, `package-lock.json`으로 IaC 패키지 고정</li></ul>                                                |
-| 🚀  | **Scalability**   | <ul><li>Extract/Transform/Load Stack 모듈화 → 신규 도메인 추가 용이</li><li> S3→SQS Load 파이프라인을 도메인별로 확장 용이</li></ul>                                                                     |
+|     | Component         | Details                                                                                                                                                                                           |
+| :-- | :---------------- | :------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| ⚙️  | **Architecture**  | <ul><li>AWS CDK 기반 Pipeline-as-a-Product Design</li><li>공유 스택(Security/Storage/Governance) + 도메인 스택 조합</li><li>서버리스 데이터 파이프라인 (Lambda + Step Functions + Glue)</li></ul> |
+| 🔩  | **Code Quality**  | <ul><li>정적 분석 & 타입 검증 보장 (Ruff/mypy)</li><li>일관된 스타일 유지 (pre-commit hook)</li></ul>                                                                                             |
+| 📄  | **Documentation** | <ul><li>Architecture/Diagram/Specs 문서 수록</li></ul>                                                                                                                                            |
+| 🔌  | **Integrations**  | <ul><li>Secretless CI/CD (GitHub Actions + OIDC AssumeRole 기반)</li><li>SFN/Glue 실패 통합 모니터링 (CloudWatch Alarms + SNS 연동)</li></ul>                                                     |
+| 🧩  | **Modularity**    | <ul><li>인프라 재사용 (공유 Construct + 도메인별 Stack)</li><li>공통 로직 & Third-party 의존성 분리 (Lambda Layer)</li></ul>                                                                      |
+| 🧪  | **Testing**       | <ul><li>단위/통합 테스트 스위트 (pytest 기반)</li><li>Shared Manifest/DQ 유틸 재사용</li></ul>                                                                                                    |
+| ⚡️  | **Performance**   | <ul><li>병렬 처리량 제어 (SQS Fan-Out, SFN Map maxConcurrency)</li><li>ETL 성능/비용 개선 (Glue 5.0, Zstd 압축, Parquet 최적화)</li></ul>                                                         |
+| 🛡️  | **Security**      | <ul><li>IAM 역할/정책 중앙 관리, 버킷/잡 단위 최소 권한 적용(SecurityStack)</li><li>KMS 암호화 SNS, CI/CD 경로 강화 (GitHub OIDC 적용)</li></ul>                                                  |
+| 📦  | **Dependencies**  | <ul><li> Python 환경 분리 (`requirements.txt` & Layer requirements)</li><li>NPM/CDK IaC 패키지 고정 (`package.json`, `package-lock.json`)</li></ul>                                               |
+| 🚀  | **Scalability**   | <ul><li>신규 도메인 확장성 제공 (Extract/Transform/Load Stack 모듈화)</li></ul>                                                                                                                   |
 
 <br>
 
@@ -115,19 +115,19 @@ ______________________________________________________________________
 
 ## Key Directories
 
-| Path                                  | Purpose                                                         |
-| ------------------------------------- | --------------------------------------------------------------- |
-| `infrastructure/config/environments/` | 환경별(region, sizing, feature flag) 타입 세이프 설정 모듈      |
-| `infrastructure/constructs/`          | Storage/Orchestrator/Security 패턴을 위한 재사용 CDK constructs |
-| `infrastructure/core/`                | IAM, 스토리지, 모니터링 기반을 제공하는 공유 스택               |
-| `infrastructure/pipelines/`           | 도메인별 ingestion/processing 스택 (도메인당 디렉토리)          |
-| `src/lambda/functions/`               | 핵심 파이프라인 Lambda(Orchestrator/Worker/Preflight/Load)      |
-| `src/lambda/layers/`                  | 공용/도메인별 Lambda Layer (common, data/\<domain>/, load)      |
-| `src/glue/jobs/`                      | RAW→Curated / Glue ETL 스크립트                                 |
-| `src/step_functions/`                 | sfn 기반 워크플로 정의                                          |
-| `docs/`                               | Architecture/Diagram/Specs/Screenshots 문서                     |
-| `scripts/`                            | 배포/검증 스크립트                                              |
-| `tests/`                              | 단위/통합/E2E 테스트 스위트 & 공용 fixture                      |
+| Path                                  | Purpose                                                     |
+| ------------------------------------- | ----------------------------------------------------------- |
+| `infrastructure/config/environments/` | 환경별 타입 세이프 설정 모듈                                |
+| `infrastructure/constructs/`          | 재사용 CDK constructs (Storage 패턴 캡슐화)                 |
+| `infrastructure/core/`                | 공유 스택 (IAM, Storage Stack 기반)                         |
+| `infrastructure/pipelines/`           | 도메인별 ingestion/processing + load 스택                   |
+| `src/lambda/functions/`               | 핵심 파이프라인 Lambda (Orchestrator/Worker/Preflight/Load) |
+| `src/lambda/layers/`                  | 공용/도메인별 Lambda Layer (common, data/\<domain>/, load)  |
+| `src/glue/jobs/`                      | Glue ETL/Glue Compaction 스크립트                           |
+| `src/step_functions/`                 | SFN 실행 helper                                             |
+| `docs/`                               | Architecture/Diagram/Specs/Screenshots 문서                 |
+| `scripts/`                            | 배포/검증/로컬 스크립트                                     |
+| `tests/`                              | 단위/통합/E2E 테스트 스위트 & 공용 fixture                  |
 
 <br>
 
