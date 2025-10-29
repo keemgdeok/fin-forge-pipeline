@@ -8,20 +8,20 @@
 
 ### 공통 이벤트 페이로드
 
-| 필드             | 타입            | 필수 | 기본값                           | 설명                                              |
-| ---------------- | --------------- | :--: | -------------------------------- | ------------------------------------------------- |
-| `data_source`    | string          |  ✅  | `yahoo_finance`                  | 데이터 공급자 식별자                              |
-| `data_type`      | string          |  ✅  | `prices`                         | 데이터 유형                                       |
-| `domain`         | string          |  ✅  | `market`                         | 비즈니스 도메인                                   |
-| `table_name`     | string          |  ✅  | `prices`                         | 대상 테이블                                       |
-| `symbols`        | array\[string\] |  ❌  | `[]`                             | 비어 있으면 Orchestrator가 심볼 소스(SMM/S3) 조회 |
-| `period`         | string          |  ✅  | `1mo`                            | 공급자 쿼리 기간                                  |
-| `interval`       | string          |  ✅  | `1d`                             | 공급자 쿼리 주기                                  |
-| `file_format`    | string          |  ✅  | `json`                           | 워커 저장 포맷 (`json`/`csv`)                     |
-| `trigger_type`   | string          |  ❌  | 호출 패턴 (`schedule`, `manual`) |                                                   |
-| `batch_id`       | string          |  ❌  | 없음                             | 사전 생성 배치 ID 사용 시 전달                    |
-| `batch_ds`       | string          |  ❌  | 없음                             | `YYYY-MM-DD` 형식의 배치 날짜 오버라이드          |
-| `correlation_id` | string          |  ❌  | 없음                             | 로깅용 상관 키                                    |
+| 필드             | 타입            | 필수 | 기본값                                                      | 설명                                                                      |
+| ---------------- | --------------- | :--: | ----------------------------------------------------------- | ------------------------------------------------------------------------- |
+| `data_source`    | string          |  ✅  | `yahoo_finance`                                             | 데이터 공급자 식별자                                                      |
+| `data_type`      | string          |  ✅  | `prices`                                                    | 데이터 유형                                                               |
+| `domain`         | string          |  ✅  | `market`                                                    | 비즈니스 도메인                                                           |
+| `table_name`     | string          |  ✅  | `prices`                                                    | 대상 테이블                                                               |
+| `symbols`        | array\[string\] |  ❌  | 환경 설정 `ingestion_symbols`<br>(기본: `["AAPL", "MSFT"]`) | 미제공 시 Orchestrator가 SSM/S3 조회 후 최종적으로 없으면 `["AAPL"]` 사용 |
+| `period`         | string          |  ✅  | `1mo`                                                       | 공급자 쿼리 기간                                                          |
+| `interval`       | string          |  ✅  | `1d`                                                        | 공급자 쿼리 주기                                                          |
+| `file_format`    | string          |  ✅  | `json`                                                      | 워커 저장 포맷 (`json`/`csv`)                                             |
+| `trigger_type`   | string          |  ❌  | 호출 패턴 (`schedule`, `manual`)                            |                                                                           |
+| `batch_id`       | string          |  ❌  | 없음                                                        | 사전 생성 배치 ID 사용 시 전달                                            |
+| `batch_ds`       | string          |  ❌  | 없음                                                        | `YYYY-MM-DD` 형식의 배치 날짜 오버라이드                                  |
+| `correlation_id` | string          |  ❌  | 없음                                                        | 로깅용 상관 키                                                            |
 
 ### EventBridge Scheduled Trigger
 

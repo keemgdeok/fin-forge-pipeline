@@ -21,16 +21,16 @@
 
 ### Price Record 스키마 (JSON Lines / CSV 행)
 
-| 필드        | 타입    | 필수 | 제약                                  |
-| ----------- | ------- | :--: | ------------------------------------- |
-| `symbol`    | string  |  ✅  | 1–20자, 대문자/숫자/`.`/`-`           |
-| `timestamp` | string  |  ✅  | ISO 8601 UTC (`YYYY-MM-DDTHH:MM:SSZ`) |
-| `open`      | number  |  ❌  | ≥ 0                                   |
-| `high`      | number  |  ❌  | ≥ 0                                   |
-| `low`       | number  |  ❌  | ≥ 0                                   |
-| `close`     | number  |  ❌  | ≥ 0                                   |
-| `adj_close` | number  |  ❌  | ≥ 0                                   |
-| `volume`    | integer |  ❌  | ≥ 0                                   |
+| 필드             | 타입    | 필수 | 제약                                  |
+| ---------------- | ------- | :--: | ------------------------------------- |
+| `symbol`         | string  |  ✅  | 1–20자, 대문자/숫자/`.`/`-`           |
+| `timestamp`      | string  |  ✅  | ISO 8601 UTC (`YYYY-MM-DDTHH:MM:SSZ`) |
+| `open`           | number  |  ❌  | ≥ 0                                   |
+| `high`           | number  |  ❌  | ≥ 0                                   |
+| `low`            | number  |  ❌  | ≥ 0                                   |
+| `close`          | number  |  ❌  | ≥ 0                                   |
+| `adjusted_close` | number  |  ❌  | ≥ 0                                   |
+| `volume`         | integer |  ❌  | ≥ 0                                   |
 
 ### 지원 파일 형식
 
@@ -39,4 +39,4 @@
 | JSON Lines | `.json` / `.json.gz` | 줄 단위 JSON 객체 | 기본 저장 형식              |
 | CSV        | `.csv` / `.csv.gz`   | 헤더 포함 CSV     | 필요 시 `file_format="csv"` |
 
-각 객체는 하나의 심볼/하루 데이터를 포함하며, 동일 키가 존재하면 이후 업로드는 스킵
+각 객체는 하나의 심볼/하루 데이터를 포함하며, 동일 키가 존재하면 이후 업로드는 SKIP

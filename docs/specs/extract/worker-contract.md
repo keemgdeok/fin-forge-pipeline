@@ -22,6 +22,8 @@
 | `batch_total_chunks` | integer         |  ✅  | 전체 청크 수             |
 | `correlation_id`     | string          |  ❌  | 전달 시 로깅에 사용      |
 
+입력 메시지 계약의 세부 정의 `docs/specs/extract/sqs-integration-spec.md` 참고
+
 ### 출력: Lambda 성공 응답 본문
 
 | 필드                  | 타입            | 설명                         |

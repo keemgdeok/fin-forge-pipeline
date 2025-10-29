@@ -1,6 +1,6 @@
 # Glue Job 명세
 
-| 항목         | 컴팩션 잡                                                           | 변환 잡                                           | 인디케이터 잡                                     |
+| 항목         | Compaction Job                                                      | Transform Job                                     | Indicator Job                                     |
 | ------------ | ------------------------------------------------------------------- | ------------------------------------------------- | ------------------------------------------------- |
 | 코드 경로    | `src/glue/jobs/raw_to_parquet_compaction.py`                        | `src/glue/jobs/daily_prices_data_etl.py`          | `src/glue/jobs/market_indicators_etl.py`          |
 | Glue 버전    | 5.0                                                                 | 5.0                                               | 5.0                                               |

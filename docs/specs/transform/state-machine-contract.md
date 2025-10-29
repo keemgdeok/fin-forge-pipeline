@@ -1,10 +1,10 @@
 # Step Functions Transform State Machine — I/O 계약 명세
 
-| 항목        | 내용                                                                             |
-| ----------- | -------------------------------------------------------------------------------- |
-| 책임        | 매니페스트 기반 배치를 Compaction → Transform → Indicators → Crawler 순으로 처리 |
-| 코드 기준   | `infrastructure/pipelines/daily_prices_data/processing_stack.py`                 |
-| 배포 리소스 | `{environment}-daily-prices-data-processing`                                     |
+| 항목        | 내용                                                                  |
+| ----------- | --------------------------------------------------------------------- |
+| 책임        | Manifest 기반 배치 Compaction → Transform → Indicators → Crawler 처리 |
+| 코드 기준   | `infrastructure/pipelines/daily_prices_data/processing_stack.py`      |
+| 배포 리소스 | `{environment}-daily-prices-data-processing`                          |
 
 ### 입력 계약
 
@@ -67,7 +67,7 @@
 | Lambda (Preflight/Guard/Decider) | 재시도 없음                            | 실패 시 Fail                 |
 | Glue Crawler                     | 재시도 없음                            | 실패 시 Fail (집계 단계)     |
 
-### Crawler 게이팅
+### Crawler Gating
 
 | 정책 값            | 실행 여부                | 비고                     |
 | ------------------ | ------------------------ | ------------------------ |
@@ -77,5 +77,5 @@
 
 ### Glue 잡 구성 메모
 
-- `daily-prices-data-etl`, `market-indicators-etl` 잡은 `--job-bookmark-option=job-bookmark-disable`로 병렬 실행 시 북마크 충돌을 방지합니다.
-- `config['sfn_max_concurrency']`를 통해 맵 동시성을 제어하며, 기본값은 2입니다.
+- Glue Job은 `--job-bookmark-option=job-bookmark-disable`로 병렬 실행 시 북마크 충돌을 방지
+- `config['sfn_max_concurrency']`를 통해 Map 동시성을 제어하며, 기본값은 3

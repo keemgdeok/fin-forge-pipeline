@@ -7,22 +7,23 @@
 
 ### SQS 메시지 본문 (JSON)
 
-| 필드                 | 타입            | 필수 | 설명                          |
-| -------------------- | --------------- | :--: | ----------------------------- |
-| `data_source`        | string          |  ✅  | 데이터 공급자                 |
-| `data_type`          | string          |  ✅  | 데이터 유형                   |
-| `domain`             | string          |  ✅  | 비즈니스 도메인               |
-| `table_name`         | string          |  ✅  | 대상 테이블                   |
-| `symbols`            | array\[string\] |  ✅  | 처리 대상 심볼 묶음           |
-| `period`             | string          |  ✅  | 공급자 쿼리 기간              |
-| `interval`           | string          |  ✅  | 공급자 쿼리 주기              |
-| `file_format`        | string          |  ✅  | 워커 저장 포맷 (`json`/`csv`) |
-| `batch_id`           | string          |  ✅  | 배치 UUID                     |
-| `batch_ds`           | string          |  ✅  | `YYYY-MM-DD`                  |
-| `batch_total_chunks` | integer         |  ✅  | 전체 청크 수                  |
-| `correlation_id`     | string          |  ❌  | 입력에 있을 경우 전달         |
+| 필드                 | 타입            | 필수 | 설명                             |
+| -------------------- | --------------- | :--: | -------------------------------- |
+| `data_source`        | string          |  ✅  | 데이터 공급자                    |
+| `data_type`          | string          |  ✅  | 데이터 유형                      |
+| `domain`             | string          |  ✅  | 비즈니스 도메인                  |
+| `table_name`         | string          |  ✅  | 대상 테이블                      |
+| `symbols`            | array\[string\] |  ✅  | 처리 대상 심볼 묶음              |
+| `period`             | string          |  ✅  | 공급자 쿼리 기간                 |
+| `interval`           | string          |  ✅  | 공급자 쿼리 주기                 |
+| `file_format`        | string          |  ✅  | 워커 저장 포맷 (`json`/`csv`)    |
+| `batch_id`           | string          |  ✅  | 배치 UUID                        |
+| `batch_ds`           | string          |  ✅  | `YYYY-MM-DD`                     |
+| `batch_total_chunks` | integer         |  ✅  | 전체 청크 수                     |
+| `correlation_id`     | string          |  ❌  | 현재 메시지 본문에 포함하지 않음 |
 
-> 메시지 속성(`MessageAttributes`)은 사용하지 않습니다. 모든 데이터는 Body(JSON)로 전달됩니다.
+메시지 속성(`MessageAttributes`)은 사용하지 않음
+모든 데이터는 Body(JSON)로 전달
 
 ### SQS 이벤트 → Worker Lambda
 
