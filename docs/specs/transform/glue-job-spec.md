@@ -1,13 +1,4 @@
-# Glue Job 명세
-
-| 항목         | Compaction Job                                                      | Transform Job                                     | Indicator Job                                     |
-| ------------ | ------------------------------------------------------------------- | ------------------------------------------------- | ------------------------------------------------- |
-| 코드 경로    | `src/glue/jobs/raw_to_parquet_compaction.py`                        | `src/glue/jobs/daily_prices_data_etl.py`          | `src/glue/jobs/market_indicators_etl.py`          |
-| Glue 버전    | 5.0                                                                 | 5.0                                               | 5.0                                               |
-| 런타임       | Python (PySpark)                                                    | Python (PySpark)                                  | Python (PySpark)                                  |
-| 워커 타입/수 | `config.compaction_worker_type`, `config.compaction_number_workers` | `G.1X`, `config.glue_max_capacity` (기본 2)       | `G.1X`, `config.glue_max_capacity` (기본 2)       |
-| 타임아웃     | `config.compaction_timeout_minutes` 분                              | 30분                                              | 30분                                              |
-| 재시도       | 1회                                                                 | 1회 (`Glue.ConcurrentRunsExceededException` 전용) | 1회 (`Glue.ConcurrentRunsExceededException` 전용) |
+## Glue Job Specs
 
 ### Compaction Glue Job
 
@@ -22,14 +13,14 @@
 
 ### Transform Glue Job
 
-| 항목               | 값                                                                                                                                                                                                                    |
-| ------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 잡 이름            | `<environment>-daily-prices-data-etl`                                                                                                                                                                                 |
-| 입력 경로 우선순위 | 1) `curated/.../layer=<compacted>` 2) RAW 경로(컴팩션 미존재 시)                                                                                                                                                      |
-| 출력 경로          | `curated/.../layer=<curated_layer>` (기본 `adjusted`)                                                                                                                                                                 |
-| 파티션 키          | `year`, `month`, `day`, `layer` (+데이터 컬럼 `ds`)                                                                                                                                                                   |
-| 파라미터           | `--ds`, `--raw_bucket`, `--raw_prefix`, `--compacted_bucket`, `--compacted_layer`, `--curated_bucket`, `--curated_layer`, `--interval`, `--data_source`, `--codec`, `--target_file_mb`, `--schema_fingerprint_s3_uri` |
-| DQ 실패            | `RuntimeError("DQ_FAILED: ...")` 발생 → Step Functions Catch                                                                                                                                                          |
+| 항목      | 값                                                                                                                                                                                                                    |
+| --------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 잡 이름   | `<environment>-daily-prices-data-etl`                                                                                                                                                                                 |
+| 입력 경로 | 1) `curated/.../layer=<compacted>` 2) RAW 경로(컴팩션 미존재 시)                                                                                                                                                      |
+| 출력 경로 | `curated/.../layer=<curated_layer>` (기본 `adjusted`)                                                                                                                                                                 |
+| 파티션 키 | `year`, `month`, `day`, `layer` (+데이터 컬럼 `ds`)                                                                                                                                                                   |
+| 파라미터  | `--ds`, `--raw_bucket`, `--raw_prefix`, `--compacted_bucket`, `--compacted_layer`, `--curated_bucket`, `--curated_layer`, `--interval`, `--data_source`, `--codec`, `--target_file_mb`, `--schema_fingerprint_s3_uri` |
+| DQ 실패   | `RuntimeError("DQ_FAILED: ...")` 발생 → Step Functions Catch                                                                                                                                                          |
 
 ### Indicator Glue Job
 
