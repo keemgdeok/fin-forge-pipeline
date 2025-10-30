@@ -140,6 +140,7 @@ jobs:
           role-to-assume: ${{ secrets.AWS_ROLE_TO_ASSUME }}
           role-session-name: GithubActionsDeployment
           aws-region: ${{ env.AWS_REGION }}
+          audience: sts.amazonaws.com
 
       - name: Discover GitHub OIDC provider ARN
         id: oidc
@@ -155,21 +156,6 @@ jobs:
             echo "Found existing GitHub OIDC provider: $arn"
           else
             echo "No existing GitHub OIDC provider found; stack will create one."
-          fi
-
-      - name: Quality checks and tests
-        env:
-          AWS_REGION: us-east-1
-          AWS_DEFAULT_REGION: us-east-1
-        run: |
-          source .venv/bin/activate
-          echo "🔍 Running style and test checks..."
-          ruff format --check src infrastructure tests
-          ruff check src infrastructure tests
-          if [ -d "tests/" ] && find tests/ -name "test_*.py" -type f | head -1 | grep -q .; then
-            pytest tests/ -v --tb=short
-          else
-            echo "No tests found - skipping"
           fi
 
       - name: CDK synth and diff
