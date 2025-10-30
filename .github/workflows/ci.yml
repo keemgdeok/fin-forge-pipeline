@@ -132,12 +132,13 @@ jobs:
       AWS_SECRET_ACCESS_KEY: test
       AWS_SESSION_TOKEN: test
       LOCALSTACK_ENDPOINT: http://localhost:4566
-      LOCALSTACK_INTERNAL_ENDPOINT: http://localhost:4566
+      LOCALSTACK_INTERNAL_ENDPOINT: http://localstack:4566
       LOCALSTACK_ACCOUNT_ID: '000000000000'
       PIPELINE_LIGHT_MODE: '0'
       E2E_PIPELINE_LIGHT_MODE: '0'
       RUN_SPARK_TESTS: '1'
       PYTEST_ADDOPTS: "-vv --maxfail=1"
+      LOCALSTACK_NAME: localstack
 
     steps:
       - name: Checkout
