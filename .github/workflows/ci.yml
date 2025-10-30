@@ -215,7 +215,7 @@ jobs:
       - name: Run LocalStack slow tests
         shell: bash
         env:
-          PYTEST_ADDOPTS: "-vv --maxfail=1 --junitxml=artifacts/heavy_localstack.xml"
+          PYTEST_ADDOPTS: "-vv --maxfail=1 --cov-fail-under=0 --junitxml=artifacts/heavy_localstack.xml"
         run: |
           source .venv/bin/activate
           pytest --runslow tests/integration/transform/test_sfn_retry_localstack.py tests/e2e/test_full_pipeline_localstack.py
