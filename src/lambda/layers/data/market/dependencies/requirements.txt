@@ -1,0 +1,3 @@
+yfinance>=0.2.0
+# yfinance will pull pandas, numpy, requests, beautifulsoup4, lxml etc. as transitive deps
+# Keeping explicit pins optional to avoid drift; pin in your lock/process if needed.

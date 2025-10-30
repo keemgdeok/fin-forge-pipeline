@@ -1,0 +1,275 @@
+name: Deploy
+
+on:
+  push:
+    branches: [main]
+    paths-ignore:
+      - '**/*.md'
+      - 'docs/**'
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Environment to deploy to'
+        type: choice
+        options: [dev, staging, prod]
+        default: dev
+      full_pipeline:
+        description: 'Run ingestion → transform → load validation after deploy'
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: deploy-${{ github.workflow }}-${{ github.event_name == 'workflow_dispatch' && (github.event.inputs.environment || 'dev') || (github.ref == 'refs/heads/main' && 'prod' || (github.ref == 'refs/heads/develop' && 'dev' || 'dev')) }}
+  cancel-in-progress: true
+
+env:
+  PYTHON_VERSION: '3.12'
+  NODE_VERSION: '20'
+  AWS_REGION: ap-northeast-2
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    environment: ${{ github.event_name == 'workflow_dispatch' && (github.event.inputs.environment || 'dev') || (github.ref == 'refs/heads/main' && 'prod' || (github.ref == 'refs/heads/develop' && 'dev' || 'dev')) }}
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Resolve deployment target
+        id: target
+        shell: bash
+        run: |
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            TARGET="${{ github.event.inputs.environment }}"
+            [[ -z "$TARGET" ]] && TARGET="dev"
+          elif [[ "${{ github.ref }}" == "refs/heads/main" ]]; then
+            TARGET="prod"
+          else
+            TARGET="dev"
+          fi
+          echo "TARGET_ENV=$TARGET" >> "$GITHUB_ENV"
+          echo "target_env=$TARGET" >> "$GITHUB_OUTPUT"
+
+      - name: Resolve pipeline mode
+        id: mode
+        shell: bash
+        run: |
+          FULL="false"
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            FULL="${{ github.event.inputs.full_pipeline || 'false' }}"
+          fi
+          echo "FULL_PIPELINE=$FULL" >> "$GITHUB_ENV"
+          echo "full_pipeline=$FULL" >> "$GITHUB_OUTPUT"
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: 'pip'
+
+      - name: Create virtual environment
+        shell: bash
+        run: |
+          python -m venv .venv
+          echo "VIRTUAL_ENV=$(pwd)/.venv" >> $GITHUB_ENV
+          echo "$(pwd)/.venv/bin" >> $GITHUB_PATH
+          echo "CDK_PYTHON=$(pwd)/.venv/bin/python" >> $GITHUB_ENV
+          source .venv/bin/activate
+          python -m pip install --upgrade pip
+
+      - name: Setup Node.js (with cache)
+        if: hashFiles('**/package-lock.json', '**/npm-shrinkwrap.json', '**/yarn.lock') != ''
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+
+      - name: Setup Node.js (no cache)
+        if: hashFiles('**/package-lock.json', '**/npm-shrinkwrap.json', '**/yarn.lock') == ''
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Install Python dependencies
+        shell: bash
+        run: |
+          source .venv/bin/activate
+          pip install -r requirements.txt
+
+      - name: Cache market data Lambda layer
+        id: market-layer-cache
+        uses: actions/cache@v4
+        with:
+          path: src/lambda/layers/market_data_deps/python
+          key: market-layer-${{ hashFiles('src/lambda/layers/market_data_deps/requirements.txt') }}
+
+      - name: Build market data Lambda layer
+        if: steps.market-layer-cache.outputs.cache-hit != 'true'
+        shell: bash
+        run: |
+          echo "📦 Building market data dependency layer"
+          rm -rf src/lambda/layers/market_data_deps/python
+          mkdir -p src/lambda/layers/market_data_deps/python
+          source .venv/bin/activate
+          pip install -r src/lambda/layers/market_data_deps/requirements.txt \
+            -t src/lambda/layers/market_data_deps/python
+
+      - name: Validate market data Lambda layer
+        run: |
+          test -f src/lambda/layers/market_data_deps/python/yfinance/__init__.py
+          test -f src/lambda/layers/market_data_deps/python/pandas/__init__.py
+          echo "Layer dependencies verified"
+
+      - name: Install Node deps (has lockfile)
+        if: hashFiles('**/package-lock.json') != ''
+        run: npm ci
+
+      - name: Install CDK CLI (no lockfile)
+        if: hashFiles('**/package-lock.json') == ''
+        run: npm install --no-save aws-cdk@latest
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_TO_ASSUME }}
+          role-session-name: GithubActionsDeployment
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Discover GitHub OIDC provider ARN
+        id: oidc
+        shell: bash
+        run: |
+          set -euo pipefail
+          arn=$(aws iam list-open-id-connect-providers \
+            --query 'OpenIDConnectProviderList[?contains(Arn, `token.actions.githubusercontent.com`)].Arn' \
+            --output text)
+          if [[ -n "$arn" && "$arn" != "None" ]]; then
+            echo "GITHUB_OIDC_PROVIDER_ARN=$arn" >> "$GITHUB_ENV"
+            echo "github_oidc_provider_arn=$arn" >> "$GITHUB_OUTPUT"
+            echo "Found existing GitHub OIDC provider: $arn"
+          else
+            echo "No existing GitHub OIDC provider found; stack will create one."
+          fi
+
+      - name: Quality checks and tests
+        env:
+          AWS_REGION: us-east-1
+          AWS_DEFAULT_REGION: us-east-1
+        run: |
+          source .venv/bin/activate
+          echo "🔍 Running style and test checks..."
+          ruff format --check src infrastructure tests
+          ruff check src infrastructure tests
+          if [ -d "tests/" ] && find tests/ -name "test_*.py" -type f | head -1 | grep -q .; then
+            pytest tests/ -v --tb=short
+          else
+            echo "No tests found - skipping"
+          fi
+
+      - name: Security scan (optional)
+        if: steps.mode.outputs.full_pipeline == 'true'
+        run: |
+          source .venv/bin/activate
+          echo "🔒 Security scanning (non-blocking summary)..."
+          bandit_status=0
+          safety_status=0
+
+          bandit -c bandit.yaml --severity-level medium --confidence-level medium -r src infrastructure scripts -f json -o bandit-report.json || bandit_status=$?
+          python - <<'PY' > bandit-report.md
+          import json
+          import pathlib
+
+          report_path = pathlib.Path('bandit-report.json')
+          if not report_path.exists():
+              print('### Bandit Security Audit (deploy pipeline)\n\n보고서를 생성하지 못했습니다.')
+              raise SystemExit(0)
+
+          data = json.loads(report_path.read_text())
+          issues = data.get('results', [])
+          severity_counts = {}
+          for item in issues:
+              severity = item.get('issue_severity', 'UNDEFINED')
+              severity_counts[severity] = severity_counts.get(severity, 0) + 1
+
+          severity_order = {"CRITICAL": 0, "HIGH": 1, "MEDIUM": 2, "LOW": 3, "UNDEFINED": 4}
+          ordered_counts = sorted(
+              severity_counts.items(),
+              key=lambda kv: severity_order.get(kv[0], 99)
+          )
+
+          print('### Bandit Security Audit (deploy pipeline)')
+          print()
+          if not issues:
+              print('✅ No findings with medium severity or higher.')
+          else:
+              total = len(issues)
+              summary = ', '.join(f"{level}: {count}" for level, count in ordered_counts)
+              print(f'⚠️ {total} issue(s) detected (severity counts → {summary}). Review PR scan results before proceeding.')
+
+          PY
+
+          safety check --full-report --output text > safety-report.txt || safety_status=$?
+
+          {
+            cat bandit-report.md
+            echo
+            echo '### Safety Dependency Scan (deploy pipeline)'
+            echo
+            if [ -s safety-report.txt ]; then
+              cat safety-report.txt
+            else
+              echo '보고서를 생성하지 못했습니다.'
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          if [ $bandit_status -ne 0 ] || [ $safety_status -ne 0 ]; then
+            echo '⚠️ Security findings detected. PR workflow blocks merges; deploy summary is informational only.'
+          else
+            echo '✅ No blocking findings detected in deploy summary scan.'
+          fi
+
+      - name: CDK synth and diff
+        run: |
+          source .venv/bin/activate
+          echo "🏗️ CDK syntax and diff check..."
+          npx cdk synth --context environment=$TARGET_ENV
+          echo "📋 Infrastructure changes:"
+          npx cdk diff --context environment=$TARGET_ENV || echo "No changes detected"
+
+      - name: Deploy infrastructure
+        run: |
+          echo "🚀 Deploying to $TARGET_ENV environment..."
+
+          # Bootstrap if needed
+          npx cdk bootstrap --context environment=$TARGET_ENV || echo "Already bootstrapped"
+
+          # Deploy with progress
+          echo "⏳ Starting deployment..."
+          npx cdk deploy --all --context environment=$TARGET_ENV --require-approval never --progress events
+
+          echo "✅ Deployment completed!"
+          echo "🎯 Environment: $TARGET_ENV"
+          echo "📅 Deployed at: $(date)"
+
+      - name: Run end-to-end pipeline validation
+        if: steps.mode.outputs.full_pipeline == 'true' && env.TARGET_ENV == 'dev'
+        run: |
+          source .venv/bin/activate
+          python scripts/validate/validate_pipeline.py --environment "$TARGET_ENV"
+
+      - name: Publish validation summary
+        if: steps.mode.outputs.full_pipeline == 'true'
+        run: |
+          {
+            echo '### Pipeline Validation Summary'
+            echo
+            cat pipeline_validation_summary.txt
+            echo
+            echo '> 재실행이 필요한 경우 `scripts/deploy/deploy.py` 또는 `scripts/validate/validate_pipeline.py`를 활용하세요.'
+          } >> "$GITHUB_STEP_SUMMARY"

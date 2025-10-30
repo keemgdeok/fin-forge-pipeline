@@ -1,0 +1,181 @@
+name: PR Validation
+
+on:
+  pull_request:
+    branches:
+      - main
+      - develop
+      - 'release/**'
+      - 'hotfix/**'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pr-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+env:
+  PYTHON_VERSION: &python_version '3.12'
+  NODE_VERSION: &node_version '20'
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    outputs:
+      python_any_changed: ${{ steps.changed-files.outputs.python_any_changed }}
+      infra_any_changed: ${{ steps.changed-files.outputs.infra_any_changed }}
+      node_any_changed: ${{ steps.changed-files.outputs.node_any_changed }}
+      docs_only: ${{ steps.change-summary.outputs.docs_only }}
+      tests_required: ${{ steps.change-summary.outputs.tests_required }}
+      docs_changed_files: ${{ steps.change-summary.outputs.docs_changed_files }}
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Get changed files
+        id: changed-files
+        uses: tj-actions/changed-files@v44
+        with:
+          files_yaml: |
+            python:
+              - '**/*.py'
+              - 'requirements.txt'
+              - 'pyproject.toml'
+              - 'setup.cfg'
+              - 'setup.py'
+            infra:
+              - 'infrastructure/**'
+            node:
+              - 'package.json'
+              - 'package-lock.json'
+              - 'npm-shrinkwrap.json'
+              - 'yarn.lock'
+            tests:
+              - 'tests/**'
+            docs:
+              - '**/*.md'
+              - 'docs/**'
+
+      - name: Summarize change surface
+        id: change-summary
+        run: |
+          python <<'PY'
+          import os
+
+          def _as_bool(key: str) -> bool:
+              return os.getenv(key, "false").lower() == "true"
+
+          all_changed_files = [line.strip() for line in os.getenv("ALL_CHANGED_FILES", "").splitlines() if line.strip()]
+          doc_candidates = [f for f in all_changed_files if f.endswith(".md") or f.startswith("docs/")]
+          non_doc_files = [f for f in all_changed_files if f not in doc_candidates]
+
+          docs_only = bool(doc_candidates) and not non_doc_files
+          tests_required = _as_bool("PY_CHANGED") or _as_bool("TESTS_CHANGED")
+
+          output_path = os.environ["GITHUB_OUTPUT"]
+          with open(output_path, "a", encoding="utf-8") as fh:
+              fh.write(f"docs_only={'true' if docs_only else 'false'}\n")
+              fh.write("docs_changed_files<<EOF\n")
+              if doc_candidates:
+                  fh.write("\n".join(doc_candidates) + "\n")
+              fh.write("EOF\n")
+              fh.write(f"tests_required={'true' if tests_required else 'false'}\n")
+          PY
+        env:
+          ALL_CHANGED_FILES: ${{ steps.changed-files.outputs.all_changed_files }}
+          PY_CHANGED: ${{ steps.changed-files.outputs.python_any_changed }}
+          TESTS_CHANGED: ${{ steps.changed-files.outputs.tests_any_changed }}
+
+      - name: Setup Python
+        if: ${{ steps.changed-files.outputs.python_any_changed == 'true' || steps.changed-files.outputs.infra_any_changed == 'true' || steps.changed-files.outputs.node_any_changed == 'true' }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: 'pip'
+
+      - name: Install Python dependencies
+        if: ${{ steps.changed-files.outputs.python_any_changed == 'true' || steps.changed-files.outputs.infra_any_changed == 'true' || steps.changed-files.outputs.node_any_changed == 'true' }}
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Dependency vulnerability scan (safety)
+        if: ${{ steps.changed-files.outputs.python_any_changed == 'true' || steps.changed-files.outputs.infra_any_changed == 'true' || steps.changed-files.outputs.node_any_changed == 'true' }}
+        run: |
+          set -o pipefail
+          echo "🛡️ Running Safety vulnerability scan..."
+          safety check --full-report --output text | tee safety-report.txt
+          safety_exit=$?
+          {
+            echo '### Safety Dependency Scan'
+            echo
+            if [ -s safety-report.txt ]; then
+              cat safety-report.txt
+            else
+              echo '결과 보고서를 생성하지 못했습니다.'
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+          exit $safety_exit
+
+      - name: Setup Node.js (infra changed, cache)
+        if: ${{ (steps.changed-files.outputs.infra_any_changed == 'true' || steps.changed-files.outputs.node_any_changed == 'true') && hashFiles('**/package-lock.json', '**/npm-shrinkwrap.json', '**/yarn.lock') != '' }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+
+      - name: Setup Node.js (infra changed, no lockfile)
+        if: ${{ (steps.changed-files.outputs.infra_any_changed == 'true' || steps.changed-files.outputs.node_any_changed == 'true') && hashFiles('**/package-lock.json', '**/npm-shrinkwrap.json', '**/yarn.lock') == '' }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Install Node deps (infra changed)
+        if: ${{ (steps.changed-files.outputs.infra_any_changed == 'true' || steps.changed-files.outputs.node_any_changed == 'true') && hashFiles('**/package-lock.json') != '' }}
+        run: npm ci
+
+      - name: Install CDK CLI (infra changed, no lockfile)
+        if: ${{ (steps.changed-files.outputs.infra_any_changed == 'true' || steps.changed-files.outputs.node_any_changed == 'true') && hashFiles('**/package-lock.json') == '' }}
+        run: npm install --no-save aws-cdk@latest
+
+      - name: CDK synth (infra changed)
+        if: ${{ steps.changed-files.outputs.infra_any_changed == 'true' || steps.changed-files.outputs.node_any_changed == 'true' }}
+        run: |
+          echo "🏗️ Validating CDK infrastructure..."
+          npx cdk synth --context environment=dev
+
+  docs-only-summary:
+    needs: validate
+    if: needs.validate.outputs.docs_only == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Publish documentation summary
+        env:
+          DOC_FILES: ${{ needs.validate.outputs.docs_changed_files }}
+        run: |
+          {
+            echo '### Documentation-only changes'
+            echo
+            if [ -n "$DOC_FILES" ]; then
+              while IFS= read -r line; do
+                [ -n "$line" ] && echo "- $line"
+              done <<< "$DOC_FILES"
+            else
+              echo '- 문서 변경 목록을 확인할 수 없습니다.'
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  ci:
+    needs: validate
+    if: needs.validate.outputs.docs_only != 'true'
+    uses: ./.github/workflows/ci.yml
+    with:
+      python-version: *python_version
+      python-any-changed: ${{ needs.validate.outputs.python_any_changed }}
+      run-tests: ${{ needs.validate.outputs.tests_required }}
+    secrets: inherit

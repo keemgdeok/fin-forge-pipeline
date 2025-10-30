@@ -6,13 +6,21 @@ aws-cdk.aws-lambda-python-alpha>=2.100.0a0
 # Development and testing
 pytest>=7.0.0
 pytest-cov>=4.0.0
-black>=23.0.0
-flake8>=6.0.0
+pytest-timeout>=2.1.0
 mypy>=1.0.0
+ruff>=0.6.9
 boto3>=1.26.0
 moto>=4.2.0
+pre-commit
+bandit==1.7.10
+safety==2.3.5
 
 # Utility libraries
 python-dotenv>=1.0.0
 pydantic>=2.0.0
 pyyaml>=6.0
+jsonpath-ng
+pyparsing
+pandas
+pyarrow
+pyspark>=3.5.1

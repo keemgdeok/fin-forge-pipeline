@@ -1,12 +1,16 @@
 """Development environment configuration."""
+
 import os
 
 dev_config = {
     "account_id": os.environ.get("CDK_DEFAULT_ACCOUNT"),
-    "region": "us-east-1",
+    "region": "ap-northeast-2",
+    # Set to True to let CDK create the GitHub OIDC provider. Defaults to reusing account-level provider.
+    "github_oidc_provider_create": False,
     "lambda_memory": 512,
     "lambda_timeout": 300,
     "glue_max_capacity": 2,
+    "glue_max_concurrent_runs": 6,
     "step_function_timeout_hours": 2,
     "s3_retention_days": 30,
     "log_retention_days": 14,
@@ -14,10 +18,83 @@ dev_config = {
     "enable_detailed_monitoring": True,
     "auto_delete_objects": True,
     "removal_policy": "destroy",
+    # Ingestion defaults (EventBridge -> Lambda input)
+    "ingestion_symbols": ["AAPL", "MSFT"],
+    "ingestion_period": "1mo",
+    "ingestion_interval": "1d",
+    "ingestion_file_format": "json",
+    "ingestion_trigger_type": "schedule",
+    "ingestion_domain": "market",
+    "ingestion_table_name": "prices",
+    # Symbol universe asset (deployed via CDK into artifacts bucket)
+    "symbol_universe_asset_path": "data/symbols",
+    "symbol_universe_asset_file": "sp500.json",
+    "symbol_universe_s3_key": "market/universe/sp500.json",
+    "symbol_universe_s3_bucket": "",
+    # Indicators
+    "indicators_table_name": "indicators",
+    "indicators_lookback_days": 150,
+    "indicators_layer": "technical_indicator",
+    # Fan-out (Extract) defaults
+    "orchestrator_chunk_size": 10,
+    "sqs_send_batch_size": 10,
+    "sqs_batch_size": 1,
+    "worker_timeout": 300,
+    "worker_reserved_concurrency": 0,
+    "worker_memory": 512,
+    "enable_gzip": False,
+    "raw_manifest_basename": "_batch",
+    "raw_manifest_suffix": ".manifest.json",
+    "batch_tracker_table_name": "",
+    "batch_tracker_ttl_days": 7,
+    "compaction_worker_type": "G.1X",
+    "compaction_number_workers": 2,
+    "compaction_timeout_minutes": 120,
+    "compaction_target_file_mb": 256,
+    "compaction_codec": "zstd",
+    "compaction_output_subdir": "compacted",
+    "glue_retry_interval_seconds": 30,
+    "glue_retry_backoff_rate": 2.0,
+    "glue_retry_max_attempts": 3,
+    "monitored_glue_jobs": [
+        "daily-prices-compaction",
+        "daily-prices-data-etl",
+        "market-indicators-etl",
+    ],
+    "sfn_max_concurrency": 3,
+    "monitored_state_machines": [
+        "daily-prices-data-processing",
+    ],
+    "max_retries": 5,
+    "processing_orchestration_mode": "dynamodb_stream",
+    # Catalog update policy for crawler: on_schema_change|never|force
+    "catalog_update": "on_schema_change",
+    # Processing triggers (S3->EventBridge->SFN). Supports multiple domain/table pairs.
+    # Each item: {"domain": str, "table_name": str, "file_type": "json|csv|parquet", "suffixes": [".manifest.json"]}
+    "processing_triggers": [
+        {
+            "domain": "market",
+            "table_name": "prices",
+            "file_type": "json",
+            "suffixes": [".manifest.json"],
+        },
+    ],
+    # Default suffixes when processing_triggers not specified
+    "processing_suffixes": [".manifest.json"],
+    # Load pipeline configuration (S3 → SQS)
+    "load_min_file_size_bytes": 1024,
+    "load_domain_configs": [
+        {
+            "domain": "market",
+            "s3_prefix": "market/prices/",
+            "priority": "1",
+        },
+    ],
+    "allowed_load_layers": ["adjusted", "technical_indicator"],
     "tags": {
         "Environment": "dev",
         "Project": "ServerlessDataPipeline",
         "Owner": "DataTeam",
-        "CostCenter": "Engineering"
-    }
+        "CostCenter": "Engineering",
+    },
 }

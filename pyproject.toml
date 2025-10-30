@@ -1,0 +1,52 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+## Black removed in favor of Ruff Formatter
+
+[tool.ruff]
+line-length = 120
+target-version = "py312"
+src = ["src"]
+exclude = [
+  "cdk.out",
+  "node_modules",
+  "src/lambda/layers/*/python/*",
+]
+
+[tool.ruff.lint]
+# Start with Flake8 parity: pycodestyle/pyflakes only
+select = ["E", "F"]
+# Note: Ruff doesn't implement W503; remove it from ignores.
+ignore = ["E203"]
+fixable = ["ALL"]
+
+# isort-style settings reserved for later enabling of import sorting
+[tool.ruff.lint.isort]
+combine-as-imports = true
+force-sort-within-sections = true
+
+[tool.mypy]
+python_version = "3.12"
+ignore_missing_imports = true
+explicit_package_bases = true
+# 소스 루트 지정
+mypy_path = ["src"]
+# Lambda Layer vendored site-packages 제외(정규식)
+exclude = "(?x)(^src/lambda/layers/[^/]+/python/.*$)"
+
+[tool.coverage.run]
+branch = true
+omit = [
+  # Optional external provider client; behavior validated via higher-level tests
+  "src/lambda/layers/data/market/python/market_shared/clients/market_data.py",
+  # Glue ETL jobs run in AWS Glue runtime; exclude from local coverage
+  "src/glue/jobs/*",
+  # Glue support libraries are exercised in AWS Glue context; exclude from load-focused coverage
+  "src/glue/lib/*",
+  "src/glue/__init__.py",
+]
+
+[tool.coverage.report]
+show_missing = true
+skip_covered = true

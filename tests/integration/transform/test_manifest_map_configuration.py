@@ -1,0 +1,169 @@
+"""변환 상태 머신이 manifest 목록을 순차적으로 처리하는지 검증합니다.
+
+로컬 Step Functions 실행 대신 CDK 합성을 통해 생성된 정의를 확인하여,
+
+* Map 상태가 `$.manifest_keys`를 대상으로 존재하는지,
+* `MaxConcurrency`가 환경 설정값(기본 1)을 반영하는지,
+* Preflight → Glue → Success 순서의 반복 구성이 유지되는지 확인합니다.
+"""
+
+from __future__ import annotations
+
+import json
+from dataclasses import dataclass
+from typing import Any, Dict
+
+import pytest
+from aws_cdk import App, Stack, aws_s3 as s3
+from aws_cdk.assertions import Template
+
+from infrastructure.config.environments.dev import dev_config
+from infrastructure.pipelines.daily_prices_data.processing_stack import DailyPricesDataProcessingStack
+
+
+@dataclass
+class SharedStorageStub:
+    """Minimal shared storage construct required by the processing stack."""
+
+    raw_bucket: s3.Bucket
+    curated_bucket: s3.Bucket
+    artifacts_bucket: s3.Bucket
+
+
+def _build_processing_stack(config_override: Dict[str, Any] | None = None) -> DailyPricesDataProcessingStack:
+    app = App()
+
+    shared_stack = Stack(app, "SharedStorageStack")
+    shared_storage = SharedStorageStub(
+        raw_bucket=s3.Bucket(shared_stack, "RawBucket"),
+        curated_bucket=s3.Bucket(shared_stack, "CuratedBucket"),
+        artifacts_bucket=s3.Bucket(shared_stack, "ArtifactsBucket"),
+    )
+
+    config: Dict[str, Any] = dict(dev_config)
+    if config_override:
+        config.update(config_override)
+
+    # Disable stream-triggered orchestration for template inspection tests
+    config["processing_orchestration_mode"] = "manual"
+
+    processing_stack = DailyPricesDataProcessingStack(
+        app,
+        "DailyPricesProcessingStackUnderTest",
+        environment="dev",
+        config=config,
+        shared_storage_stack=shared_storage,
+        lambda_execution_role_arn="arn:aws:iam::123456789012:role/lambda-exec",
+        glue_execution_role_arn="arn:aws:iam::123456789012:role/glue-exec",
+        step_functions_execution_role_arn="arn:aws:iam::123456789012:role/sfn-exec",
+    )
+    return processing_stack
+
+
+def _render_definition(definition_prop: Any) -> str:
+    """Resolve CloudFormation tokens (Fn::Join/Sub/Ref) into a JSON string."""
+    if isinstance(definition_prop, str):
+        return definition_prop
+
+    if isinstance(definition_prop, dict):
+        if "Fn::Join" in definition_prop:
+            joiner, parts = definition_prop["Fn::Join"]
+            rendered_parts = [_render_definition(part) for part in parts]
+            return str(joiner).join(rendered_parts)
+        if "Fn::ImportValue" in definition_prop:
+            # 외부 스택에서 가져온 값은 테스트 목적상 자리 표시자로 취급
+            return f"${{{definition_prop['Fn::ImportValue']}}}"
+        if "Ref" in definition_prop:
+            return f"${{{definition_prop['Ref']}}}"
+        if "Fn::GetAtt" in definition_prop:
+            attr = definition_prop["Fn::GetAtt"]
+            if isinstance(attr, list):
+                target = ".".join(str(segment) for segment in attr)
+            else:
+                target = str(attr)
+            return f"${{{target}}}"
+        if "Fn::Sub" in definition_prop:
+            template = definition_prop["Fn::Sub"]
+            if isinstance(template, str):
+                return template
+            if isinstance(template, list) and template:
+                return str(template[0])
+
+    raise TypeError(f"Unsupported CloudFormation structure: {definition_prop}")
+
+
+def _load_state_machine_definition(template: Template) -> Dict[str, Any]:
+    state_machines = template.find_resources("AWS::StepFunctions::StateMachine")
+    assert state_machines, "Expected at least one state machine to be synthesized"
+
+    state_machine_def = next(iter(state_machines.values()))
+    definition_prop = state_machine_def["Properties"]["DefinitionString"]
+    definition_str = _render_definition(definition_prop)
+    return json.loads(definition_str)
+
+
+def _extract_map_states(map_state: Dict[str, Any]) -> Dict[str, Any]:
+    """Map 상태 정의에서 States 블록을 추출합니다."""
+    if "Iterator" in map_state:
+        return map_state["Iterator"]["States"]
+    item_processor = map_state.get("ItemProcessor")
+    if item_processor and "States" in item_processor:
+        return item_processor["States"]
+    raise KeyError("Iterator")
+
+
+@pytest.mark.integration
+def test_manifest_map_configuration_matches_config() -> None:
+    """
+    Given: 기본 환경 설정으로 합성한 DailyPrices 처리 스택
+    When: 상태 머신 정의를 분석
+    Then: manifest Map 상태가 환경 설정의 MaxConcurrency와 필수 태스크 구성을 유지
+    """
+
+    processing_stack = _build_processing_stack()
+    template = Template.from_stack(processing_stack)
+
+    # When: 합성된 상태 머신 정의를 로드할 때
+    definition = _load_state_machine_definition(template)
+
+    # Then: Map 상태가 설정된 동시성 값과 구성 요소를 유지해야 함
+    map_state = definition["States"]["ProcessManifestList"]
+    assert map_state["Type"] == "Map"
+    assert map_state["ItemsPath"] == "$.manifest_keys"
+    assert map_state["MaxConcurrency"] == dev_config["sfn_max_concurrency"]
+
+    states = _extract_map_states(map_state)
+    assert "PreflightDailyPrices" in states, "PreflightDailyPrices 상태가 정의되지 않았습니다."
+    assert "ProcessDailyPrices" in states, "ProcessDailyPrices 상태가 정의되지 않았습니다."
+
+    preflight = states["PreflightDailyPrices"]
+    process = states["ProcessDailyPrices"]
+    assert preflight["Type"] == "Task"
+    assert process["Type"] == "Task"
+
+    # Map은 결과 배열을 수집하고 후속 단계에서 집계한다.
+    assert map_state.get("ResultPath") == "$.manifest_results"
+    assert "MarkCrawlerNeeded" in states
+    assert "MarkCrawlerNotNeeded" in states
+
+    # 전체 상태 머신에 집계 및 단일 크롤러 실행 단계가 존재해야 한다.
+    assert "AggregateCrawlerDecision" in definition["States"]
+    assert "ShouldRunCrawlerOnce" in definition["States"]
+
+
+@pytest.mark.integration
+def test_manifest_map_respects_overridden_concurrency() -> None:
+    """
+    Given: sfn_max_concurrency 값을 3으로 덮어쓴 구성
+    When: 합성된 상태 머신 정의를 확인
+    Then: Map 상태의 MaxConcurrency가 3으로 설정
+    """
+
+    processing_stack = _build_processing_stack({"sfn_max_concurrency": 3})
+    template = Template.from_stack(processing_stack)
+
+    definition = _load_state_machine_definition(template)
+
+    map_state = definition["States"]["ProcessManifestList"]
+    # Then: Map 상태의 `MaxConcurrency`가 3으로 반영되어야 함
+    assert map_state["MaxConcurrency"] == 3

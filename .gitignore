@@ -13,8 +13,8 @@ dist/
 downloads/
 eggs/
 .eggs/
-lib/
-lib64/
+/lib/
+/lib64/
 parts/
 sdist/
 var/
@@ -45,6 +45,14 @@ Thumbs.db
 .aws/
 *.pem
 
+# CDK
+cdk.out/
+node_modules/
+
+# Lambda Layer vendored site-packages (do not commit)
+src/lambda/layers/market_data_deps/python/*
+!src/lambda/layers/market_data_deps/python/.gitkeep
+
 # Logs
 *.log
 logs/
@@ -59,7 +67,9 @@ logs/
 htmlcov/
 .pytest_cache/
 
+# Ruff cache
+.ruff_cache/
+
 #coding
 CLAUDE.md
-
-
+AGENTS.md

@@ -1,0 +1,58 @@
+# Run format/lint/type checks automatically before each commit
+# Install: pip install pre-commit && pre-commit install
+# Run on all files once: pre-commit run --all-files
+
+repos:
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.13.2
+    hooks:
+      - id: ruff-format
+        name: ruff-format
+        # 설정은 pyproject.toml에서 읽습니다.
+      - id: ruff
+        args: ["--fix", "--exit-non-zero-on-fix"]
+        # 설정은 pyproject.toml에서 읽습니다.
+
+  - repo: https://github.com/pre-commit/mirrors-mypy
+    rev: v1.17.1
+    hooks:
+      - id: mypy
+        pass_filenames: false
+        # 설정은 pyproject.toml에서 읽습니다. 전체 소스 루트를 대상으로 실행합니다.
+        entry: mypy src
+
+  - repo: https://github.com/PyCQA/bandit
+    rev: 1.7.10
+    hooks:
+      - id: bandit
+        name: bandit-security-audit
+        args:
+          - -c
+          - bandit.yaml
+          - --severity-level
+          - medium
+          - --confidence-level
+          - medium
+          - -r
+          - src
+          - infrastructure
+          - scripts
+        pass_filenames: false
+
+  - repo: https://github.com/executablebooks/mdformat
+    rev: 0.7.17
+    hooks:
+      - id: mdformat
+        name: mdformat-docs
+        files: ^(docs/.*|README\.md|tests/.*\.md)$
+        additional_dependencies:
+          - mdformat-gfm
+
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v4.4.0
+    hooks:
+      - id: detect-private-key          # SSH 키 등 민감 키 커밋 차단
+      - id: end-of-file-fixer           # 파일 끝 개행 보정
+      - id: check-added-large-files     # 500KB 이상 신규 파일 차단(필요하면 --maxkb 조정)
+      - id: trailing-whitespace         # 라인 끝 공백 제거
+      - id: check-merge-conflict        # 충돌 마커 잔재 차단

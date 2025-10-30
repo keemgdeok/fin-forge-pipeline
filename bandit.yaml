@@ -1,0 +1,16 @@
+# Bandit configuration aligned with project security policy.
+# See https://bandit.readthedocs.io/en/latest/config.html for available settings.
+exclude_dirs:
+  - .venv
+  - venv
+  - node_modules
+  - cdk.out
+  - src/lambda/layers/data/market/dependencies/python
+  - tests/
+skips: []
+targets:
+  - src
+  - infrastructure
+  - scripts
+severity: MEDIUM
+confidence: MEDIUM
