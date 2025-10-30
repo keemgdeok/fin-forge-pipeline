@@ -5,8 +5,7 @@
 #### \[Components\]
 
 <img src="01-components-1.svg" alt="Components" style="width:100%;" />
-- 리소스 및 구성요소
-- Compaction Guard가 Lambda로 동작하며 Step Functions 맵 내에서 Glue job 이전 검증 수행
+- 스택/컴포넌트 간 의존 관계
 
 <br>
 
