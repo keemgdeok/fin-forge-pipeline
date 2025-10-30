@@ -38,7 +38,7 @@ prod_config = {
     "indicators_lookback_days": 150,
     "indicators_layer": "technical_indicator",
     # Fan-out (Extract) defaults
-    "orchestrator_chunk_size": 100,
+    "orchestrator_chunk_size": 50,
     "sqs_send_batch_size": 10,
     "sqs_batch_size": 3,
     "worker_reserved_concurrency": 0,
