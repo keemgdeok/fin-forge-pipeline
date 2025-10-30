@@ -41,7 +41,7 @@ prod_config = {
     "orchestrator_chunk_size": 100,
     "sqs_send_batch_size": 10,
     "sqs_batch_size": 3,
-    "worker_reserved_concurrency": 30,
+    "worker_reserved_concurrency": 0,
     "worker_timeout": 900,
     "worker_memory": 1024,
     "enable_gzip": True,
