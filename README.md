@@ -210,7 +210,7 @@ ______________________________________________________________________
 ## Testing & Quality Gates
 
 ```bash
-# 린트 및 포맷팅
+# 린트 & 포맷팅
 ruff check src tests
 ruff format src tests
 
