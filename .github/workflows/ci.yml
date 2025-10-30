@@ -197,7 +197,8 @@ jobs:
               try:
                   with urllib.request.urlopen(url, timeout=2) as resp:
                       data = json.load(resp)
-                  if data.get("services", {}).get("stepfunctions") == "running":
+                  status = data.get("services", {}).get("stepfunctions")
+                  if status in ("available", "running"):
                       print("LocalStack ready")
                       break
                   print(f"Waiting for LocalStack: services={data.get('services')}")
