@@ -34,6 +34,7 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Set up Python ${{ env.PY_VERSION }}
+        id: setup-python
         uses: actions/setup-python@v5
         with:
           python-version: ${{ env.PY_VERSION }}
@@ -43,7 +44,8 @@ jobs:
         uses: actions/cache@v4
         with:
           path: .venv
-          key: venv-${{ runner.os }}-${{ env.PY_VERSION }}-${{ hashFiles('requirements.txt') }}
+          # Include exact setup-python version so cached virtualenv matches host binaries.
+          key: venv-${{ runner.os }}-${{ steps.setup-python.outputs.python-version }}-${{ hashFiles('requirements.txt') }}
 
       - name: Install Python dependencies
         if: ${{ steps.venv-cache.outputs.cache-hit != 'true' }}
@@ -59,6 +61,12 @@ jobs:
           echo "VIRTUAL_ENV=$(pwd)/.venv" >> $GITHUB_ENV
           echo "$(pwd)/.venv/bin" >> $GITHUB_PATH
           echo "CDK_PYTHON=$(pwd)/.venv/bin/python" >> $GITHUB_ENV
+
+      - name: Refresh pre-commit shim when cache is reused
+        if: ${{ steps.venv-cache.outputs.cache-hit == 'true' }}
+        run: |
+          # Force-reinstall ensures entrypoint scripts reference the current host python.
+          python -m pip install --upgrade --force-reinstall pre-commit
 
       - name: Run pre-commit (ruff/bandit/mypy)
         run: pre-commit run --all-files --show-diff-on-failure
@@ -77,6 +85,7 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Set up Python ${{ env.PY_VERSION }}
+        id: setup-python
         uses: actions/setup-python@v5
         with:
           python-version: ${{ env.PY_VERSION }}
@@ -92,7 +101,8 @@ jobs:
         uses: actions/cache@v4
         with:
           path: .venv
-          key: venv-${{ runner.os }}-${{ env.PY_VERSION }}-${{ hashFiles('requirements.txt') }}
+          # Include exact setup-python version so cached virtualenv matches host binaries.
+          key: venv-${{ runner.os }}-${{ steps.setup-python.outputs.python-version }}-${{ hashFiles('requirements.txt') }}
 
       - name: Install Python dependencies
         if: ${{ steps.venv-cache.outputs.cache-hit != 'true' }}

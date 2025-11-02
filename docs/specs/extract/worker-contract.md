@@ -58,13 +58,14 @@
 
 ### 배치 트래커 업데이트 (DynamoDB)
 
-| 필드                           | 타입          | 설명                                                     |
-| ------------------------------ | ------------- | -------------------------------------------------------- |
-| `processed_chunks`             | number        | 메시지 처리 시 +1                                        |
-| `last_update`                  | string        | ISO 8601 타임스탬프                                      |
-| `partition_payload`            | list\<object> | `{"ds", "raw_prefix", "object_count"}` 누적              |
-| `combined_partition_summaries` | list\<object> | 최종 청크가 집계한 partition 요약                        |
-| `status`                       | string        | `processing` → `finalizing` → `complete` (Worker가 전환) |
+| 필드                 | 타입          | 설명                                                     |
+| -------------------- | ------------- | -------------------------------------------------------- |
+| `processed_chunks`   | number        | 메시지 처리 시 +1                                        |
+| `last_update`        | string        | ISO 8601 타임스탬프                                      |
+| `last_ds`            | string        | 마지막으로 처리한 파티션 날짜 (`YYYY-MM-DD`)             |
+| `finalizing_payload` | object        | 상태 전환 시 기록하는 메타데이터 (심볼 목록 등)          |
+| `manifest_keys`      | list\<string> | 최종화 시 기록된 매니페스트 S3 키 목록                   |
+| `status`             | string        | `processing` → `finalizing` → `complete` (Worker가 전환) |
 
 ### 매니페스트 파일 (`_batch.manifest.json`)
 
