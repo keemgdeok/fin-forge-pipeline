@@ -34,31 +34,6 @@ def _now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
-def _combine_partition_entries(entries: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
-    combined: Dict[str, Dict[str, Any]] = {}
-    for entry in entries or []:
-        ds = str(entry.get("ds")) if entry.get("ds") else None
-        if not ds:
-            continue
-        bucket = combined.setdefault(
-            ds,
-            {
-                "raw_prefix": entry.get("raw_prefix", ""),
-                "object_count": 0,
-            },
-        )
-        bucket["object_count"] += int(entry.get("object_count", 0))
-
-    return [
-        {
-            "ds": ds,
-            "raw_prefix": values.get("raw_prefix", ""),
-            "object_count": values.get("object_count", 0),
-        }
-        for ds, values in combined.items()
-    ]
-
-
 def _to_json_safe(value: Any) -> Any:
     if isinstance(value, Decimal):
         if value % 1 == 0:
@@ -96,21 +71,6 @@ def _update_batch_tracker(
     }
     update_expression = "ADD processed_chunks :inc SET last_update = :now, last_ds = :ds"
 
-    partition_entries = [
-        {
-            "ds": summary.get("ds"),
-            "raw_prefix": summary.get("raw_prefix"),
-            "object_count": len(summary.get("objects", [])),
-        }
-        for summary in partition_summaries
-        if summary.get("ds")
-    ]
-
-    if partition_entries:
-        expression_values[":empty"] = []
-        expression_values[":entries"] = partition_entries
-        update_expression += ", partition_payload = list_append(if_not_exists(partition_payload, :empty), :entries)"
-
     try:
         resp = table.update_item(
             Key={"pk": batch_id},
@@ -132,9 +92,9 @@ def _update_batch_tracker(
 
     if processed == expected and status == "processing":
         # Attempt to claim finalization
-        combined_summaries = _combine_partition_entries(attrs.get("partition_payload", []))
         summary_payload = {
-            "partition_summaries": combined_summaries,
+            # Partition summaries are derived from S3 chunk summaries during finalization.
+            "partition_summaries": [],
             "symbols": payload.get("symbols", []),
         }
         try:
@@ -150,7 +110,6 @@ def _update_batch_tracker(
                 ExpressionAttributeNames={"#status": "status"},
                 ConditionExpression="#status = :processing",
             )
-            attrs["combined_partition_summaries"] = combined_summaries
             return True, attrs
         except ClientError as exc:
             if exc.response.get("Error", {}).get("Code") == "ConditionalCheckFailedException":
@@ -265,11 +224,19 @@ def _emit_manifests(
     )
 
     if not combined:
-        combined_raw = tracker_attrs.get("combined_partition_summaries")
+        combined_raw = tracker_attrs.get("finalizing_payload", {}).get("partition_summaries")
         if combined_raw is not None:
             combined = cast(List[Dict[str, Any]], combined_raw)
-        else:
-            combined = _combine_partition_entries(tracker_attrs.get("partition_payload") or partition_entries)
+        elif partition_entries:
+            combined = [
+                {
+                    "ds": entry.get("ds"),
+                    "objects": [],
+                    "raw_prefix": entry.get("raw_prefix", ""),
+                }
+                for entry in partition_entries
+                if entry.get("ds")
+            ]
 
     if not combined or not raw_bucket:
         return []

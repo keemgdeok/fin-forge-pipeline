@@ -206,6 +206,8 @@ def collect_manifest_entries(
             entries.setdefault(entry.ds, entry)
 
     if not entries:
+        # Primary fallback: derive manifest descriptors from chunk summaries persisted in S3.
+        # Batch tracker items no longer accumulate partition_payload to stay below DynamoDB size limits.
         combined, _ = load_chunk_summaries(
             raw_bucket=raw_bucket,
             batch_id=batch_id,

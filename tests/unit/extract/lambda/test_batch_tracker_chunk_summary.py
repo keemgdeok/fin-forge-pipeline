@@ -32,7 +32,7 @@ def test_update_batch_tracker_summarizes_objects() -> None:
     """
     Given: 처리된 청크가 없는 기존 배치 트래커 아이템이 존재
     When: _update_batch_tracker 호출로 파티션 요약을 축적하면
-    Then: 배치가 완료되지 않은 상태로 객체 정보가 요약에 합쳐져야 함
+    Then: 배치가 완료되지 않은 상태로 진행률만 갱신되고 DynamoDB 아이템은 400KB 이하를 유지해야 함
     """
     table_name = "test-batch-tracker"
     _create_batch_table(table_name)
@@ -69,10 +69,10 @@ def test_update_batch_tracker_summarizes_objects() -> None:
 
     assert not should_finalize
     stored = table.get_item(Key={"pk": "batch-1"})["Item"]
-    payload_entry = stored["partition_payload"][0]
-    assert payload_entry["object_count"] == 2
-    assert "objects" not in payload_entry
-    assert "combined_partition_summaries" not in attrs
+    assert stored["processed_chunks"] == Decimal(1)
+    assert stored["last_ds"] == "2025-09-10"
+    assert "partition_payload" not in stored
+    assert attrs.get("status") == "processing"
 
 
 @mock_aws
