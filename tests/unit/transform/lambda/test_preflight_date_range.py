@@ -29,6 +29,7 @@ def _set_pipeline_env(monkeypatch: pytest.MonkeyPatch, *, raw: str, curated: str
     monkeypatch.setenv("ARTIFACTS_BUCKET", artifacts)
     monkeypatch.setenv("EXPECTED_MIN_RECORDS", "10")
     monkeypatch.setenv("MAX_CRITICAL_ERROR_RATE", "5.0")
+    monkeypatch.setenv("GLUE_OUTPUT_PARTITIONS", "4")
 
 
 @mock_aws
@@ -94,6 +95,7 @@ def test_date_range_expands_items_with_idempotency_and_glue_args(monkeypatch: py
         assert gargs["--schema_fingerprint_s3_uri"].startswith(
             f"s3://{artifacts_b}/market/prices/_schema/latest.json".rsplit("/latest.json", 1)[0]
         )
+        assert gargs["--output_partitions"] == "4"
         assert by_ds[d]["catalog_update"] == "on_schema_change"
 
     # 2025-09-02 should be idempotent skip

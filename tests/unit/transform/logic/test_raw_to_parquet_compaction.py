@@ -27,6 +27,7 @@ def _base_args(file_type: str = "json") -> Dict[str, str]:
         "interval": "1d",
         "data_source": "yahoo",
         "layer": "compacted",
+        "output_partitions": "4",
     }
 
 

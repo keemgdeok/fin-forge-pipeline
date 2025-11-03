@@ -39,6 +39,7 @@ def test_missing_required_fields_returns_pre_validation_failed(
     os.environ["RAW_BUCKET"] = "raw-bucket-dev"
     os.environ["CURATED_BUCKET"] = "curated-bucket-dev"
     os.environ["ARTIFACTS_BUCKET"] = "artifacts-bucket-dev"
+    os.environ["GLUE_OUTPUT_PARTITIONS"] = "4"
 
     s3 = _S3Stub(0)
     monkeypatch.setitem(mod["boto3"].__dict__, "client", _Boto(s3).client)
@@ -61,6 +62,7 @@ def test_missing_date_segments_in_key_returns_pre_validation_failed(
     os.environ["RAW_BUCKET"] = "raw-bucket-dev"
     os.environ["CURATED_BUCKET"] = "curated-bucket-dev"
     os.environ["ARTIFACTS_BUCKET"] = "artifacts-bucket-dev"
+    os.environ["GLUE_OUTPUT_PARTITIONS"] = "4"
 
     s3 = _S3Stub(0)
     monkeypatch.setitem(mod["boto3"].__dict__, "client", _Boto(s3).client)
@@ -116,6 +118,7 @@ def test_idempotent_skip_returns_expected_code_and_ds(monkeypatch) -> None:
     os.environ["RAW_BUCKET"] = "raw-bucket-dev"
     os.environ["CURATED_BUCKET"] = "curated-bucket-dev"
     os.environ["ARTIFACTS_BUCKET"] = "artifacts-bucket-dev"
+    os.environ["GLUE_OUTPUT_PARTITIONS"] = "4"
 
     # KeyCount=1 -> curated partition exists
     s3 = _S3Stub(1)
@@ -145,6 +148,7 @@ def test_valid_builds_glue_args_with_schema_path(monkeypatch) -> None:
     os.environ["RAW_BUCKET"] = "raw-bucket-dev"
     os.environ["CURATED_BUCKET"] = "curated-bucket-dev"
     os.environ["ARTIFACTS_BUCKET"] = "artifacts-bucket-dev"
+    os.environ["GLUE_OUTPUT_PARTITIONS"] = "4"
 
     s3 = _S3Stub(0)
     monkeypatch.setitem(mod["boto3"].__dict__, "client", _Boto(s3).client)
@@ -193,3 +197,4 @@ def test_valid_includes_threshold_args(monkeypatch) -> None:
     args = resp["glue_args"]
     assert args["--expected_min_records"] == "123"
     assert args["--max_critical_error_rate"] == "7.5"
+    assert args["--output_partitions"] == "4"

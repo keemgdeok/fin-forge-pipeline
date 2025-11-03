@@ -200,6 +200,7 @@ class TestStepFunctionsWorkflow:
                                 "--ds": "2025-09-07",
                                 "--raw_bucket": "test-raw",
                                 "--curated_bucket": "test-curated",
+                                "--output_partitions": "4",
                             },
                         }
                     ).encode()
@@ -373,7 +374,11 @@ class TestStepFunctionsWorkflow:
                 "StatusCode": 200,
                 "Payload": MagicMock(
                     read=lambda: json.dumps(
-                        {"proceed": True, "ds": "2025-09-07", "glue_args": {"--ds": "2025-09-07"}}
+                        {
+                            "proceed": True,
+                            "ds": "2025-09-07",
+                            "glue_args": {"--ds": "2025-09-07", "--output_partitions": "4"},
+                        }
                     ).encode()
                 ),
             }

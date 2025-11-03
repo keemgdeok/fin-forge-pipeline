@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import re
+import os
 from typing import Any, Dict
 
 
@@ -39,6 +40,9 @@ def lambda_handler(event: Dict[str, Any], _context: Any) -> Dict[str, Any]:
         "--compacted_layer": compacted_layer,
         "--schema_fingerprint_s3_uri": f"s3://{artifacts_bucket}/{domain}/{table}/_schema/latest.json",
     }
+    output_partitions = event.get("output_partitions") or os.environ.get("GLUE_OUTPUT_PARTITIONS") or "4"
+    if output_partitions:
+        glue_args["--output_partitions"] = str(output_partitions)
     compaction_args = {
         "--raw_bucket": raw_bucket,
         "--raw_prefix": base_prefix,
