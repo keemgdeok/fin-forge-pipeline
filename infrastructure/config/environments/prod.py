@@ -9,7 +9,7 @@ prod_config = {
     "github_oidc_provider_create": False,
     "lambda_memory": 512,
     "lambda_timeout": 900,
-    "glue_max_capacity": 2,
+    "glue_max_capacity": 5,
     "glue_max_concurrent_runs": 6,
     "step_function_timeout_hours": 4,
     "s3_retention_days": 365,
