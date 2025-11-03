@@ -217,9 +217,11 @@ def _cast_short(df: DataFrame, columns: Tuple[str, ...]) -> DataFrame:
     return df
 
 
-def _determine_output_partitions(spark: SparkContext, cap: int = 32) -> int:
-    default_parallelism = max(1, spark.defaultParallelism)
-    return max(1, min(cap, default_parallelism))
+DEFAULT_OUTPUT_PARTITIONS = 4
+
+
+def _determine_output_partitions(_: SparkContext, desired_output_partitions: int) -> int:
+    return max(1, desired_output_partitions)
 
 
 args = getResolvedOptions(
@@ -240,6 +242,7 @@ args = getResolvedOptions(
         "table_name",
         "prices_layer",
         "output_layer",
+        "output_partitions",
     ],
 )
 
@@ -248,7 +251,8 @@ glue_context = GlueContext(sc)
 spark = glue_context.spark_session
 job = Job(glue_context)
 job.init(args["JOB_NAME"], args)
-output_partitions = _determine_output_partitions(sc)
+desired_output_partitions = int(args.get("output_partitions", DEFAULT_OUTPUT_PARTITIONS))
+output_partitions = _determine_output_partitions(sc, desired_output_partitions)
 spark.conf.set("spark.sql.shuffle.partitions", str(output_partitions))
 
 spark.conf.set("spark.sql.parquet.compression.codec", args["codec"])
@@ -429,3 +433,4 @@ else:
     )
 
 job.commit()
+OUTPUT_PARTITIONS = 4

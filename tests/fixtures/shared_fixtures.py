@@ -436,6 +436,7 @@ def assert_glue_args_valid(
         "--codec",
         "--target_file_mb",
         "--file_type",
+        "--output_partitions",
     ]
 
     for arg in required_args:
@@ -453,6 +454,7 @@ def assert_glue_args_valid(
     assert glue_args["--codec"] == "zstd"
     assert glue_args["--target_file_mb"] == "256"
     assert glue_args["--file_type"] == partition.file_type
+    assert glue_args.get("--output_partitions") is not None
 
     # Validate S3 URI format
     fingerprint_uri = glue_args["--schema_fingerprint_s3_uri"]

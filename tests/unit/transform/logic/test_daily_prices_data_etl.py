@@ -229,6 +229,8 @@ def mock_environment(monkeypatch):
         "zstd",
         "--target_file_mb",
         "256",
+        "--output_partitions",
+        "4",
         "--ds",
         "2025-09-07",
         "--file_type",
@@ -289,6 +291,7 @@ def test_etl_happy_path_json_processing(mock_environment, monkeypatch):
                 "target_file_mb": "256",
                 "ds": "2025-09-07",
                 "file_type": "json",
+                "output_partitions": "4",
             }
         ),
         "spark": mock_spark,

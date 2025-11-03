@@ -64,7 +64,15 @@ def _read_raw_dataframe(spark: SparkSession, file_type: str, path: str) -> DataF
     raise ValueError(f"Unsupported file_type '{file_type}' for compaction job")
 
 
-def _configure_spark(spark: SparkSession, codec: str, target_file_mb: int) -> int:
+DEFAULT_OUTPUT_PARTITIONS = 4
+
+
+def _configure_spark(
+    spark: SparkSession,
+    codec: str,
+    target_file_mb: int,
+    desired_output_partitions: int,
+) -> int:
     """Apply Spark settings for deterministic parquet output."""
 
     spark.conf.set("spark.sql.parquet.compression.codec", codec)
@@ -72,8 +80,7 @@ def _configure_spark(spark: SparkSession, codec: str, target_file_mb: int) -> in
     target_bytes = max(32, target_file_mb) * _MEGABYTE
     spark.conf.set("spark.sql.files.maxPartitionBytes", str(target_bytes))
 
-    default_parallelism = max(1, spark.sparkContext.defaultParallelism)
-    output_partitions = max(1, min(32, default_parallelism))
+    output_partitions = max(1, desired_output_partitions)
     spark.conf.set("spark.sql.shuffle.partitions", str(output_partitions))
     return output_partitions
 
@@ -95,6 +102,7 @@ def main() -> None:
             "interval",
             "data_source",
             "layer",
+            "output_partitions",
         ],
     )
 
@@ -127,7 +135,8 @@ def main() -> None:
         return
 
     target_file_mb = int(args.get("target_file_mb", "256"))
-    output_partitions = _configure_spark(spark, args["codec"], target_file_mb)
+    desired_output_partitions = int(args.get("output_partitions", DEFAULT_OUTPUT_PARTITIONS))
+    output_partitions = _configure_spark(spark, args["codec"], target_file_mb, desired_output_partitions)
 
     df = _read_raw_dataframe(spark, args["file_type"], raw_path)
     record_count = df.count()

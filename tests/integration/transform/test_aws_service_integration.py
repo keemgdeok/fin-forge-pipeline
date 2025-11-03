@@ -75,7 +75,11 @@ def step_functions_definition():
         "States": {
             "MockPreflight": {
                 "Type": "Pass",
-                "Parameters": {"proceed": True, "ds": "2025-09-07", "glue_args": {"--ds": "2025-09-07"}},
+                "Parameters": {
+                    "proceed": True,
+                    "ds": "2025-09-07",
+                    "glue_args": {"--ds": "2025-09-07", "--output_partitions": "4"},
+                },
                 "Next": "Success",
             },
             "Success": {"Type": "Succeed", "Comment": "Integration test completed"},

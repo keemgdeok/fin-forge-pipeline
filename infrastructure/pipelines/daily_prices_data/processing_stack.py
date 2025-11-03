@@ -58,6 +58,8 @@ class DailyPricesDataProcessingStack(Stack):
         self.map_max_concurrency: int = int(self.config.get("sfn_max_concurrency", 1))
         self.step_function_timeout_hours: int = int(self.config.get("step_function_timeout_hours", 2))
         self.glue_timeout_minutes: int = max(1, self.step_function_timeout_hours * 60)
+        glue_capacity = max(1, int(self.config.get("glue_max_capacity", 2)))
+        self.glue_output_partitions: int = max(1, glue_capacity - 1)
 
         # Deterministic Glue job name used across resources (avoids Optional[str] typing)
         self.etl_job_name: str = f"{self.env_name}-daily-prices-data-etl"
@@ -131,6 +133,7 @@ class DailyPricesDataProcessingStack(Stack):
                 "--codec": self.compaction_codec,
                 "--target_file_mb": str(int(self.config.get("compaction_target_file_mb", 256))),
                 "--extra-py-files": shared_py_asset.s3_object_url,
+                "--output_partitions": str(self.glue_output_partitions),
             },
             glue_version="5.0",
             max_retries=1,
@@ -202,6 +205,7 @@ class DailyPricesDataProcessingStack(Stack):
                 "--data_source": self.default_data_source,
                 "--environment": self.env_name,
                 "--schema_fingerprint_s3_uri": schema_fp_uri,
+                "--output_partitions": str(self.glue_output_partitions),
             },
             # Align with docs/spec: Glue 5.0
             glue_version="5.0",
@@ -354,6 +358,7 @@ class DailyPricesDataProcessingStack(Stack):
                 "--layer": self.compaction_output_subdir,
                 "--codec": self.compaction_codec,
                 "--target_file_mb": str(int(self.config.get("compaction_target_file_mb", 256))),
+                "--output_partitions": str(self.glue_output_partitions),
             },
             result_path="$.compaction_args",
         )
@@ -407,6 +412,7 @@ class DailyPricesDataProcessingStack(Stack):
                 "--target_file_mb": "256",
                 "--lookback_days": str(int(self.config.get("indicators_lookback_days", 252))),
                 "--ds.$": "$.ds",
+                "--output_partitions": str(self.glue_output_partitions),
             },
             result_path="$.indicators_glue_args",
         )
@@ -660,6 +666,7 @@ class DailyPricesDataProcessingStack(Stack):
                 "CURATED_BUCKET": self.shared_storage.curated_bucket.bucket_name,
                 "ARTIFACTS_BUCKET": self.shared_storage.artifacts_bucket.bucket_name,
                 "COMPACTION_OUTPUT_SUBDIR": self.compaction_output_subdir,
+                "GLUE_OUTPUT_PARTITIONS": str(self.glue_output_partitions),
             },
         )
         return function
