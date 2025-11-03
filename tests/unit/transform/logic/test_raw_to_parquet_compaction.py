@@ -38,7 +38,8 @@ def _mock_spark_session(record_count: int) -> SimpleNamespace:
     mock_writer.format.return_value = mock_writer
     mock_writer.option.return_value = mock_writer
     mock_df.write = mock_writer
-    mock_df.coalesce.return_value = mock_df
+    mock_df.coalesce.return_value = mock_df  # legacy safety
+    mock_df.repartition.return_value = mock_df
 
     mock_reader = MagicMock()
     mock_reader.json.return_value = mock_df
@@ -47,7 +48,8 @@ def _mock_spark_session(record_count: int) -> SimpleNamespace:
 
     mock_conf = MagicMock()
 
-    spark_session = SimpleNamespace(read=mock_reader, conf=mock_conf)
+    spark_context = SimpleNamespace(defaultParallelism=4)
+    spark_session = SimpleNamespace(read=mock_reader, conf=mock_conf, sparkContext=spark_context)
     return spark_session, mock_df, mock_writer, mock_conf
 
 
@@ -141,11 +143,12 @@ def test_compaction_writes_parquet(monkeypatch):
 
     mock_conf.set.assert_any_call("spark.sql.parquet.compression.codec", "zstd")
     mock_conf.set.assert_any_call("spark.sql.files.maxPartitionBytes", str(128 * 1024 * 1024))
+    mock_conf.set.assert_any_call("spark.sql.shuffle.partitions", "4")
 
     mock_writer.save.assert_called_once_with(
         "s3://curated-bucket/market/prices/interval=1d/data_source=yahoo/year=2024/month=01/day=15/layer=compacted"
     )
-    mock_df.coalesce.assert_called_once_with(1)
+    mock_df.repartition.assert_called_once_with(4)
     mock_job.commit.assert_called_once()
 
 

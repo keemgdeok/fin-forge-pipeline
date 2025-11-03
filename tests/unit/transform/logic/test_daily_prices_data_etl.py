@@ -8,6 +8,7 @@ with focus on data quality, error handling, and specification compliance.
 import pytest
 import json
 import runpy
+from types import SimpleNamespace
 from typing import Dict, Any, List, Optional, Tuple
 from unittest.mock import Mock, patch
 
@@ -45,6 +46,10 @@ class _MockDataFrame:
 
     def coalesce(self, num_partitions: int) -> "_MockDataFrame":
         self.transform_calls.append(("coalesce", num_partitions))
+        return self
+
+    def repartition(self, num_partitions: int) -> "_MockDataFrame":
+        self.transform_calls.append(("repartition", num_partitions))
         return self
 
     @property
@@ -129,6 +134,7 @@ class _MockSparkSession:
         self.schema_fields = schema_fields or []
         self.conf_calls: List[Any] = []
         self.read = _MockDataFrameReader(self.read_data, self.schema_fields)
+        self.sparkContext = SimpleNamespace(defaultParallelism=4)
 
     @property
     def conf(self) -> "_MockSparkConf":
@@ -328,7 +334,7 @@ def test_etl_happy_path_json_processing(mock_environment, monkeypatch):
         df_out = df.withColumn("ds", "2025-09-07")
 
         # Simulate writing to curated
-        df_out.coalesce(1).write.mode("append").partitionBy("ds").format("parquet").save(
+        df_out.repartition(4).write.mode("append").partitionBy("ds").format("parquet").save(
             "s3://test-curated-bucket/market/prices/"
         )
 
@@ -340,8 +346,8 @@ def test_etl_happy_path_json_processing(mock_environment, monkeypatch):
         assert write_call["format"] == "parquet"
         assert write_call["partition_by"] == ("ds",)
 
-        # Verify coalesce was called
-        assert ("coalesce", 1) in df_out.transform_calls
+        # Verify repartition was called
+        assert ("repartition", 4) in df_out.transform_calls
 
         # Simulate schema fingerprint creation and S3 upload
         fingerprint = {

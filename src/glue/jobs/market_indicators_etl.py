@@ -217,6 +217,11 @@ def _cast_short(df: DataFrame, columns: Tuple[str, ...]) -> DataFrame:
     return df
 
 
+def _determine_output_partitions(spark: SparkContext, cap: int = 32) -> int:
+    default_parallelism = max(1, spark.defaultParallelism)
+    return max(1, min(cap, default_parallelism))
+
+
 args = getResolvedOptions(
     sys.argv,
     [
@@ -243,6 +248,8 @@ glue_context = GlueContext(sc)
 spark = glue_context.spark_session
 job = Job(glue_context)
 job.init(args["JOB_NAME"], args)
+output_partitions = _determine_output_partitions(sc)
+spark.conf.set("spark.sql.shuffle.partitions", str(output_partitions))
 
 spark.conf.set("spark.sql.parquet.compression.codec", args["codec"])
 
@@ -356,7 +363,7 @@ if duplicate_check > 0:
         layer="quarantine",
     )
     quarantine_path = _build_path(uri_scheme, args["output_bucket"], quarantine_key)
-    ind_ds_df.coalesce(1).write.mode("overwrite").format("parquet").save(quarantine_path)
+    ind_ds_df.repartition(output_partitions).write.mode("overwrite").format("parquet").save(quarantine_path)
     raise RuntimeError("DQ_FAILED: duplicate (date,symbol) detected in indicators output")
 
 ind_out = ind_ds_df.withColumn("date", F.to_date("date"))
@@ -383,7 +390,7 @@ output_key = build_curated_layer_path(
     layer=output_layer,
 )
 out_path = _build_path(uri_scheme, args["output_bucket"], output_key)
-ind_out.coalesce(1).write.mode("overwrite").format("parquet").save(out_path)
+ind_out.repartition(output_partitions).write.mode("overwrite").format("parquet").save(out_path)
 
 cols = [
     {"name": field.name, "type": field.dataType.simpleString()} for field in ind_out.schema.fields if field.name != "ds"
