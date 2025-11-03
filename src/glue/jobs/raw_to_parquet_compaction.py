@@ -139,13 +139,12 @@ def main() -> None:
     output_partitions = _configure_spark(spark, args["codec"], target_file_mb, desired_output_partitions)
 
     df = _read_raw_dataframe(spark, args["file_type"], raw_path)
+    df = df.repartition(output_partitions)
     record_count = df.count()
     if record_count == 0:
         print(f"Raw dataset empty for {raw_key_prefix}, skipping output write")
         job.commit()
         return
-
-    df = df.repartition(output_partitions)
 
     print(f"Compacting {record_count} records from {raw_path} to {compacted_path}")
     (df.write.mode("overwrite").format("parquet").option("compression", args["codec"]).save(compacted_path))

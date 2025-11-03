@@ -35,7 +35,7 @@ prod_config = {
     "symbol_universe_s3_bucket": "",
     # Indicators
     "indicators_table_name": "indicators",
-    "indicators_lookback_days": 150,
+    "indicators_lookback_days": 121,
     "indicators_layer": "technical_indicator",
     # Fan-out (Extract) defaults
     "orchestrator_chunk_size": 50,
