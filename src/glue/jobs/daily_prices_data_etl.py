@@ -6,7 +6,7 @@ from awsglue.utils import getResolvedOptions
 from awsglue.context import GlueContext
 from awsglue.job import Job
 from pyspark.context import SparkContext
-from pyspark.sql import functions as F
+from pyspark.sql import SparkSession, functions as F
 from pyspark.sql import DataFrame
 from pyspark.sql.utils import AnalysisException
 
@@ -78,6 +78,14 @@ Reads raw partition for ds, validates via shared DQ engine when present, then
 persists curated data and schema fingerprint artifacts.
 """
 
+
+def _determine_output_partitions(spark: SparkSession, cap: int = 32) -> int:
+    """Derive a reasonable number of output partitions for parallel writes."""
+
+    default_parallelism = max(1, spark.sparkContext.defaultParallelism)
+    return max(1, min(cap, default_parallelism))
+
+
 # Read raw partition for ds
 interval = args.get("interval")
 data_source = args.get("data_source")
@@ -133,6 +141,9 @@ if df is None:
     else:
         df = spark.read.parquet(raw_path)
 
+output_partitions = _determine_output_partitions(spark)
+spark.conf.set("spark.sql.shuffle.partitions", str(output_partitions))
+
 
 def _write_quarantine_and_fail(df_in: DataFrame, reason: str) -> None:
     """Write dataset to quarantine path and raise DQ failure."""
@@ -147,7 +158,7 @@ def _write_quarantine_and_fail(df_in: DataFrame, reason: str) -> None:
     quarantine_path = f"s3://{args['curated_bucket']}/{quarantine_key}"
     # Write as Parquet with same compression settings
     spark.conf.set("spark.sql.parquet.compression.codec", args["codec"])  # zstd
-    df_in.coalesce(1).write.mode("overwrite").format("parquet").save(quarantine_path)
+    df_in.repartition(output_partitions).write.mode("overwrite").format("parquet").save(quarantine_path)
     raise RuntimeError(f"DQ_FAILED: {reason}")
 
 
@@ -357,7 +368,7 @@ curated_key = build_curated_layer_path(
     layer=curated_layer,
 )
 curated_path = f"s3://{args['curated_bucket']}/{curated_key}"
-df_out.coalesce(1).write.mode("overwrite").format("parquet").save(curated_path)
+df_out.repartition(output_partitions).write.mode("overwrite").format("parquet").save(curated_path)
 
 # Produce schema fingerprint from DataFrame schema
 cols = [{"name": f.name, "type": f.dataType.simpleString()} for f in df_out.schema.fields if f.name != "ds"]

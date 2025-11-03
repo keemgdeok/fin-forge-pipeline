@@ -64,14 +64,18 @@ def _read_raw_dataframe(spark: SparkSession, file_type: str, path: str) -> DataF
     raise ValueError(f"Unsupported file_type '{file_type}' for compaction job")
 
 
-def _configure_spark(spark: SparkSession, codec: str, target_file_mb: int) -> None:
+def _configure_spark(spark: SparkSession, codec: str, target_file_mb: int) -> int:
     """Apply Spark settings for deterministic parquet output."""
 
     spark.conf.set("spark.sql.parquet.compression.codec", codec)
     # Align output file sizing with requested MB target (avoid single huge file).
     target_bytes = max(32, target_file_mb) * _MEGABYTE
     spark.conf.set("spark.sql.files.maxPartitionBytes", str(target_bytes))
-    spark.conf.set("spark.sql.shuffle.partitions", "1")
+
+    default_parallelism = max(1, spark.sparkContext.defaultParallelism)
+    output_partitions = max(1, min(32, default_parallelism))
+    spark.conf.set("spark.sql.shuffle.partitions", str(output_partitions))
+    return output_partitions
 
 
 def main() -> None:
@@ -123,7 +127,7 @@ def main() -> None:
         return
 
     target_file_mb = int(args.get("target_file_mb", "256"))
-    _configure_spark(spark, args["codec"], target_file_mb)
+    output_partitions = _configure_spark(spark, args["codec"], target_file_mb)
 
     df = _read_raw_dataframe(spark, args["file_type"], raw_path)
     record_count = df.count()
@@ -132,7 +136,7 @@ def main() -> None:
         job.commit()
         return
 
-    df = df.coalesce(1)
+    df = df.repartition(output_partitions)
 
     print(f"Compacting {record_count} records from {raw_path} to {compacted_path}")
     (df.write.mode("overwrite").format("parquet").option("compression", args["codec"]).save(compacted_path))
