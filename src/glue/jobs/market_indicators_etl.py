@@ -314,6 +314,8 @@ null_pk = prices_df.filter(F.col("symbol").isNull() | F.col("date").isNull()).li
 if null_pk > 0:
     raise RuntimeError("DQ_FAILED: Null symbol/date detected in curated prices")
 
+prices_df = prices_df.repartition(output_partitions, "symbol")
+
 schema_overrides: Dict[str, Dict[str, Any]] = {
     "date": {"type": T.DateType(), "nullable": False},
     "symbol": {"type": T.StringType(), "nullable": False},
