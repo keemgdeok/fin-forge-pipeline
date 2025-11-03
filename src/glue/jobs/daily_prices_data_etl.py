@@ -62,6 +62,7 @@ args = getResolvedOptions(
         "table_name",
         "curated_layer",
         "compacted_layer",
+        "output_partitions",
     ],
 )
 
@@ -79,11 +80,13 @@ persists curated data and schema fingerprint artifacts.
 """
 
 
-def _determine_output_partitions(spark: SparkSession, cap: int = 32) -> int:
-    """Derive a reasonable number of output partitions for parallel writes."""
+DEFAULT_OUTPUT_PARTITIONS = 4
 
-    default_parallelism = max(1, spark.sparkContext.defaultParallelism)
-    return max(1, min(cap, default_parallelism))
+
+def _determine_output_partitions(_: SparkSession, desired_output_partitions: int) -> int:
+    """Return the configured number of output partitions for parallel writes."""
+
+    return max(1, desired_output_partitions)
 
 
 # Read raw partition for ds
@@ -141,7 +144,8 @@ if df is None:
     else:
         df = spark.read.parquet(raw_path)
 
-output_partitions = _determine_output_partitions(spark)
+desired_output_partitions = int(args.get("output_partitions", DEFAULT_OUTPUT_PARTITIONS))
+output_partitions = _determine_output_partitions(spark, desired_output_partitions)
 spark.conf.set("spark.sql.shuffle.partitions", str(output_partitions))
 
 
@@ -416,3 +420,4 @@ else:
     )
 
 job.commit()
+OUTPUT_PARTITIONS = 4

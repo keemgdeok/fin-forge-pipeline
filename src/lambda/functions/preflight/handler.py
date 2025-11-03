@@ -172,6 +172,12 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
 
     compaction_subdir = os.environ.get("COMPACTION_OUTPUT_SUBDIR", "compacted")
 
+    output_partitions_env = os.environ.get("GLUE_OUTPUT_PARTITIONS", "")
+    try:
+        glue_output_partitions = str(max(1, int(output_partitions_env))) if output_partitions_env else ""
+    except ValueError:
+        glue_output_partitions = ""
+
     if isinstance(date_range, dict) and date_range.get("start") and date_range.get("end"):
         catalog_update = str(event.get("catalog_update", "")).strip() or None
         start = str(date_range["start"]).strip()
@@ -237,6 +243,8 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
                 "--interval": interval_value,
                 "--data_source": data_source_value,
             }
+            if glue_output_partitions:
+                glue_args_i["--output_partitions"] = glue_output_partitions
 
             if exists:
                 items.append(
@@ -363,6 +371,8 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
         "--interval": interval_value,
         "--data_source": data_source_value,
     }
+    if glue_output_partitions:
+        glue_args["--output_partitions"] = glue_output_partitions
 
     result = {
         "proceed": True,
