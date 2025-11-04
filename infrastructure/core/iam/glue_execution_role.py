@@ -63,6 +63,7 @@ class GlueExecutionRoleConstruct(Construct):
         raw_read_arns: list[str] = []
         curated_read_arns: list[str] = []
         curated_write_arns: list[str] = []
+        artifacts_schema_arns: list[str] = []
 
         if domain_tables:
             for domain, table in domain_tables:
@@ -70,6 +71,9 @@ class GlueExecutionRoleConstruct(Construct):
                 raw_read_arns.append(iam_utils.bucket_objects_arn(raw_bucket_name, base_prefix))
                 curated_read_arns.append(iam_utils.bucket_objects_arn(curated_bucket_name, base_prefix))
                 curated_write_arns.append(iam_utils.bucket_objects_arn(curated_bucket_name, base_prefix))
+                artifacts_schema_arns.append(
+                    iam_utils.bucket_objects_arn(artifacts_bucket_name, f"{domain}/{table}/_schema")
+                )
 
                 effective_subdirs = curated_subdirs or [""]
                 for subdir in effective_subdirs:
@@ -82,14 +86,21 @@ class GlueExecutionRoleConstruct(Construct):
             raw_read_arns.append(iam_utils.bucket_objects_arn(raw_bucket_name))
             curated_read_arns.append(iam_utils.bucket_objects_arn(curated_bucket_name))
             curated_write_arns.append(iam_utils.bucket_objects_arn(curated_bucket_name))
+            artifacts_schema_arns.append(iam_utils.bucket_objects_arn(artifacts_bucket_name, "_schema"))
 
         artifacts_temp_arn = iam_utils.bucket_objects_arn(artifacts_bucket_name, "temp")
         asset_objects_arn = iam_utils.bucket_objects_arn(asset_bucket_name)
 
         read_resources = iam_utils.dedupe(
-            raw_read_arns + curated_read_arns + [artifacts_temp_arn, asset_objects_arn] + additional_patterns
+            raw_read_arns
+            + curated_read_arns
+            + artifacts_schema_arns
+            + [artifacts_temp_arn, asset_objects_arn]
+            + additional_patterns
         )
-        write_resources = iam_utils.dedupe(curated_write_arns + [artifacts_temp_arn] + additional_patterns)
+        write_resources = iam_utils.dedupe(
+            curated_write_arns + artifacts_schema_arns + [artifacts_temp_arn] + additional_patterns
+        )
 
         list_bucket_resources = iam_utils.dedupe(
             [iam_utils.bucket_arn(raw_bucket_name), iam_utils.bucket_arn(curated_bucket_name)]

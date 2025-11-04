@@ -75,3 +75,33 @@ def test_glue_role_locks_temp_list_prefix() -> None:
         and "temp" in json.dumps(stmt.get("Condition"))
     ]
     assert temp_list_statements, "Glue role must restrict ListBucket on artifacts bucket to temp prefix"
+
+
+def test_glue_role_can_manage_schema_objects() -> None:
+    """Glue 역할은 artifacts/_schema 경로에 대해 읽기/쓰기를 허용해야 한다."""
+    app = App()
+    stack = Stack(app, "GlueStackSchema")
+    config = cast(
+        EnvironmentConfig,
+        {"processing_triggers": [{"domain": "market", "table_name": "prices"}]},
+    )
+    GlueExecutionRoleConstruct(stack, "GlueRoleSchema", env_name="prod", config=config)
+    template = Template.from_stack(stack)
+
+    role = _find_role(template, "glue-role")
+    statements = _policy_statements(role, "S3DataAccess")
+
+    resources_blob = json.dumps([stmt.get("Resource", []) for stmt in statements])
+    assert "market/prices/_schema" in resources_blob, "Schema path must be present in policy resources"
+
+    write_statements = [stmt for stmt in statements if "s3:PutObject" in _to_list(stmt.get("Action"))]
+    assert write_statements, "Glue role must allow PutObject"
+    assert any("market/prices/_schema" in json.dumps(stmt.get("Resource", [])) for stmt in write_statements)
+
+    read_statements = [
+        stmt
+        for stmt in statements
+        if "s3:GetObject" in _to_list(stmt.get("Action")) or "s3:GetObjectVersion" in _to_list(stmt.get("Action"))
+    ]
+    assert read_statements, "Glue role must allow GetObject"
+    assert any("market/prices/_schema" in json.dumps(stmt.get("Resource", [])) for stmt in read_statements)
