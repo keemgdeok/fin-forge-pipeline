@@ -63,7 +63,7 @@ prod_config = {
         "daily-prices-data-etl",
         "market-indicators-etl",
     ],
-    "sfn_max_concurrency": 3,
+    "sfn_max_concurrency": 1,
     "monitored_state_machines": [
         "daily-prices-data-processing",
     ],
@@ -89,6 +89,9 @@ prod_config = {
         },
     ],
     "allowed_load_layers": ["adjusted", "technical_indicator"],
+    "indicators_state_layer": "state",
+    "indicators_state_snapshot": "current",
+    "indicators_state_window_days": 160,
     "tags": {
         "Environment": "prod",
         "Project": "ServerlessDataPipeline",

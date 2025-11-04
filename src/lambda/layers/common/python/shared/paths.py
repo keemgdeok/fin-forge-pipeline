@@ -119,3 +119,24 @@ def build_curated_components(
         month=month,
         day=day,
     )
+
+
+def build_curated_state_path(
+    *,
+    domain: str,
+    table: str,
+    interval: str,
+    data_source: Optional[str],
+    state_layer: str,
+    snapshot: str,
+) -> str:
+    """Return fully-qualified curated prefix for a logical state snapshot object."""
+
+    base = build_curated_layer_prefix(
+        domain=domain,
+        table=table,
+        interval=interval,
+        data_source=data_source,
+        layer=state_layer,
+    )
+    return f"{base}/snapshot={snapshot}"

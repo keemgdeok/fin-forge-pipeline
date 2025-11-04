@@ -55,6 +55,9 @@ class DailyPricesDataProcessingStack(Stack):
         self.glue_retry_max_attempts: int = int(self.config.get("glue_retry_max_attempts", 3))
         self.curated_layer: str = str(self.config.get("curated_layer_name", "adjusted"))
         self.indicators_layer: str = str(self.config.get("indicators_layer", "technical_indicator"))
+        self.indicators_state_layer: str = str(self.config.get("indicators_state_layer", "state"))
+        self.indicators_state_snapshot: str = str(self.config.get("indicators_state_snapshot", "current"))
+        self.indicators_state_window_days: int = max(1, int(self.config.get("indicators_state_window_days", 160)))
         self.map_max_concurrency: int = int(self.config.get("sfn_max_concurrency", 1))
         self.step_function_timeout_hours: int = int(self.config.get("step_function_timeout_hours", 2))
         self.glue_timeout_minutes: int = max(1, self.step_function_timeout_hours * 60)
@@ -413,6 +416,10 @@ class DailyPricesDataProcessingStack(Stack):
                 "--lookback_days": str(int(self.config.get("indicators_lookback_days", 252))),
                 "--ds.$": "$.ds",
                 "--output_partitions": str(self.glue_output_partitions),
+                "--state_bucket": self.shared_storage.curated_bucket.bucket_name,
+                "--state_layer": self.indicators_state_layer,
+                "--state_snapshot": self.indicators_state_snapshot,
+                "--state_window_days": str(self.indicators_state_window_days),
             },
             result_path="$.indicators_glue_args",
         )
