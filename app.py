@@ -74,19 +74,6 @@ catalog_stack = DataCatalogStack(
 )
 
 # ========================================
-# MONITORING & OBSERVABILITY LAYER
-# ========================================
-
-# Unified Observability - CloudWatch dashboards, alarms, SNS notifications
-observability_stack = ObservabilityStack(
-    app,
-    f"{stack_prefix}-Monitoring-Observability",
-    environment=environment,
-    config=config,
-    env=cdk_env,
-)
-
-# ========================================
 # DOMAIN-SPECIFIC PIPELINE LAYER
 # ========================================
 
@@ -125,6 +112,24 @@ load_pipeline_stack = LoadPipelineStack(
 )
 
 # ========================================
+# MONITORING & OBSERVABILITY LAYER
+# ========================================
+
+# Unified Observability - CloudWatch dashboards, alarms, SNS notifications
+observability_stack = ObservabilityStack(
+    app,
+    f"{stack_prefix}-Monitoring-Observability",
+    environment=environment,
+    config=config,
+    env=cdk_env,
+)
+observability_stack.add_ingestion_pipeline_monitoring(
+    pipeline_name="DailyPricesData",
+    queue=daily_prices_ingestion_stack.queue,
+    worker_function=daily_prices_ingestion_stack.ingestion_function,
+)
+
+# ========================================
 # STACK DEPENDENCIES
 # ========================================
 
@@ -142,6 +147,7 @@ daily_prices_processing_stack.add_dependency(shared_storage_stack)
 # Removed - No direct reference needed
 
 load_pipeline_stack.add_dependency(shared_storage_stack)
+observability_stack.add_dependency(daily_prices_ingestion_stack)
 
 # ========================================
 # TAGGING STRATEGY

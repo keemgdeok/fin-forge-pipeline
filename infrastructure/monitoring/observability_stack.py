@@ -6,12 +6,15 @@ from aws_cdk import (
     aws_sns as sns,
     aws_cloudwatch_actions as cw_actions,
     aws_kms as kms,
+    aws_lambda as _lambda,
+    aws_sqs as sqs,
     RemovalPolicy,
     # aws_logs as logs,  # OPTIONAL: Only if custom log groups needed
     Duration,
     CfnOutput,
 )
 from constructs import Construct
+from typing import Optional
 
 
 class ObservabilityStack(Stack):
@@ -45,6 +48,110 @@ class ObservabilityStack(Stack):
         # self.log_groups = self._create_log_groups()
 
         self._create_outputs()
+
+    def add_ingestion_pipeline_monitoring(
+        self,
+        *,
+        pipeline_name: str,
+        queue: sqs.IQueue,
+        worker_function: _lambda.IFunction,
+        depth_threshold: Optional[float] = None,
+        age_threshold: Optional[float] = None,
+    ) -> None:
+        """Attach SQS/Lambda monitoring for an ingestion pipeline.
+
+        Parameters
+        ----------
+        pipeline_name: str
+            Friendly name used for alarm titles and dashboard widgets.
+        queue: sqs.IQueue
+            The ingestion queue to monitor.
+        worker_function: aws_lambda.IFunction
+            Worker Lambda processing the queue messages.
+        depth_threshold: float, optional
+            Override for queue depth alarm threshold (messages).
+        age_threshold: float, optional
+            Override for queue age alarm threshold (seconds).
+        """
+
+        def _sanitize(name: str) -> str:
+            trimmed = "".join(ch for ch in name.title() if ch.isalnum())
+            return trimmed or "Ingestion"
+
+        identifier = _sanitize(pipeline_name)
+        period = Duration.minutes(5)
+
+        depth_metric = queue.metric_approximate_number_of_messages_visible(period=period, statistic="Average")
+        age_metric = queue.metric_approximate_age_of_oldest_message(period=period)
+        errors_metric = worker_function.metric_errors(period=period)
+        throttles_metric = worker_function.metric_throttles(period=period)
+
+        resolved_depth_threshold = (
+            depth_threshold
+            if depth_threshold is not None
+            else float(self.config.get("alarm_queue_depth_threshold", 100.0))
+        )
+        resolved_age_threshold = (
+            age_threshold if age_threshold is not None else float(self.config.get("alarm_queue_age_seconds", 300.0))
+        )
+
+        depth_alarm = cloudwatch.Alarm(
+            self,
+            f"{identifier}QueueDepthAlarm",
+            alarm_name=f"{self.env_name}-{identifier}-queue-depth",
+            alarm_description=f"{pipeline_name} ingestion queue depth high",
+            metric=depth_metric,
+            threshold=resolved_depth_threshold,
+            evaluation_periods=1,
+            comparison_operator=cloudwatch.ComparisonOperator.GREATER_THAN_OR_EQUAL_TO_THRESHOLD,
+        )
+        depth_alarm.add_alarm_action(cw_actions.SnsAction(self.alerts_topic))
+
+        age_alarm = cloudwatch.Alarm(
+            self,
+            f"{identifier}QueueAgeAlarm",
+            alarm_name=f"{self.env_name}-{identifier}-queue-age",
+            alarm_description=f"{pipeline_name} ingestion queue oldest message age high",
+            metric=age_metric,
+            threshold=resolved_age_threshold,
+            evaluation_periods=1,
+            comparison_operator=cloudwatch.ComparisonOperator.GREATER_THAN_OR_EQUAL_TO_THRESHOLD,
+        )
+        age_alarm.add_alarm_action(cw_actions.SnsAction(self.alerts_topic))
+
+        errors_alarm = cloudwatch.Alarm(
+            self,
+            f"{identifier}WorkerErrorsAlarm",
+            alarm_name=f"{self.env_name}-{identifier}-worker-errors",
+            alarm_description=f"{pipeline_name} ingestion worker errors detected",
+            metric=errors_metric,
+            threshold=1,
+            evaluation_periods=1,
+            comparison_operator=cloudwatch.ComparisonOperator.GREATER_THAN_OR_EQUAL_TO_THRESHOLD,
+        )
+        errors_alarm.add_alarm_action(cw_actions.SnsAction(self.alerts_topic))
+
+        throttles_alarm = cloudwatch.Alarm(
+            self,
+            f"{identifier}WorkerThrottlesAlarm",
+            alarm_name=f"{self.env_name}-{identifier}-worker-throttles",
+            alarm_description=f"{pipeline_name} ingestion worker throttles detected",
+            metric=throttles_metric,
+            threshold=1,
+            evaluation_periods=1,
+            comparison_operator=cloudwatch.ComparisonOperator.GREATER_THAN_OR_EQUAL_TO_THRESHOLD,
+        )
+        throttles_alarm.add_alarm_action(cw_actions.SnsAction(self.alerts_topic))
+
+        section_title = f"{pipeline_name} Ingestion"
+        self.platform_dashboard.add_widgets(
+            cloudwatch.TextWidget(markdown=f"### {section_title}", width=24),
+            cloudwatch.GraphWidget(title="SQS Depth", left=[depth_metric], width=12, height=6),
+            cloudwatch.GraphWidget(title="SQS Oldest Age", left=[age_metric], width=12, height=6),
+            cloudwatch.GraphWidget(
+                title="Worker Errors/Throttles", left=[errors_metric, throttles_metric], width=24, height=6
+            ),
+        )
 
     def _create_alerts_topic(self) -> sns.Topic:
         """Create single SNS topic for all alerts - simplified for small teams."""
