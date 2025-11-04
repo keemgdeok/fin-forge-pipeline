@@ -4,7 +4,7 @@ import hashlib
 import json
 import sys
 from datetime import datetime, timedelta, timezone
-from typing import Any, Dict, List, Tuple
+from typing import Any, Dict, Tuple
 
 import boto3  # type: ignore
 from awsglue.context import GlueContext
@@ -29,146 +29,18 @@ try:  # pragma: no cover
 except Exception:  # pragma: no cover
     _HAVE_SHARED_FP = False
 
-# Import indicators library bundled with the job assets
-from glue.lib.indicators import compute_indicators_pandas  # type: ignore
-
-
-INDICATOR_COLUMNS: List[str] = [
-    "date",
-    "symbol",
-    "ds",
-    "sma_20",
-    "sma_60",
-    "sma_120",
-    "ema_20",
-    "ema_60",
-    "return_1d",
-    "return_5d",
-    "return_20d",
-    "log_return_1d",
-    "envelope_mid_20_3",
-    "envelope_upper_20_3",
-    "envelope_lower_20_3",
-    "rsi_14",
-    "rsi_ema6",
-    "macd_12_26",
-    "macd_signal_9",
-    "macd_hist_12_26_9",
-    "macd_pct_12_26",
-    "bollinger_middle_20_2",
-    "bollinger_upper_20_2",
-    "bollinger_lower_20_2",
-    "bb_width_20_2",
-    "bb_percent_b_20_2",
-    "williams_r_14",
-    "slow_k_14_3",
-    "slow_d_14_3",
-    "ichimoku_tenkan",
-    "ichimoku_kijun",
-    "ichimoku_senkou_a",
-    "ichimoku_senkou_b",
-    "ichimoku_chikou",
-    "atr_14",
-    "atrp_14",
-    "adx_14",
-    "plus_di_14",
-    "minus_di_14",
-    "cci_20",
-    "cci_signal_10",
-    "obv",
-    "cmf_20",
-    "adi",
-    "mfi_14",
-    "roc_6",
-    "roc_12",
-    "roc_20",
-    "realized_vol_10d",
-    "realized_vol_20d",
-    "realized_vol_60d",
-    "realized_vol_20d_ann",
-    "parkinson_vol_20",
-    "gk_vol_20",
-    "vwap_d",
-    "rvol_20",
-    "beta_60",
-    "corr_mkt_60",
-    "is_validated",
-    "quality_score",
-]
-
-DECIMAL_12_4_COLUMNS: Tuple[str, ...] = (
-    "sma_20",
-    "sma_60",
-    "sma_120",
-    "ema_20",
-    "ema_60",
-    "envelope_mid_20_3",
-    "envelope_upper_20_3",
-    "envelope_lower_20_3",
-    "bollinger_middle_20_2",
-    "bollinger_upper_20_2",
-    "bollinger_lower_20_2",
-    "ichimoku_tenkan",
-    "ichimoku_kijun",
-    "ichimoku_senkou_a",
-    "ichimoku_senkou_b",
-    "ichimoku_chikou",
-    "vwap_d",
+from glue.lib.spark_indicators import (
+    DECIMAL_10_6_COLUMNS,
+    DECIMAL_12_4_COLUMNS,
+    DECIMAL_8_4_COLUMNS,
+    FLOAT_COLUMNS,
+    INDICATOR_COLUMNS,
+    INT64_COLUMNS,
+    OPTIONAL_DOUBLE_COLUMNS,
+    REQUIRED_BASE_COLUMNS,
+    SHORT_COLUMNS,
+    compute_indicators_spark,
 )
-
-DECIMAL_10_6_COLUMNS: Tuple[str, ...] = (
-    "macd_12_26",
-    "macd_signal_9",
-    "macd_hist_12_26_9",
-)
-
-DECIMAL_8_4_COLUMNS: Tuple[str, ...] = ("atr_14",)
-
-FLOAT_COLUMNS: Tuple[str, ...] = (
-    "return_1d",
-    "return_5d",
-    "return_20d",
-    "log_return_1d",
-    "macd_pct_12_26",
-    "bb_width_20_2",
-    "bb_percent_b_20_2",
-    "williams_r_14",
-    "slow_k_14_3",
-    "slow_d_14_3",
-    "atrp_14",
-    "adx_14",
-    "plus_di_14",
-    "minus_di_14",
-    "cci_20",
-    "cci_signal_10",
-    "cmf_20",
-    "mfi_14",
-    "roc_6",
-    "roc_12",
-    "roc_20",
-    "realized_vol_10d",
-    "realized_vol_20d",
-    "realized_vol_60d",
-    "realized_vol_20d_ann",
-    "parkinson_vol_20",
-    "gk_vol_20",
-    "rvol_20",
-    "beta_60",
-    "corr_mkt_60",
-)
-
-INT64_COLUMNS: Tuple[str, ...] = ("obv", "adi")
-SHORT_COLUMNS: Tuple[str, ...] = ("is_validated", "quality_score")
-OPTIONAL_DOUBLE_COLUMNS: Tuple[str, ...] = (
-    "market_close",
-    "benchmark_close",
-    "market_return",
-    "market_return_1d",
-    "benchmark_return",
-    "vwap",
-    "vwap_d",
-)
-REQUIRED_BASE_COLUMNS: Tuple[str, ...] = ("symbol", "ds", "open", "high", "low", "close", "volume")
 
 
 def _stable_hash(obj: Dict[str, Any]) -> str:
@@ -316,46 +188,12 @@ if null_pk > 0:
 
 prices_df = prices_df.repartition(output_partitions, "symbol")
 
-schema_overrides: Dict[str, Dict[str, Any]] = {
-    "date": {"type": T.DateType(), "nullable": False},
-    "symbol": {"type": T.StringType(), "nullable": False},
-    "ds": {"type": T.StringType(), "nullable": False},
-    "is_validated": {"type": T.IntegerType(), "nullable": False},
-    "quality_score": {"type": T.IntegerType(), "nullable": False},
-}
-
-schema_fields: List[T.StructField] = []
-for column_name in INDICATOR_COLUMNS:
-    override = schema_overrides.get(column_name)
-    if override:
-        schema_fields.append(T.StructField(column_name, override["type"], override["nullable"]))
-    else:
-        schema_fields.append(T.StructField(column_name, T.DoubleType(), True))
-
-schema_fields.extend(
-    [
-        T.StructField("batch_id", T.LongType(), False),
-        T.StructField("created_at", T.TimestampType(), False),
-        T.StructField("updated_at", T.TimestampType(), False),
-    ]
-)
-
-out_schema = T.StructType(schema_fields)
-
-
-def _compute_group(pdf: Any) -> Any:
-    pdf = pdf.copy()
-    result = compute_indicators_pandas(pdf)
-    result["batch_id"] = batch_id_value
-    result["created_at"] = created_at_value
-    result["updated_at"] = updated_at_value
-    result["is_validated"] = result["is_validated"].astype("int64", copy=False)
-    result["quality_score"] = result["quality_score"].astype("int64", copy=False)
-    ordered_cols = INDICATOR_COLUMNS + ["batch_id", "created_at", "updated_at"]
-    return result.reindex(columns=ordered_cols)
-
-
-indicators_df = prices_df.groupby("symbol").applyInPandas(_compute_group, schema=out_schema)
+indicators_df = compute_indicators_spark(prices_df)
+indicators_df = indicators_df.withColumn("batch_id", F.lit(batch_id_value))
+indicators_df = indicators_df.withColumn("created_at", F.lit(created_at_value))
+indicators_df = indicators_df.withColumn("updated_at", F.lit(updated_at_value))
+indicators_df = indicators_df.withColumn("is_validated", F.col("is_validated").cast(T.IntegerType()))
+indicators_df = indicators_df.withColumn("quality_score", F.col("quality_score").cast(T.IntegerType()))
 ind_ds_df = indicators_df.where(F.col("ds") == F.lit(ds_str))
 
 duplicate_check = ind_ds_df.groupBy("date", "symbol").count().where(F.col("count") > F.lit(1)).limit(1).count()
