@@ -69,6 +69,15 @@ class SecurityStack(Stack):
         glue_job_arn = f"arn:aws:glue:{self.region}:{self.account}:job/{self.env_name}-daily-prices-data-etl"
         ingestion_queue_arn = f"arn:aws:sqs:{self.region}:{self.account}:{self.env_name}-ingestion-queue"
         load_queue_arn = f"arn:aws:sqs:{self.region}:{self.account}:{self.env_name}-*-load-queue"
+        batch_tracker_table_name = str(
+            self.config.get("batch_tracker_table_name") or f"{self.env_name}-daily-prices-batch-tracker"
+        )
+        batch_tracker_table_arn = self.format_arn(
+            service="dynamodb",
+            resource="table",
+            resource_name=batch_tracker_table_name,
+        )
+        batch_tracker_stream_arn = f"{batch_tracker_table_arn}/stream/*"
         state_machine_arns = [
             f"arn:aws:states:{self.region}:{self.account}:stateMachine:{self.env_name}-{str(name).strip()}"
             for name in self.config.get("monitored_state_machines", [])
@@ -147,6 +156,23 @@ class SecurityStack(Stack):
                         )
                     ]
                 ),
+                "SqsConsumeAccess": iam.PolicyDocument(
+                    statements=[
+                        iam.PolicyStatement(
+                            effect=iam.Effect.ALLOW,
+                            actions=[
+                                "sqs:ChangeMessageVisibility",
+                                "sqs:ChangeMessageVisibilityBatch",
+                                "sqs:DeleteMessage",
+                                "sqs:DeleteMessageBatch",
+                                "sqs:GetQueueAttributes",
+                                "sqs:GetQueueUrl",
+                                "sqs:ReceiveMessage",
+                            ],
+                            resources=[ingestion_queue_arn],
+                        )
+                    ]
+                ),
                 "SqsSendMessage": iam.PolicyDocument(
                     statements=[
                         iam.PolicyStatement(
@@ -154,6 +180,40 @@ class SecurityStack(Stack):
                             actions=["sqs:SendMessage", "sqs:SendMessageBatch"],
                             resources=[ingestion_queue_arn, load_queue_arn],
                         )
+                    ]
+                ),
+                "DynamoDbBatchTrackerAccess": iam.PolicyDocument(
+                    statements=[
+                        iam.PolicyStatement(
+                            effect=iam.Effect.ALLOW,
+                            actions=[
+                                "dynamodb:BatchGetItem",
+                                "dynamodb:BatchWriteItem",
+                                "dynamodb:ConditionCheckItem",
+                                "dynamodb:DeleteItem",
+                                "dynamodb:DescribeTable",
+                                "dynamodb:GetItem",
+                                "dynamodb:PutItem",
+                                "dynamodb:Query",
+                                "dynamodb:Scan",
+                                "dynamodb:UpdateItem",
+                            ],
+                            resources=[batch_tracker_table_arn],
+                        ),
+                        iam.PolicyStatement(
+                            effect=iam.Effect.ALLOW,
+                            actions=[
+                                "dynamodb:DescribeStream",
+                                "dynamodb:GetRecords",
+                                "dynamodb:GetShardIterator",
+                            ],
+                            resources=[batch_tracker_stream_arn],
+                        ),
+                        iam.PolicyStatement(
+                            effect=iam.Effect.ALLOW,
+                            actions=["dynamodb:ListStreams"],
+                            resources=["*"],
+                        ),
                     ]
                 ),
                 "CloudWatchPutMetric": iam.PolicyDocument(
