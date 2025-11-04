@@ -7,8 +7,8 @@ Steps
 2. Invoke the ingestion orchestrator Lambda to fan-out symbols into the worker queue.
 3. Wait for the DynamoDB batch tracker entry to report `status=complete` (extract done).
 4. Locate the Step Functions execution that EventBridge launched and wait for success.
-5. Verify recent Glue job runs (compaction, ETL, indicators) completed successfully.
-6. Check curated S3 prefixes for the processed ds and confirm indicator outputs exist.
+5. Verify recent Glue job runs (compaction, ETL) completed successfully.
+6. Check curated S3 prefixes for the processed ds and confirm curated outputs exist.
 7. Re-read SQS queue depth to ensure at least one new message is queued for on-prem load
    while the DLQ remains empty, then emit a machine-readable summary for the workflow.
 """
@@ -160,7 +160,7 @@ def _wait_for_queue_growth(
 def main() -> None:
     parser = argparse.ArgumentParser(description="Validate extract/transform/load pipeline post-deploy")
     parser.add_argument("--environment", "-e", default="dev", help="Target environment (dev|staging|prod)")
-    parser.add_argument("--ingestion-timeout", type=int, default=900, help="Seconds to wait for ingestion completion")
+    parser.add_argument("--ingestion-timeout", type=int, default=1800, help="Seconds to wait for ingestion completion")
     parser.add_argument(
         "--execution-timeout",
         type=int,
@@ -224,7 +224,6 @@ def main() -> None:
     )
     compaction_job = f"{args.environment}-daily-prices-compaction"
     etl_job = f"{args.environment}-daily-prices-data-etl"
-    indicators_job = f"{args.environment}-market-indicators-etl"
 
     raw_bucket = f"data-pipeline-raw-{args.environment}-{account_id}"
     curated_bucket = f"data-pipeline-curated-{args.environment}-{account_id}"
@@ -355,19 +354,15 @@ def main() -> None:
     print("Validating Glue job runs...")
     compaction_run = _latest_job_run(glue_client, compaction_job, execution_start)
     etl_run = _latest_job_run(glue_client, etl_job, execution_start)
-    indicators_run = _latest_job_run(glue_client, indicators_job, execution_start)
     for name, run in (
         ("compaction", compaction_run),
         ("etl", etl_run),
-        ("indicators", indicators_run),
     ):
         state = run.get("JobRunState")
         if state != "SUCCEEDED":
             raise RuntimeError(f"Glue {name} job run did not succeed (state={state})")
 
-    indicators_layer = str(config.get("indicators_layer", "technical_indicator"))
     curated_prefixes: List[str] = []
-    indicator_prefixes: List[str] = []
     for ds_value in processed_dates or [batch_ds]:
         curated_key = build_curated_layer_path(
             domain=domain,
@@ -377,21 +372,10 @@ def main() -> None:
             ds=ds_value,
             layer="adjusted",
         )
-        indicators_key = build_curated_layer_path(
-            domain=domain,
-            table=table_name,
-            interval=interval_value,
-            data_source=data_source or None,
-            ds=ds_value,
-            layer=indicators_layer,
-        )
         curated_prefixes.append(curated_key)
-        indicator_prefixes.append(indicators_key)
 
         if not _prefix_has_objects(s3_client, curated_bucket, curated_key):
             raise RuntimeError(f"Curated data prefix missing objects: s3://{curated_bucket}/{curated_key}")
-        if not _prefix_has_objects(s3_client, curated_bucket, indicators_key):
-            raise RuntimeError(f"Indicators prefix missing objects: s3://{curated_bucket}/{indicators_key}")
 
     print("Waiting for load queue to accumulate new messages...")
     post_queue = _wait_for_queue_growth(
@@ -431,11 +415,9 @@ def main() -> None:
         "glue_jobs": {
             "compaction": {"run_id": compaction_run.get("Id"), "state": compaction_run.get("JobRunState")},
             "etl": {"run_id": etl_run.get("Id"), "state": etl_run.get("JobRunState")},
-            "indicators": {"run_id": indicators_run.get("Id"), "state": indicators_run.get("JobRunState")},
         },
         "s3_checks": {
             "curated_prefixes": [f"s3://{curated_bucket}/{key}" for key in curated_prefixes],
-            "indicator_prefixes": [f"s3://{curated_bucket}/{key}" for key in indicator_prefixes],
         },
         "queue_metrics": {
             "queue_name": queue_name,
@@ -461,11 +443,9 @@ def main() -> None:
         "Glue runs:",
         f"  compaction={compaction_run.get('Id')}",
         f"  etl={etl_run.get('Id')}",
-        f"  indicators={indicators_run.get('Id')}",
     ]
 
     lines.extend(f"Curated data prefix: s3://{curated_bucket}/{key}" for key in curated_prefixes)
-    lines.extend(f"Indicators prefix: s3://{curated_bucket}/{key}" for key in indicator_prefixes)
     lines.extend(
         [
             f"Load queue visible messages: {pre_queue.visible} -> {post_queue.visible}",

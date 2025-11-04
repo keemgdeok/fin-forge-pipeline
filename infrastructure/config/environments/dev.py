@@ -31,10 +31,6 @@ dev_config = {
     "symbol_universe_asset_file": "sp500.json",
     "symbol_universe_s3_key": "market/universe/sp500.json",
     "symbol_universe_s3_bucket": "",
-    # Indicators
-    "indicators_table_name": "indicators",
-    "indicators_lookback_days": 150,
-    "indicators_layer": "technical_indicator",
     # Fan-out (Extract) defaults
     "orchestrator_chunk_size": 10,
     "sqs_send_batch_size": 10,
@@ -59,9 +55,8 @@ dev_config = {
     "monitored_glue_jobs": [
         "daily-prices-compaction",
         "daily-prices-data-etl",
-        "market-indicators-etl",
     ],
-    "sfn_max_concurrency": 1,
+    "sfn_max_concurrency": 3,
     "monitored_state_machines": [
         "daily-prices-data-processing",
     ],
@@ -90,10 +85,7 @@ dev_config = {
             "priority": "1",
         },
     ],
-    "allowed_load_layers": ["adjusted", "technical_indicator"],
-    "indicators_state_layer": "state",
-    "indicators_state_snapshot": "current",
-    "indicators_state_window_days": 160,
+    "allowed_load_layers": ["adjusted"],
     "tags": {
         "Environment": "dev",
         "Project": "ServerlessDataPipeline",

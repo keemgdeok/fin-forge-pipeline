@@ -43,7 +43,6 @@ TRANSFORM_WORKFLOW_STUBS: Dict[str, LambdaStubMetadata] = {
     "compaction": LambdaStubMetadata(name="compaction", module=stub_path("compaction"), timeout=120),
     "guard": LambdaStubMetadata(name="guard", module=stub_path("guard"), timeout=30),
     "etl": LambdaStubMetadata(name="etl", module=stub_path("etl"), timeout=60),
-    "indicators": LambdaStubMetadata(name="indicators", module=stub_path("indicators"), timeout=30),
     "schema": LambdaStubMetadata(name="schema", module=stub_path("schema_decider"), timeout=10),
 }
 
@@ -234,7 +233,6 @@ def build_state_machine_definition(lambda_arns: Mapping[str, str]) -> Dict[str, 
                     "artifacts_bucket.$": "$$.Map.Item.Value.artifacts_bucket",
                     "compacted_layer.$": "$.compacted_layer",
                     "curated_layer.$": "$.curated_layer",
-                    "indicator_layer.$": "$.indicator_layer",
                 },
                 "ResultPath": None,
                 "Iterator": {
@@ -321,19 +319,6 @@ def build_state_machine_definition(lambda_arns: Mapping[str, str]) -> Dict[str, 
                                 "schema_key.$": "$.Payload.schema_key",
                             },
                             "ResultPath": "$.etl",
-                            "Next": "Indicators",
-                        },
-                        "Indicators": {
-                            "Type": "Task",
-                            "Resource": "arn:aws:states:::lambda:invoke",
-                            "Parameters": {
-                                "FunctionName": lambda_arns["indicators"],
-                                "Payload.$": "$",
-                            },
-                            "ResultSelector": {
-                                "indicator_key.$": "$.Payload.indicator_key",
-                            },
-                            "ResultPath": "$.indicators",
                             "Next": "SchemaDecider",
                         },
                         "SchemaDecider": {

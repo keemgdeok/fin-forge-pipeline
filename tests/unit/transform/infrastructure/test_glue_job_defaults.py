@@ -17,7 +17,6 @@ def _base_config():
         "ingestion_interval": "1d",
         "ingestion_data_source": "yahoo_finance",
         "compaction_output_subdir": "compacted",
-        "indicators_layer": "technical_indicator",
         "processing_orchestration_mode": "manual",
     }
 

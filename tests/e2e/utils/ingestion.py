@@ -18,7 +18,6 @@ class IngestionContext:
     table_name: str
     interval: str
     data_source: str
-    indicator_layer: str
     raw_bucket: str
     curated_bucket: str
     artifacts_bucket: str
@@ -37,7 +36,6 @@ def run_ingestion(
     table_name: str,
     interval: str,
     data_source: str,
-    indicator_layer: str,
     symbols: Iterable[str],
     manifest_days: int,
     chunk_size: int = 10,
@@ -109,7 +107,6 @@ def run_ingestion(
         table_name=table_name,
         interval=interval,
         data_source=data_source,
-        indicator_layer=indicator_layer,
         raw_bucket=raw_bucket,
         curated_bucket=curated_bucket,
         artifacts_bucket=artifacts_bucket,

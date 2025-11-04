@@ -30,7 +30,6 @@ def _build_workflow_input(
     *,
     compacted_layer: str,
     curated_layer: str,
-    indicator_layer: str,
 ) -> Dict[str, Any]:
     manifest_items = [
         {
@@ -50,7 +49,6 @@ def _build_workflow_input(
         "manifest_items": manifest_items,
         "compacted_layer": compacted_layer,
         "curated_layer": curated_layer,
-        "indicator_layer": indicator_layer,
     }
 
 
@@ -75,7 +73,6 @@ def test_full_pipeline_end_to_end_with_localstack(
     table_name = "prices"
     interval = "1d"
     data_source = "yahoo_finance"
-    indicator_layer = "technical_indicator"
 
     ingestion = run_ingestion(
         monkeypatch,
@@ -84,7 +81,6 @@ def test_full_pipeline_end_to_end_with_localstack(
         table_name=table_name,
         interval=interval,
         data_source=data_source,
-        indicator_layer=indicator_layer,
         symbols=["AAPL", "MSFT", "GOOGL"],
         manifest_days=EXPECTED_MANIFEST_COUNT,
     )
@@ -94,7 +90,6 @@ def test_full_pipeline_end_to_end_with_localstack(
         ingestion.manifest_keys,
         compacted_layer="compacted",
         curated_layer="adjusted",
-        indicator_layer=indicator_layer,
     )
 
     execution_arn = start_state_machine_execution(config, transform_workflow.state_machine_arn, workflow_input)
@@ -114,14 +109,6 @@ def test_full_pipeline_end_to_end_with_localstack(
     assert len(preflight_entries) == EXPECTED_MANIFEST_COUNT, (
         f"Expected {EXPECTED_MANIFEST_COUNT} Preflight invocations, found {len(preflight_entries)}"
     )
-
-    indicator_entries = [
-        event
-        for event in history
-        if event.get("type") == "TaskStateEntered"
-        and event.get("stateEnteredEventDetails", {}).get("name") == "Indicators"
-    ]
-    assert indicator_entries, "Indicators 단계가 실행되어야 합니다"
 
     first_manifest = ingestion.manifest_keys[0]
     first_ds = localstack_ops.parse_manifest_ds(first_manifest)
@@ -160,7 +147,7 @@ def test_full_pipeline_end_to_end_with_localstack(
     monkeypatch.setenv("LOAD_QUEUE_MAP", json.dumps(queue_map))
     monkeypatch.setenv("PRIORITY_MAP", json.dumps({domain: "1"}))
     monkeypatch.setenv("MIN_FILE_SIZE_BYTES", "1")
-    monkeypatch.setenv("ALLOWED_LAYERS", json.dumps(["adjusted", indicator_layer]))
+    monkeypatch.setenv("ALLOWED_LAYERS", json.dumps(["adjusted"]))
 
     load_publisher_module = runpy.run_path("src/lambda/functions/load_event_publisher/handler.py")
     publisher_result = load_publisher_module["main"](load_event, None)
@@ -190,13 +177,3 @@ def test_full_pipeline_end_to_end_with_localstack(
     schema_payload = json.loads(schema_obj["Body"].read().decode("utf-8"))
     assert "columns" in schema_payload
     assert schema_payload.get("hash")
-
-    indicator_prefix = (
-        f"{domain}/{table_name}/interval={interval}/data_source={data_source}/"
-        f"year={first_ds[0:4]}/month={first_ds[5:7]}/day={first_ds[8:10]}/layer={indicator_layer}/"
-    )
-    indicator_objects = localstack_ops.list_objects(config, ingestion.curated_bucket, indicator_prefix)
-    assert indicator_objects, "Indicator layer should contain output files"
-    indicator_obj = s3_client.get_object(Bucket=ingestion.curated_bucket, Key=indicator_objects[0])
-    indicator_payload = json.loads(indicator_obj["Body"].read().decode("utf-8"))
-    assert indicator_payload["layer"] == indicator_layer
