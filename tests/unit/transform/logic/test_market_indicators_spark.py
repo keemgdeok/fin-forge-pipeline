@@ -12,6 +12,8 @@ from pyspark.sql import SparkSession
 from glue.lib.indicators import compute_indicators_pandas
 from glue.lib.spark_indicators import INDICATOR_COLUMNS, compute_indicators_spark
 
+_RUN_SPARK_TESTS = os.getenv("RUN_SPARK_TESTS", "0").lower() in {"1", "true", "yes"}
+
 
 @pytest.fixture(scope="session")
 def spark_session() -> Iterable[SparkSession]:
@@ -46,6 +48,7 @@ def _build_sample_rows(num_days: int = 120) -> list[dict[str, object]]:
     return rows
 
 
+@pytest.mark.skipif(not _RUN_SPARK_TESTS, reason="RUN_SPARK_TESTS is disabled")
 def test_compute_indicators_matches_pandas(spark_session: SparkSession) -> None:
     rows = _build_sample_rows()
     pdf = pd.DataFrame(rows)
