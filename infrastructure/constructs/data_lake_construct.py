@@ -30,11 +30,14 @@ class DataLakeConstruct(Construct):
 
     def _create_raw_bucket(self) -> None:
         """Create S3 bucket for raw data."""
-        # Honor environment config removal_policy with prod safety default
+        # Honor explicit removal policy; default to retain in prod for safety
         cfg_policy = (self.config.get("removal_policy", "destroy") or "destroy").lower()
-        removal_policy = (
-            RemovalPolicy.RETAIN if (self.env_name == "prod" or cfg_policy == "retain") else RemovalPolicy.DESTROY
-        )
+        if cfg_policy == "retain":
+            removal_policy = RemovalPolicy.RETAIN
+        elif cfg_policy == "destroy":
+            removal_policy = RemovalPolicy.DESTROY
+        else:
+            removal_policy = RemovalPolicy.RETAIN if self.env_name == "prod" else RemovalPolicy.DESTROY
 
         self.raw_bucket = s3.Bucket(
             self,
@@ -58,11 +61,14 @@ class DataLakeConstruct(Construct):
 
     def _create_curated_bucket(self) -> None:
         """Create S3 bucket for curated/processed data."""
-        # Honor environment config removal_policy with prod safety default
+        # Honor explicit removal policy; default to retain in prod for safety
         cfg_policy = (self.config.get("removal_policy", "destroy") or "destroy").lower()
-        removal_policy = (
-            RemovalPolicy.RETAIN if (self.env_name == "prod" or cfg_policy == "retain") else RemovalPolicy.DESTROY
-        )
+        if cfg_policy == "retain":
+            removal_policy = RemovalPolicy.RETAIN
+        elif cfg_policy == "destroy":
+            removal_policy = RemovalPolicy.DESTROY
+        else:
+            removal_policy = RemovalPolicy.RETAIN if self.env_name == "prod" else RemovalPolicy.DESTROY
 
         self.curated_bucket = s3.Bucket(
             self,
