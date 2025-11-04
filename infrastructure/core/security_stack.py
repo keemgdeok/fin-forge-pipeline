@@ -235,7 +235,6 @@ class SecurityStack(Stack):
         preflight_fn_name = f"{self.env_name}-daily-prices-data-preflight"
         schema_decider_fn_name = f"{self.env_name}-schema-change-decider"
         glue_job_arn = f"arn:aws:glue:{self.region}:{self.account}:job/{self.env_name}-daily-prices-data-etl"
-        indicators_job_arn = f"arn:aws:glue:{self.region}:{self.account}:job/{self.env_name}-market-indicators-etl"
         crawler_arn = f"arn:aws:glue:{self.region}:{self.account}:crawler/{self.env_name}-curated-data-crawler"
 
         return iam.Role(
@@ -265,7 +264,7 @@ class SecurityStack(Stack):
                                 "glue:GetJobRun",
                                 "glue:BatchStopJobRun",
                             ],
-                            resources=[glue_job_arn, indicators_job_arn],
+                            resources=[glue_job_arn],
                         ),
                     ]
                 ),

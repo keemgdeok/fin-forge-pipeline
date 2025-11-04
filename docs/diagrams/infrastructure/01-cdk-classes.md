@@ -34,7 +34,6 @@ classDiagram
   class DailyPricesDataProcessingStack {
     +CfnJob compaction_job
     +CfnJob etl_job
-    +CfnJob indicators_job
     +StateMachine processing_workflow
     +LogGroup sm_log_group
     +Function processing_completion_trigger

@@ -27,7 +27,6 @@ else
     "pytest"
     "--runslow"
     "tests/integration/transform/test_etl_data_quality.py"
-    "tests/integration/transform/test_indicators_etl_local_spark.py"
   )
 fi
 

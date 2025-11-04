@@ -54,11 +54,7 @@ class DailyPricesDataProcessingStack(Stack):
         self.glue_retry_backoff_rate: float = float(self.config.get("glue_retry_backoff_rate", 2.0))
         self.glue_retry_max_attempts: int = int(self.config.get("glue_retry_max_attempts", 3))
         self.curated_layer: str = str(self.config.get("curated_layer_name", "adjusted"))
-        self.indicators_layer: str = str(self.config.get("indicators_layer", "technical_indicator"))
-        self.indicators_state_layer: str = str(self.config.get("indicators_state_layer", "state"))
-        self.indicators_state_snapshot: str = str(self.config.get("indicators_state_snapshot", "current"))
-        self.indicators_state_window_days: int = max(1, int(self.config.get("indicators_state_window_days", 160)))
-        self.map_max_concurrency: int = int(self.config.get("sfn_max_concurrency", 1))
+        self.map_max_concurrency: int = int(self.config.get("sfn_max_concurrency", 3))
         self.step_function_timeout_hours: int = int(self.config.get("step_function_timeout_hours", 2))
         self.glue_timeout_minutes: int = max(1, self.step_function_timeout_hours * 60)
         glue_capacity = max(1, int(self.config.get("glue_max_capacity", 2)))
@@ -75,9 +71,6 @@ class DailyPricesDataProcessingStack(Stack):
 
         # Glue ETL job for daily prices data transformation
         self.etl_job = self._create_etl_job()
-
-        # Glue ETL job for indicators computation (Curated prices -> Curated indicators)
-        self.indicators_job = self._create_indicators_job()
 
         # Step Functions workflow for orchestrating manifest-driven processing
         self.processing_workflow = self._create_processing_workflow()
@@ -219,82 +212,6 @@ class DailyPricesDataProcessingStack(Stack):
             execution_property=glue.CfnJob.ExecutionPropertyProperty(max_concurrent_runs=self.glue_max_concurrent_runs),
         )
 
-    def _create_indicators_job(self) -> glue.CfnJob:
-        """Create Glue ETL job for market indicators computation from curated prices."""
-        # Package Glue script as a CDK asset and reference its S3 location
-        indicators_script_asset = s3_assets.Asset(
-            self,
-            "IndicatorsTransformScriptAsset",
-            path="src/glue/jobs/market_indicators_etl.py",
-        )
-        glue_exec_role_ref = iam.Role.from_role_arn(self, "GlueExecRoleRefForIndicators", self.glue_execution_role_arn)
-        indicators_script_asset.grant_read(glue_exec_role_ref)
-
-        # Provide shared Python package and indicators lib to Glue via --extra-py-files
-        shared_py_asset = s3_assets.Asset(
-            self,
-            "SharedPythonPackageAssetForIndicators",
-            path="src/lambda/layers/common/python",
-        )
-        shared_py_asset.grant_read(glue_exec_role_ref)
-
-        indicators_lib_asset = s3_assets.Asset(
-            self,
-            "IndicatorsLibAsset",
-            path="src",
-        )
-        indicators_lib_asset.grant_read(glue_exec_role_ref)
-
-        domain: str = str(self.config.get("ingestion_domain", "market"))
-        prices_table: str = str(self.config.get("ingestion_table_name", "prices"))
-        indicators_table: str = str(self.config.get("indicators_table_name", "indicators"))
-
-        schema_fp_uri = f"s3://{self.shared_storage.artifacts_bucket.bucket_name}/{domain}/{prices_table}/{indicators_table}/_schema/latest.json"
-
-        # Deterministic name for the indicators job
-        self.indicators_job_name: str = f"{self.env_name}-market-indicators-etl"
-
-        return glue.CfnJob(
-            self,
-            "IndicatorsETLJob",
-            name=self.indicators_job_name,
-            role=self.glue_execution_role_arn,
-            command=glue.CfnJob.JobCommandProperty(
-                name="glueetl",
-                script_location=indicators_script_asset.s3_object_url,
-                python_version="3",
-            ),
-            default_arguments={
-                "--job-language": "python",
-                "--job-bookmark-option": "job-bookmark-disable",
-                "--enable-s3-parquet-optimized-committer": "true",
-                "--codec": "zstd",
-                "--target_file_mb": "256",
-                "--TempDir": (f"s3://{self.shared_storage.artifacts_bucket.bucket_name}/temp/"),
-                "--extra-py-files": f"{shared_py_asset.s3_object_url},{indicators_lib_asset.s3_object_url}",
-                # Inputs/outputs
-                "--environment": self.env_name,
-                "--domain": domain,
-                "--table_name": prices_table,
-                "--interval": str(self.config.get("ingestion_interval", "1d")),
-                "--data_source": self.default_data_source,
-                "--prices_curated_bucket": self.shared_storage.curated_bucket.bucket_name,
-                "--prices_layer": self.curated_layer,
-                "--output_bucket": self.shared_storage.curated_bucket.bucket_name,
-                "--output_layer": self.indicators_layer,
-                "--schema_fingerprint_s3_uri": schema_fp_uri,
-                # Window size
-                "--lookback_days": str(int(self.config.get("indicators_lookback_days", 252))),
-                # ds, codec, target_file_mb are provided per-run via arguments
-            },
-            glue_version="5.0",
-            max_retries=1,
-            timeout=self.glue_timeout_minutes,
-            worker_type="G.1X",
-            number_of_workers=int(self.config.get("glue_max_capacity", 2)),
-            execution_property=glue.CfnJob.ExecutionPropertyProperty(max_concurrent_runs=self.glue_max_concurrent_runs),
-        )
-
     def _create_processing_workflow(self) -> sfn.StateMachine:
         """Create manifest-driven Step Functions workflow for sequential processing."""
 
@@ -343,7 +260,6 @@ class DailyPricesDataProcessingStack(Stack):
 
         domain: str = str(self.config.get("ingestion_domain", "market"))
         prices_table: str = str(self.config.get("ingestion_table_name", "prices"))
-        indicators_table: str = str(self.config.get("indicators_table_name", "indicators"))
 
         build_compaction_args = sfn.Pass(
             self,
@@ -392,54 +308,6 @@ class DailyPricesDataProcessingStack(Stack):
         )
         etl_task.add_catch(handler=fail_chain, result_path="$.error")
 
-        indicators_fp = (
-            f"s3://{self.shared_storage.artifacts_bucket.bucket_name}/"
-            f"{domain}/{prices_table}/{indicators_table}/_schema/latest.json"
-        )
-
-        build_indicators_args = sfn.Pass(
-            self,
-            "BuildIndicatorsArgs",
-            parameters={
-                "--environment": self.env_name,
-                "--domain": domain,
-                "--table_name": prices_table,
-                "--interval": sfn.JsonPath.string_at("$.glue_args['--interval']"),
-                "--data_source": sfn.JsonPath.string_at("$.glue_args['--data_source']"),
-                "--prices_curated_bucket": self.shared_storage.curated_bucket.bucket_name,
-                "--prices_layer": self.curated_layer,
-                "--output_bucket": self.shared_storage.curated_bucket.bucket_name,
-                "--output_layer": self.indicators_layer,
-                "--schema_fingerprint_s3_uri": indicators_fp,
-                "--codec": "zstd",
-                "--target_file_mb": "256",
-                "--lookback_days": str(int(self.config.get("indicators_lookback_days", 252))),
-                "--ds.$": "$.ds",
-                "--output_partitions": str(self.glue_output_partitions),
-                "--state_bucket": self.shared_storage.curated_bucket.bucket_name,
-                "--state_layer": self.indicators_state_layer,
-                "--state_snapshot": self.indicators_state_snapshot,
-                "--state_window_days": str(self.indicators_state_window_days),
-            },
-            result_path="$.indicators_glue_args",
-        )
-
-        indicators_task = tasks.GlueStartJobRun(
-            self,
-            "ComputeIndicators",
-            glue_job_name=self.indicators_job_name,
-            integration_pattern=sfn.IntegrationPattern.RUN_JOB,
-            arguments=sfn.TaskInput.from_json_path_at("$.indicators_glue_args"),
-            result_path="$.indicators_etl",
-        )
-        indicators_task.add_retry(
-            errors=["Glue.ConcurrentRunsExceededException"],
-            interval=Duration.seconds(self.glue_retry_interval_seconds),
-            max_attempts=self.glue_retry_max_attempts,
-            backoff_rate=self.glue_retry_backoff_rate,
-        )
-        indicators_task.add_catch(handler=fail_chain, result_path="$.error")
-
         decider_fn = self._create_schema_change_decider_function()
         decide_crawler_task = tasks.LambdaInvoke(
             self,
@@ -447,7 +315,7 @@ class DailyPricesDataProcessingStack(Stack):
             lambda_function=decider_fn,
             payload=sfn.TaskInput.from_object(
                 {
-                    "glue_args.$": "$.indicators_glue_args",
+                    "glue_args.$": "$.glue_args",
                     "catalog_update.$": "$.catalog_update",
                 }
             ),
@@ -474,9 +342,7 @@ class DailyPricesDataProcessingStack(Stack):
             .otherwise(mark_crawler_not_needed)
         )
 
-        processing_sequence = (
-            etl_task.next(build_indicators_args).next(indicators_task).next(decide_crawler_task).next(crawler_decision)
-        )
+        processing_sequence = etl_task.next(decide_crawler_task).next(crawler_decision)
 
         compaction_check_task = tasks.LambdaInvoke(
             self,

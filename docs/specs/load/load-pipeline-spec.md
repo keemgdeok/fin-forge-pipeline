@@ -19,14 +19,14 @@
 
 ### Curated 객체 키 규칙
 
-| 세그먼트      | 예시                | 설명                                                    |
-| ------------- | ------------------- | ------------------------------------------------------- |
-| `domain`      | `market`            | 도메인                                                  |
-| `table`       | `prices`            | 테이블                                                  |
-| `interval`    | `interval=1d`       | 파티션 간격                                             |
-| `data_source` | `data_source=yahoo` | 데이터 소스(선택)                                       |
-| `year`        | `year=2025`         | 4자리 연도                                              |
-| `month`       | `month=09`          | 2자리 월                                                |
-| `day`         | `day=10`            | 2자리 일                                                |
-| `layer`       | `layer=<layer>`     | 허용 레이어는 `adjusted`, `technical_indicator` 두 가지 |
-| `object`      | `part-0000.parquet` | Parquet 파일                                            |
+| 세그먼트      | 예시                | 설명                                 |
+| ------------- | ------------------- | ------------------------------------ |
+| `domain`      | `market`            | 도메인                               |
+| `table`       | `prices`            | 테이블                               |
+| `interval`    | `interval=1d`       | 파티션 간격                          |
+| `data_source` | `data_source=yahoo` | 데이터 소스(선택)                    |
+| `year`        | `year=2025`         | 4자리 연도                           |
+| `month`       | `month=09`          | 2자리 월                             |
+| `day`         | `day=10`            | 2자리 일                             |
+| `layer`       | `layer=<layer>`     | 허용 레이어는 `adjusted` 하나만 지원 |
+| `object`      | `part-0000.parquet` | Parquet 파일                         |

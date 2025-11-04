@@ -1,10 +1,10 @@
 # Step Functions Transform State Machine — I/O 계약 명세
 
-| 항목        | 내용                                                                  |
-| ----------- | --------------------------------------------------------------------- |
-| 책임        | Manifest 기반 배치 Compaction → Transform → Indicators → Crawler 처리 |
-| 코드 기준   | `infrastructure/pipelines/daily_prices_data/processing_stack.py`      |
-| 배포 리소스 | `{environment}-daily-prices-data-processing`                          |
+| 항목        | 내용                                                             |
+| ----------- | ---------------------------------------------------------------- |
+| 책임        | Manifest 기반 배치 Compaction → Transform → Crawler 처리         |
+| 코드 기준   | `infrastructure/pipelines/daily_prices_data/processing_stack.py` |
+| 배포 리소스 | `{environment}-daily-prices-data-processing`                     |
 
 ### 입력 계약
 

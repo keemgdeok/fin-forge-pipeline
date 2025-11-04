@@ -57,7 +57,6 @@ def test_transform_state_machine_localstack(
         table_name="prices",
         interval="1d",
         data_source="yahoo_finance",
-        indicator_layer="technical_indicator",
         symbols=["AAPL", "MSFT", "GOOGL"],
         manifest_days=manifest_count,
     )
@@ -79,7 +78,6 @@ def test_transform_state_machine_localstack(
         ],
         "compacted_layer": "compacted",
         "curated_layer": "adjusted",
-        "indicator_layer": ingestion.indicator_layer,
     }
 
     execution_arn = start_state_machine_execution(config, transform_workflow.state_machine_arn, workflow_input)

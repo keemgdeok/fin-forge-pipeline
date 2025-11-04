@@ -9,7 +9,7 @@ prod_config = {
     "github_oidc_provider_create": False,
     "lambda_memory": 512,
     "lambda_timeout": 900,
-    "glue_max_capacity": 5,
+    "glue_max_capacity": 1,
     "glue_max_concurrent_runs": 6,
     "step_function_timeout_hours": 4,
     "s3_retention_days": 365,
@@ -22,7 +22,7 @@ prod_config = {
     "enable_point_in_time_recovery": True,
     # Ingestion defaults (conservative by default; adjust to production needs)
     "ingestion_symbols": ["AAPL", "MSFT", "GOOG", "AMZN"],
-    "ingestion_period": "1mo",
+    "ingestion_period": "5d",
     "ingestion_interval": "1d",
     "ingestion_file_format": "json",
     "ingestion_trigger_type": "schedule",
@@ -33,10 +33,6 @@ prod_config = {
     "symbol_universe_asset_file": "all_equities.json",
     "symbol_universe_s3_key": "market/universe/all_equities.json",
     "symbol_universe_s3_bucket": "",
-    # Indicators
-    "indicators_table_name": "indicators",
-    "indicators_lookback_days": 121,
-    "indicators_layer": "technical_indicator",
     # Fan-out (Extract) defaults
     "orchestrator_chunk_size": 50,
     "sqs_send_batch_size": 10,
@@ -50,7 +46,7 @@ prod_config = {
     "batch_tracker_table_name": "",
     "batch_tracker_ttl_days": 7,
     "compaction_worker_type": "G.1X",
-    "compaction_number_workers": 4,
+    "compaction_number_workers": 1,
     "compaction_timeout_minutes": 240,
     "compaction_target_file_mb": 256,
     "compaction_codec": "zstd",
@@ -61,13 +57,12 @@ prod_config = {
     "monitored_glue_jobs": [
         "daily-prices-compaction",
         "daily-prices-data-etl",
-        "market-indicators-etl",
     ],
-    "sfn_max_concurrency": 1,
+    "sfn_max_concurrency": 3,
     "monitored_state_machines": [
         "daily-prices-data-processing",
     ],
-    "max_retries": 5,
+    "max_retries": 3,
     "processing_orchestration_mode": "dynamodb_stream",
     # Catalog update policy for crawler: on_schema_change|never|force
     "catalog_update": "on_schema_change",
@@ -88,10 +83,7 @@ prod_config = {
             "priority": "1",
         },
     ],
-    "allowed_load_layers": ["adjusted", "technical_indicator"],
-    "indicators_state_layer": "state",
-    "indicators_state_snapshot": "current",
-    "indicators_state_window_days": 160,
+    "allowed_load_layers": ["adjusted"],
     "tags": {
         "Environment": "prod",
         "Project": "ServerlessDataPipeline",

@@ -31,10 +31,6 @@ staging_config = {
     "symbol_universe_asset_file": "all_equities.json",
     "symbol_universe_s3_key": "market/universe/all_equities.json",
     "symbol_universe_s3_bucket": "",
-    # Indicators
-    "indicators_table_name": "indicators",
-    "indicators_lookback_days": 150,
-    "indicators_layer": "technical_indicator",
     # Fan-out (Extract) defaults
     "orchestrator_chunk_size": 15,
     "sqs_send_batch_size": 10,
@@ -59,7 +55,6 @@ staging_config = {
     "monitored_glue_jobs": [
         "daily-prices-compaction",
         "daily-prices-data-etl",
-        "market-indicators-etl",
     ],
     "sfn_max_concurrency": 3,
     "monitored_state_machines": [
@@ -86,7 +81,7 @@ staging_config = {
             "priority": "1",
         },
     ],
-    "allowed_load_layers": ["adjusted", "technical_indicator"],
+    "allowed_load_layers": ["adjusted"],
     "tags": {
         "Environment": "staging",
         "Project": "ServerlessDataPipeline",
