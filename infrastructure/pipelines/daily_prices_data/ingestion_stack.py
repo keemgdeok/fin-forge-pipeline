@@ -20,7 +20,6 @@ from aws_cdk import (
 from aws_cdk import aws_lambda_event_sources as lambda_event_sources
 from aws_cdk.aws_lambda_python_alpha import BundlingOptions, PythonFunction, PythonLayerVersion
 from constructs import Construct
-from aws_cdk import aws_cloudwatch as cw
 
 
 class DailyPricesDataIngestionStack(Stack):
@@ -74,9 +73,6 @@ class DailyPricesDataIngestionStack(Stack):
 
         # Event-driven orchestrator trigger (schedule)
         self.ingestion_schedule = self._create_ingestion_schedule()
-
-        # Alarms and Dashboard for Extract
-        self._create_alarms_and_dashboard()
 
         self._create_outputs()
 
@@ -319,65 +315,6 @@ class DailyPricesDataIngestionStack(Stack):
             "IngestionQueueUrl",
             value=self.queue.queue_url,
             description="Ingestion SQS queue URL",
-        )
-
-    def _create_alarms_and_dashboard(self) -> None:
-        # SQS queue depth alarm
-        depth_metric = self.queue.metric_approximate_number_of_messages_visible(
-            period=Duration.minutes(5),
-            statistic="Average",
-        )
-        cw.Alarm(
-            self,
-            "IngestionQueueDepthAlarm",
-            alarm_description="Ingestion queue depth high",
-            metric=depth_metric,
-            threshold=float(self.config.get("alarm_queue_depth_threshold", 100.0)),
-            evaluation_periods=1,
-            comparison_operator=cw.ComparisonOperator.GREATER_THAN_OR_EQUAL_TO_THRESHOLD,
-        )
-
-        # Oldest message age alarm
-        age_metric = self.queue.metric_approximate_age_of_oldest_message(period=Duration.minutes(5))
-        cw.Alarm(
-            self,
-            "IngestionQueueAgeAlarm",
-            alarm_description="Old messages in ingestion queue",
-            metric=age_metric,
-            threshold=float(self.config.get("alarm_queue_age_seconds", 300.0)),
-            evaluation_periods=1,
-            comparison_operator=cw.ComparisonOperator.GREATER_THAN_OR_EQUAL_TO_THRESHOLD,
-        )
-
-        # Worker Lambda error/throttle alarms
-        errors_metric = self.ingestion_function.metric_errors(period=Duration.minutes(5))
-        throttles_metric = self.ingestion_function.metric_throttles(period=Duration.minutes(5))
-
-        cw.Alarm(
-            self,
-            "IngestionWorkerErrorsAlarm",
-            alarm_description="Ingestion worker errors detected",
-            metric=errors_metric,
-            threshold=1,
-            evaluation_periods=1,
-            comparison_operator=cw.ComparisonOperator.GREATER_THAN_OR_EQUAL_TO_THRESHOLD,
-        )
-        cw.Alarm(
-            self,
-            "IngestionWorkerThrottlesAlarm",
-            alarm_description="Ingestion worker throttles detected",
-            metric=throttles_metric,
-            threshold=1,
-            evaluation_periods=1,
-            comparison_operator=cw.ComparisonOperator.GREATER_THAN_OR_EQUAL_TO_THRESHOLD,
-        )
-
-        # Dashboard
-        dash = cw.Dashboard(self, "IngestionDashboard", dashboard_name=f"{self.env_name}-ingestion-dashboard")
-        dash.add_widgets(
-            cw.GraphWidget(title="SQS Depth", left=[depth_metric]),
-            cw.GraphWidget(title="SQS Oldest Age", left=[age_metric]),
-            cw.GraphWidget(title="Worker Errors/Throttles", left=[errors_metric, throttles_metric]),
         )
 
     def _create_common_layer(self) -> lambda_.LayerVersion:
