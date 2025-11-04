@@ -92,6 +92,7 @@ class DailyPricesDataProcessingStack(Stack):
             self,
             "GlueExecRoleRefForCompaction",
             self.glue_execution_role_arn,
+            mutable=False,
         )
         compaction_script_asset.grant_read(glue_exec_role_ref)
 
@@ -148,7 +149,12 @@ class DailyPricesDataProcessingStack(Stack):
             path="src/glue/jobs/daily_prices_data_etl.py",
         )
         # Ensure Glue execution role can read the script asset
-        glue_exec_role_ref = iam.Role.from_role_arn(self, "GlueExecRoleRefForScript", self.glue_execution_role_arn)
+        glue_exec_role_ref = iam.Role.from_role_arn(
+            self,
+            "GlueExecRoleRefForScript",
+            self.glue_execution_role_arn,
+            mutable=False,
+        )
         glue_script_asset.grant_read(glue_exec_role_ref)
 
         # Provide shared Python packages ("shared" module) to Glue via --extra-py-files
@@ -449,6 +455,7 @@ class DailyPricesDataProcessingStack(Stack):
                 self,
                 "StepFunctionsExecutionRoleRef",
                 self.step_functions_execution_role_arn,
+                mutable=False,
             ),
             logs=sfn.LogOptions(destination=sm_log_group, level=sfn.LogLevel.ALL, include_execution_data=True),
             tracing_enabled=bool(self.config.get("enable_xray_tracing", False)),
@@ -479,7 +486,12 @@ class DailyPricesDataProcessingStack(Stack):
             memory_size=int(self.config.get("lambda_memory", 512)),
             timeout=Duration.seconds(int(self.config.get("processing_trigger_timeout", 60))),
             log_retention=self._log_retention(),
-            role=iam.Role.from_role_arn(self, "ProcessingTriggerRole", self.lambda_execution_role_arn),
+            role=iam.Role.from_role_arn(
+                self,
+                "ProcessingTriggerRole",
+                self.lambda_execution_role_arn,
+                mutable=False,
+            ),
             layers=[self.common_layer],
             environment={
                 "ENVIRONMENT": self.env_name,
@@ -511,11 +523,6 @@ class DailyPricesDataProcessingStack(Stack):
             )
         )
 
-        self.batch_tracker_table.grant_read_write_data(trigger_function)
-        if hasattr(self.batch_tracker_table, "grant_stream_read"):
-            self.batch_tracker_table.grant_stream_read(trigger_function)
-        self.processing_workflow.grant_start_execution(trigger_function)
-
         self.processing_completion_trigger = trigger_function
 
     def _create_preflight_function(self) -> lambda_.IFunction:
@@ -531,7 +538,12 @@ class DailyPricesDataProcessingStack(Stack):
             memory_size=self._lambda_memory(),
             timeout=self._lambda_timeout(),
             log_retention=self._log_retention(),
-            role=iam.Role.from_role_arn(self, "PreflightLambdaRole", self.lambda_execution_role_arn),
+            role=iam.Role.from_role_arn(
+                self,
+                "PreflightLambdaRole",
+                self.lambda_execution_role_arn,
+                mutable=False,
+            ),
             layers=[self.common_layer],
             environment={
                 "ENVIRONMENT": self.env_name,
@@ -558,7 +570,12 @@ class DailyPricesDataProcessingStack(Stack):
             memory_size=256,
             timeout=Duration.seconds(30),
             log_retention=self._log_retention(),
-            role=iam.Role.from_role_arn(self, "CompactionGuardLambdaRole", self.lambda_execution_role_arn),
+            role=iam.Role.from_role_arn(
+                self,
+                "CompactionGuardLambdaRole",
+                self.lambda_execution_role_arn,
+                mutable=False,
+            ),
             layers=[self.common_layer],
             environment={
                 "CURATED_BUCKET": self.shared_storage.curated_bucket.bucket_name,
@@ -578,7 +595,12 @@ class DailyPricesDataProcessingStack(Stack):
             memory_size=256,
             timeout=Duration.seconds(30),
             log_retention=self._log_retention(),
-            role=iam.Role.from_role_arn(self, "SchemaDeciderLambdaRole", self.lambda_execution_role_arn),
+            role=iam.Role.from_role_arn(
+                self,
+                "SchemaDeciderLambdaRole",
+                self.lambda_execution_role_arn,
+                mutable=False,
+            ),
             layers=[self.common_layer],
             environment={
                 "CATALOG_UPDATE_DEFAULT": str(

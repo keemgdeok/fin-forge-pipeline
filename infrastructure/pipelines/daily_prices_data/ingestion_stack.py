@@ -67,10 +67,6 @@ class DailyPricesDataIngestionStack(Stack):
         # Worker Lambda (triggered by SQS)
         self.ingestion_function = self._create_worker_function()
 
-        # Grant orchestrator and worker access to the batch tracker table
-        self.batch_tracker_table.grant_read_write_data(self.orchestrator_function)
-        self.batch_tracker_table.grant_read_write_data(self.ingestion_function)
-
         # Event-driven orchestrator trigger (schedule)
         self.ingestion_schedule = self._create_ingestion_schedule()
 
@@ -98,7 +94,12 @@ class DailyPricesDataIngestionStack(Stack):
             memory_size=memory,
             timeout=timeout,
             log_retention=self._log_retention(),
-            role=iam.Role.from_role_arn(self, "IngestionWorkerRole", self.lambda_execution_role_arn),
+            role=iam.Role.from_role_arn(
+                self,
+                "IngestionWorkerRole",
+                self.lambda_execution_role_arn,
+                mutable=False,
+            ),
             layers=[self.common_layer, self.market_domain_layer, self.market_data_dependencies_layer],
             environment={
                 "ENVIRONMENT": self.env_name,
@@ -157,7 +158,12 @@ class DailyPricesDataIngestionStack(Stack):
             memory_size=int(self.config.get("orchestrator_memory", 256)),
             timeout=Duration.seconds(int(self.config.get("orchestrator_timeout", 60))),
             log_retention=self._log_retention(),
-            role=iam.Role.from_role_arn(self, "IngestionOrchestratorRole", self.lambda_execution_role_arn),
+            role=iam.Role.from_role_arn(
+                self,
+                "IngestionOrchestratorRole",
+                self.lambda_execution_role_arn,
+                mutable=False,
+            ),
             layers=[self.common_layer],
             environment=env_vars,
         )

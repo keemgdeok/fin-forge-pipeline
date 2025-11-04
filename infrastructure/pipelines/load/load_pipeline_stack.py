@@ -104,7 +104,12 @@ class LoadPipelineStack(Stack):
             memory_size=int(self.config.get("load_publisher_memory", 128)),
             timeout=Duration.seconds(int(self.config.get("load_publisher_timeout", 30))),
             log_retention=self._log_retention(),
-            role=iam.Role.from_role_arn(self, "LoadPublisherRole", self.lambda_execution_role_arn),
+            role=iam.Role.from_role_arn(
+                self,
+                "LoadPublisherRole",
+                self.lambda_execution_role_arn,
+                mutable=False,
+            ),
             environment={
                 "ENVIRONMENT": self.env_name,
                 "LOAD_QUEUE_MAP": json.dumps(queue_map),
@@ -114,9 +119,6 @@ class LoadPipelineStack(Stack):
             },
             layers=[self.load_layer],
         )
-
-        for queue in self.queues.values():
-            queue.grant_send_messages(function)
 
         return function
 
