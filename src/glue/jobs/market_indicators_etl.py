@@ -3,7 +3,7 @@ from __future__ import annotations
 import hashlib
 import json
 import sys
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 from typing import Any, Dict, Tuple
 
 import boto3  # type: ignore
@@ -14,8 +14,15 @@ from pyspark.context import SparkContext
 from pyspark.sql import DataFrame
 from pyspark.sql import functions as F
 from pyspark.sql import types as T
+from pyspark.sql.utils import AnalysisException
 
-from shared.paths import build_curated_interval_prefix, build_curated_layer_path
+from glue.lib.incremental_state import (
+    clamp_history_window,
+    combine_price_history,
+    retention_start_for_window,
+    standardize_price_dataframe,
+)
+from shared.paths import build_curated_interval_prefix, build_curated_layer_path, build_curated_state_path
 
 # Optional imports from shared layer for schema fingerprint utilities
 try:  # pragma: no cover
@@ -36,7 +43,6 @@ from glue.lib.spark_indicators import (
     FLOAT_COLUMNS,
     INDICATOR_COLUMNS,
     INT64_COLUMNS,
-    OPTIONAL_DOUBLE_COLUMNS,
     REQUIRED_BASE_COLUMNS,
     SHORT_COLUMNS,
     compute_indicators_spark,
@@ -133,7 +139,6 @@ uri_scheme = _get_opt_arg("uri_scheme", "s3")
 ds_str = str(args["ds"]).strip()
 lookback_days = int(args.get("lookback_days", "252"))
 ds_dt = datetime.strptime(ds_str, "%Y-%m-%d").date()
-start_dt = ds_dt - timedelta(days=max(lookback_days - 1, 0))
 now_utc = datetime.now(timezone.utc)
 batch_id_value = int(abs(now_utc.timestamp()) * 1_000_000)
 created_at_value = now_utc
@@ -145,6 +150,13 @@ domain = str(args.get("domain") or "").strip()
 table_name = str(args.get("table_name") or "").strip()
 prices_layer = str(args.get("prices_layer") or "adjusted").strip()
 output_layer = str(args.get("output_layer") or "technical_indicator").strip()
+state_bucket = str(args.get("state_bucket") or args.get("output_bucket") or "").strip()
+state_layer = str(args.get("state_layer") or "state").strip()
+state_snapshot = str(args.get("state_snapshot") or "current").strip()
+state_window_days = max(1, int(str(args.get("state_window_days", lookback_days))))
+state_enabled = bool(state_bucket and state_layer and state_snapshot)
+state_key: str | None = None
+state_path: str | None = None
 
 if not interval or not domain or not table_name:
     raise ValueError("Indicators job requires domain, table_name, and interval arguments")
@@ -158,8 +170,29 @@ interval_prefix = build_curated_interval_prefix(
 
 prices_path = _build_path(uri_scheme, args["prices_curated_bucket"], interval_prefix)
 raw_prices_df = spark.read.format("parquet").load(prices_path)
+state_df: DataFrame | None = None
+if state_enabled:
+    state_key = build_curated_state_path(
+        domain=domain,
+        table=table_name,
+        interval=interval,
+        data_source=data_source or None,
+        state_layer=state_layer,
+        snapshot=state_snapshot,
+    )
+    state_path = _build_path(uri_scheme, state_bucket, state_key)
+    try:
+        candidate_state_df = spark.read.format("parquet").load(state_path)
+        if candidate_state_df.head(1):
+            state_df = standardize_price_dataframe(candidate_state_df)
+    except AnalysisException:
+        state_df = None
+
+history_days_for_read = max(1, lookback_days if state_df is None else 1)
+read_start_dt = retention_start_for_window(ds_dt, history_days_for_read)
+
 prices_df = raw_prices_df.where(
-    (F.col("ds") >= F.lit(start_dt.strftime("%Y-%m-%d")))
+    (F.col("ds") >= F.lit(read_start_dt.strftime("%Y-%m-%d")))
     & (F.col("ds") <= F.lit(ds_str))
     & (F.col("layer") == F.lit(prices_layer))
 )
@@ -168,27 +201,34 @@ missing_columns = [col for col in REQUIRED_BASE_COLUMNS if col not in prices_df.
 if missing_columns:
     raise RuntimeError(f"MISSING_COLUMNS: Curated prices missing required fields {missing_columns}")
 
-for column_name in REQUIRED_BASE_COLUMNS:
-    spark_type = T.StringType() if column_name in {"symbol", "ds"} else T.DoubleType()
-    prices_df = prices_df.withColumn(column_name, F.col(column_name).cast(spark_type))
+prices_df = standardize_price_dataframe(prices_df)
 
-for optional_column in OPTIONAL_DOUBLE_COLUMNS:
-    if optional_column in prices_df.columns:
-        prices_df = prices_df.withColumn(optional_column, F.col(optional_column).cast(T.DoubleType()))
+combined_prices_df = combine_price_history(fresh_df=prices_df, state_df=state_df)
 
-prices_df = prices_df.withColumn("date", F.to_date("ds"))
+history_days_for_compute = max(lookback_days, state_window_days if state_enabled else lookback_days)
+history_start_dt = retention_start_for_window(ds_dt, history_days_for_compute)
 
-record_count = prices_df.count()
+if "layer" in combined_prices_df.columns:
+    combined_prices_df = combined_prices_df.where(F.col("layer") == F.lit(prices_layer))
+
+combined_prices_df = clamp_history_window(combined_prices_df, start=history_start_dt, end=ds_dt)
+combined_prices_df = combined_prices_df.cache()
+
+record_count = combined_prices_df.count()
 if record_count == 0:
     raise RuntimeError("NO_INPUT_DATA: No curated prices found in lookback window")
 
-null_pk = prices_df.filter(F.col("symbol").isNull() | F.col("date").isNull()).limit(1).count()
+target_record_count = combined_prices_df.filter(F.col("ds") == F.lit(ds_str)).limit(1).count()
+if target_record_count == 0:
+    raise RuntimeError(f"NO_TARGET_DATA: No curated prices found for ds {ds_str}")
+
+null_pk = combined_prices_df.filter(F.col("symbol").isNull() | F.col("date").isNull()).limit(1).count()
 if null_pk > 0:
     raise RuntimeError("DQ_FAILED: Null symbol/date detected in curated prices")
 
-prices_df = prices_df.repartition(output_partitions, "symbol")
+history_prices_df = combined_prices_df.repartition(output_partitions, "symbol")
 
-indicators_df = compute_indicators_spark(prices_df)
+indicators_df = compute_indicators_spark(history_prices_df)
 indicators_df = indicators_df.withColumn("batch_id", F.lit(batch_id_value))
 indicators_df = indicators_df.withColumn("created_at", F.lit(created_at_value))
 indicators_df = indicators_df.withColumn("updated_at", F.lit(updated_at_value))
@@ -236,6 +276,13 @@ output_key = build_curated_layer_path(
 out_path = _build_path(uri_scheme, args["output_bucket"], output_key)
 ind_out.repartition(output_partitions).write.mode("overwrite").format("parquet").save(out_path)
 
+if state_enabled and state_path:
+    retention_start_dt = retention_start_for_window(ds_dt, state_window_days)
+    state_output_df = clamp_history_window(combined_prices_df, start=retention_start_dt, end=ds_dt)
+    if state_output_df.limit(1).count() == 0:
+        raise RuntimeError("STATE_UPDATE_FAILED: No rows available to persist in state snapshot")
+    state_output_df.orderBy("symbol", "ds").coalesce(1).write.mode("overwrite").format("parquet").save(state_path)
+
 cols = [
     {"name": field.name, "type": field.dataType.simpleString()} for field in ind_out.schema.fields if field.name != "ds"
 ]
@@ -272,5 +319,6 @@ else:
         ContentType="application/json",
     )
 
+combined_prices_df.unpersist()
 job.commit()
 OUTPUT_PARTITIONS = 4

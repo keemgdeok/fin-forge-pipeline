@@ -8,9 +8,16 @@ from typing import Iterable
 import pandas as pd
 import pytest
 from pyspark.sql import SparkSession
+from pyspark.sql import functions as F
 
 from glue.lib.indicators import compute_indicators_pandas
 from glue.lib.spark_indicators import INDICATOR_COLUMNS, compute_indicators_spark
+from glue.lib.incremental_state import (
+    clamp_history_window,
+    combine_price_history,
+    retention_start_for_window,
+    standardize_price_dataframe,
+)
 
 _RUN_SPARK_TESTS = os.getenv("RUN_SPARK_TESTS", "0").lower() in {"1", "true", "yes"}
 
@@ -71,6 +78,65 @@ def test_compute_indicators_matches_pandas(spark_session: SparkSession) -> None:
             if pd.isna(expected) and pd.isna(actual):
                 continue
             assert pd.isna(expected) == pd.isna(actual), f"{column} index {idx}: pandas={expected}, spark={actual}"
+            if isinstance(expected, (float, int)) and isinstance(actual, (float, int)):
+                assert actual == pytest.approx(expected, rel=1e-6, abs=1e-6), f"{column} index {idx}"
+            else:
+                assert actual == expected, f"{column} index {idx}"
+
+
+@pytest.mark.skipif(not _RUN_SPARK_TESTS, reason="RUN_SPARK_TESTS is disabled")
+def test_incremental_state_matches_full_history(spark_session: SparkSession) -> None:
+    rows = _build_sample_rows(num_days=130)
+    pdf = pd.DataFrame(rows)
+    pdf["layer"] = "adjusted"
+
+    spark_df = spark_session.createDataFrame(pdf)
+    standardized = standardize_price_dataframe(spark_df)
+
+    full_history = compute_indicators_spark(standardized.repartition(1, "symbol")).cache()
+
+    target_ds = pdf["ds"].iloc[-1]
+    target_date = datetime.strptime(target_ds, "%Y-%m-%d").date()
+    previous_day = target_date - timedelta(days=1)
+
+    full_target = (
+        full_history.where(F.col("ds") == F.lit(target_ds)).orderBy("symbol", "date").toPandas().reset_index(drop=True)
+    )
+
+    state_window_days = 160
+    state_retention_start = retention_start_for_window(previous_day, state_window_days)
+    state_source = standardized.where(F.col("ds") <= F.lit(previous_day.strftime("%Y-%m-%d")))
+    state_df = clamp_history_window(state_source, start=state_retention_start, end=previous_day)
+
+    fresh_df = standardized.where(F.col("ds") == F.lit(target_ds))
+    combined = combine_price_history(fresh_df=fresh_df, state_df=state_df)
+    combined_window = clamp_history_window(
+        combined,
+        start=retention_start_for_window(target_date, state_window_days),
+        end=target_date,
+    )
+
+    incremental_result = (
+        compute_indicators_spark(combined_window.repartition(1, "symbol"))
+        .where(F.col("ds") == F.lit(target_ds))
+        .orderBy("symbol", "date")
+        .toPandas()
+        .reset_index(drop=True)
+    )
+
+    full_history.unpersist()
+
+    assert len(full_target) == len(incremental_result)
+
+    for column in INDICATOR_COLUMNS:
+        expected_series = full_target[column]
+        incremental_series = incremental_result[column]
+        assert len(expected_series) == len(incremental_series), f"Column {column} length mismatch"
+
+        for idx, (expected, actual) in enumerate(zip(expected_series, incremental_series, strict=True)):
+            if pd.isna(expected) and pd.isna(actual):
+                continue
+            assert pd.isna(expected) == pd.isna(actual), f"{column} index {idx}: expected={expected}, actual={actual}"
             if isinstance(expected, (float, int)) and isinstance(actual, (float, int)):
                 assert actual == pytest.approx(expected, rel=1e-6, abs=1e-6), f"{column} index {idx}"
             else:
