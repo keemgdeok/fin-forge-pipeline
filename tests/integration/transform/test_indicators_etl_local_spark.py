@@ -216,6 +216,8 @@ def test_indicators_etl_with_file_scheme() -> None:
             "20",
             "--uri_scheme",
             "file",
+            "--output_partitions",
+            "4",
         ]
 
         import sys as _sys
