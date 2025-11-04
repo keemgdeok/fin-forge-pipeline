@@ -12,9 +12,10 @@ graph LR
     subgraph Glue_Jobs["Glue Jobs"]
       COMP["Compaction<br/>(# JSON → 1 Parquet)"]
       GLUE["Curated ETL"]
-      IND["Indicators ETL"]
     end
     GUARD["Compaction Guard<br/>(Lambda)"]
+    DECIDE["Schema Decider<br/>(Lambda)"]
+    AGG["Crawler Decision Aggregator<br/>(States.ArrayContains)"]
     CRAWL["Glue Crawler<br/>(스키마 변경 시)"]
   end
 
@@ -24,11 +25,10 @@ graph LR
 
   SFN --> PRE
   PRE --> COMP
-  COMP --> GUARD --> GLUE --> IND --> DECIDE
-  DECIDE --> AGG["Crawler Decision Aggregator<br/>(States.ArrayContains)"]
+  COMP --> GUARD --> GLUE --> DECIDE
+  DECIDE --> AGG
   AGG --> CRAWL
   GLUE --> CUR[(S3 Curated)]
-  IND --> CUR
   GLUE --- RAW[(S3 Raw)]
   COMP --- RAW
   COMP --> CUR

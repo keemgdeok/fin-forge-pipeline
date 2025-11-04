@@ -12,9 +12,8 @@ flowchart TD
       COMP --> GUARD["Compaction Guard Lambda"]
       GUARD -->|데이터 없음| SKIP
       GUARD -->|데이터 있음| ETL["Curated ETL"]
-      ETL --> IND["Indicators ETL"]
   end
-    IND --> DECIDE["Schema Change Decider"]
+    ETL --> DECIDE["Schema Change Decider"]
     DECIDE -->|shouldRunCrawler=true| TRUE(["Return true"])
     DECIDE -->|false| SKIP
   end

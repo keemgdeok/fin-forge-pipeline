@@ -77,7 +77,7 @@ ______________________________________________________________________
 EventBridge → Orchestrator Lambda → Ingestion SQS → Worker Lambda → Raw S3 + DynamoDB Stream
 
 [\[**Transform**\]](docs/diagrams/transform/README.md)\
-Manifest 기반 Step Functions → Preflight Lambda → Glue Compaction/ETL/Indicators → Curated S3 + Catalog
+Manifest 기반 Step Functions → Preflight Lambda → Glue Compaction/ETL → Curated S3 + Catalog
 
 [\[**Load**\]](docs/diagrams/load/README.md)\
 Curated S3 ObjectCreated → Load Event Publisher Lambda → Load SQS → On-premise Loader(미구현)
