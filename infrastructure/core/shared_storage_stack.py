@@ -46,9 +46,12 @@ class SharedStorageStack(Stack):
         """Create artifacts bucket for scripts, configs, etc."""
         # Align removal policy and auto delete with environment config
         cfg_policy = (self.config.get("removal_policy", "destroy") or "destroy").lower()
-        removal_policy = (
-            RemovalPolicy.RETAIN if cfg_policy == "retain" or self.env_name == "prod" else RemovalPolicy.DESTROY
-        )
+        if cfg_policy == "retain":
+            removal_policy = RemovalPolicy.RETAIN
+        elif cfg_policy == "destroy":
+            removal_policy = RemovalPolicy.DESTROY
+        else:
+            removal_policy = RemovalPolicy.RETAIN if self.env_name == "prod" else RemovalPolicy.DESTROY
         auto_delete = bool(self.config.get("auto_delete_objects", False))
 
         return s3.Bucket(

@@ -1,14 +1,15 @@
 """Security foundation stack for serverless data platform."""
 
 import os
-from typing import Optional
+from typing import Iterable, Optional, Sequence
 
-from aws_cdk import (
-    Stack,
-    aws_iam as iam,
-    CfnOutput,
-)
+from aws_cdk import ArnFormat, Stack, aws_iam as iam, CfnOutput
 from constructs import Construct
+
+from infrastructure.config.types import EnvironmentConfig
+from infrastructure.core.iam import utils as iam_utils
+from infrastructure.core.iam.glue_execution_role import GlueExecutionRoleConstruct
+from infrastructure.core.iam.lambda_execution_role import LambdaExecutionRoleConstruct
 
 
 class SecurityStack(Stack):
@@ -19,17 +20,31 @@ class SecurityStack(Stack):
         scope: Construct,
         construct_id: str,
         environment: str,
-        config: dict,
+        config: EnvironmentConfig,
         **kwargs,
     ) -> None:
         super().__init__(scope, construct_id, **kwargs)
 
         self.env_name = environment
-        self.config = config
+        self.config: EnvironmentConfig = config
 
         # Core execution roles
-        self.lambda_execution_role = self._create_lambda_execution_role()
-        self.glue_execution_role = self._create_glue_execution_role()
+        lambda_role_construct = LambdaExecutionRoleConstruct(
+            self,
+            "LambdaExecutionRole",
+            env_name=self.env_name,
+            config=self.config,
+        )
+        self.lambda_execution_role = lambda_role_construct.role
+
+        glue_role_construct = GlueExecutionRoleConstruct(
+            self,
+            "GlueExecutionRole",
+            env_name=self.env_name,
+            config=self.config,
+        )
+        self.glue_execution_role = glue_role_construct.role
+
         self.step_functions_execution_role = self._create_step_functions_execution_role()
 
         # GitHub Actions OIDC provider and deploy role
@@ -39,308 +54,157 @@ class SecurityStack(Stack):
 
         self._create_outputs()
 
-    def _create_lambda_execution_role(self) -> iam.Role:
-        """Create base Lambda execution role."""
-        # Restrict S3 and Glue access to known resources
-        raw_bucket_name = f"data-pipeline-raw-{self.env_name}-{self.account}"
-        curated_bucket_name = f"data-pipeline-curated-{self.env_name}-{self.account}"
-        artifacts_bucket_name = f"{self.env_name}-data-platform-artifacts-{self.account}"
+    def _config_string_list(self, key: str, default: Sequence[str]) -> list[str]:
+        """Return a normalized list[str] from configuration or fall back to default."""
+        return iam_utils.config_string_list(self.config, key, default)
 
-        s3_bucket_arns = [
-            f"arn:aws:s3:::{raw_bucket_name}",
-            f"arn:aws:s3:::{raw_bucket_name}/*",
-            f"arn:aws:s3:::{curated_bucket_name}",
-            f"arn:aws:s3:::{curated_bucket_name}/*",
-            f"arn:aws:s3:::{artifacts_bucket_name}",
-            f"arn:aws:s3:::{artifacts_bucket_name}/*",
-        ]
-
-        # Build minimal schema prefix resources for Preflight/SchemaCheck
-        schema_object_arns: list[str] = []
-        curated_schema_object_arns: list[str] = []
-        for t in list(self.config.get("processing_triggers", [])):
-            d = str(t.get("domain", "")).strip()
-            tbl = str(t.get("table_name", "")).strip()
-            if not d or not tbl:
+    def _namespaced_resource_names(self, names: Iterable[str]) -> list[str]:
+        """Ensure names are prefixed with the environment namespace."""
+        prefix = f"{self.env_name}-"
+        scoped: list[str] = []
+        for raw_name in names:
+            name = str(raw_name or "").strip()
+            if not name:
                 continue
-            schema_object_arns.append(f"arn:aws:s3:::{artifacts_bucket_name}/{d}/{tbl}/_schema/*")
-            curated_schema_object_arns.append(f"arn:aws:s3:::{curated_bucket_name}/{d}/{tbl}/_schema/*")
+            scoped.append(name if name.startswith(prefix) else f"{prefix}{name}")
+        return scoped
 
-        glue_job_arn = f"arn:aws:glue:{self.region}:{self.account}:job/{self.env_name}-daily-prices-data-etl"
-        ingestion_queue_arn = f"arn:aws:sqs:{self.region}:{self.account}:{self.env_name}-ingestion-queue"
-        load_queue_arn = f"arn:aws:sqs:{self.region}:{self.account}:{self.env_name}-*-load-queue"
-        batch_tracker_table_name = str(
-            self.config.get("batch_tracker_table_name") or f"{self.env_name}-daily-prices-batch-tracker"
+    def _lambda_function_arn(self, function_name: str) -> str:
+        """Build colon-delimited Lambda ARN (avoids format regressions)."""
+        return self.format_arn(
+            service="lambda",
+            resource="function",
+            arn_format=ArnFormat.COLON_RESOURCE_NAME,
+            resource_name=function_name,
         )
-        batch_tracker_table_arn = self.format_arn(
-            service="dynamodb",
-            resource="table",
-            resource_name=batch_tracker_table_name,
-        )
-        batch_tracker_stream_arn = f"{batch_tracker_table_arn}/stream/*"
-        state_machine_arns = [
-            f"arn:aws:states:{self.region}:{self.account}:stateMachine:{self.env_name}-{str(name).strip()}"
-            for name in self.config.get("monitored_state_machines", [])
-            if str(name).strip()
-        ]
-        if not state_machine_arns:
-            state_machine_arns = [
-                f"arn:aws:states:{self.region}:{self.account}:stateMachine:{self.env_name}-daily-prices-data-processing"
-            ]
 
-        role = iam.Role(
-            self,
-            "LambdaExecutionRole",
-            role_name=f"{self.env_name}-data-platform-lambda-role",
-            assumed_by=iam.ServicePrincipal("lambda.amazonaws.com"),
-            managed_policies=[
-                iam.ManagedPolicy.from_aws_managed_policy_name("service-role/AWSLambdaBasicExecutionRole"),
+    def _glue_job_arn(self, job_name: str) -> str:
+        """Build Glue job ARN."""
+        return self.format_arn(
+            service="glue",
+            resource="job",
+            arn_format=ArnFormat.SLASH_RESOURCE_NAME,
+            resource_name=job_name,
+        )
+
+    def _glue_crawler_arn(self, crawler_name: str) -> str:
+        """Build Glue crawler ARN."""
+        return self.format_arn(
+            service="glue",
+            resource="crawler",
+            arn_format=ArnFormat.SLASH_RESOURCE_NAME,
+            resource_name=crawler_name,
+        )
+
+    def _step_functions_lambda_functions(self) -> list[str]:
+        """Resolve Lambda function names the Step Functions role must invoke."""
+        names = self._config_string_list(
+            "step_functions_lambda_functions",
+            default=[
+                "daily-prices-data-preflight",
+                "schema-change-decider",
+                "daily-prices-compaction-guard",
             ],
-            inline_policies={
-                "S3Access": iam.PolicyDocument(
-                    statements=[
-                        iam.PolicyStatement(
-                            effect=iam.Effect.ALLOW,
-                            actions=[
-                                "s3:GetObject",
-                                "s3:PutObject",
-                                "s3:DeleteObject",
-                                "s3:ListBucket",
-                            ],
-                            resources=s3_bucket_arns,
-                        ),
-                        # Minimal schema path access for artifacts/curated
-                        *(
-                            [
-                                iam.PolicyStatement(
-                                    effect=iam.Effect.ALLOW,
-                                    actions=["s3:GetObject", "s3:PutObject"],
-                                    resources=schema_object_arns + curated_schema_object_arns,
-                                )
-                            ]
-                            if (schema_object_arns or curated_schema_object_arns)
-                            else []
-                        ),
-                    ]
-                ),
-                "GlueAccess": iam.PolicyDocument(
-                    statements=[
-                        iam.PolicyStatement(
-                            effect=iam.Effect.ALLOW,
-                            actions=[
-                                "glue:StartJobRun",
-                                "glue:GetJobRun",
-                                "glue:GetJobRuns",
-                            ],
-                            resources=[glue_job_arn],
-                        ),
-                    ]
-                ),
-                "StepFunctionsStartExecution": iam.PolicyDocument(
-                    statements=[
-                        iam.PolicyStatement(
-                            effect=iam.Effect.ALLOW,
-                            actions=["states:StartExecution"],
-                            resources=state_machine_arns,
-                        )
-                    ]
-                ),
-                "SnsPublishAlerts": iam.PolicyDocument(
-                    statements=[
-                        iam.PolicyStatement(
-                            effect=iam.Effect.ALLOW,
-                            actions=["sns:Publish"],
-                            resources=[
-                                f"arn:aws:sns:{self.region}:{self.account}:{self.env_name}-data-platform-alerts"
-                            ],
-                        )
-                    ]
-                ),
-                "SqsConsumeAccess": iam.PolicyDocument(
-                    statements=[
-                        iam.PolicyStatement(
-                            effect=iam.Effect.ALLOW,
-                            actions=[
-                                "sqs:ChangeMessageVisibility",
-                                "sqs:ChangeMessageVisibilityBatch",
-                                "sqs:DeleteMessage",
-                                "sqs:DeleteMessageBatch",
-                                "sqs:GetQueueAttributes",
-                                "sqs:GetQueueUrl",
-                                "sqs:ReceiveMessage",
-                            ],
-                            resources=[ingestion_queue_arn],
-                        )
-                    ]
-                ),
-                "SqsSendMessage": iam.PolicyDocument(
-                    statements=[
-                        iam.PolicyStatement(
-                            effect=iam.Effect.ALLOW,
-                            actions=["sqs:SendMessage", "sqs:SendMessageBatch"],
-                            resources=[ingestion_queue_arn, load_queue_arn],
-                        )
-                    ]
-                ),
-                "DynamoDbBatchTrackerAccess": iam.PolicyDocument(
-                    statements=[
-                        iam.PolicyStatement(
-                            effect=iam.Effect.ALLOW,
-                            actions=[
-                                "dynamodb:BatchGetItem",
-                                "dynamodb:BatchWriteItem",
-                                "dynamodb:ConditionCheckItem",
-                                "dynamodb:DeleteItem",
-                                "dynamodb:DescribeTable",
-                                "dynamodb:GetItem",
-                                "dynamodb:PutItem",
-                                "dynamodb:Query",
-                                "dynamodb:Scan",
-                                "dynamodb:UpdateItem",
-                            ],
-                            resources=[batch_tracker_table_arn],
-                        ),
-                        iam.PolicyStatement(
-                            effect=iam.Effect.ALLOW,
-                            actions=[
-                                "dynamodb:DescribeStream",
-                                "dynamodb:GetRecords",
-                                "dynamodb:GetShardIterator",
-                            ],
-                            resources=[batch_tracker_stream_arn],
-                        ),
-                        iam.PolicyStatement(
-                            effect=iam.Effect.ALLOW,
-                            actions=["dynamodb:ListStreams"],
-                            resources=["*"],
-                        ),
-                    ]
-                ),
-                "CloudWatchPutMetric": iam.PolicyDocument(
-                    statements=[
-                        iam.PolicyStatement(
-                            effect=iam.Effect.ALLOW,
-                            actions=["cloudwatch:PutMetricData"],
-                            resources=["*"],
-                        )
-                    ]
-                ),
-                "SesSendEmail": iam.PolicyDocument(
-                    statements=[
-                        iam.PolicyStatement(
-                            effect=iam.Effect.ALLOW,
-                            actions=["ses:SendEmail", "ses:SendRawEmail"],
-                            resources=["*"],
-                            conditions={
-                                "StringEquals": {
-                                    # Limit to current region requests at minimum
-                                    "aws:RequestedRegion": self.region,
-                                    **(
-                                        {"ses:FromAddress": str(self.config.get("notification_source_email"))}
-                                        if self.config.get("notification_source_email")
-                                        else {}
-                                    ),
-                                }
-                            },
-                        )
-                    ]
-                ),
-            },
         )
-        return role
+        return self._namespaced_resource_names(names)
 
-    def _create_glue_execution_role(self) -> iam.Role:
-        """Create Glue job execution role."""
-        raw_bucket_name = f"data-pipeline-raw-{self.env_name}-{self.account}"
-        curated_bucket_name = f"data-pipeline-curated-{self.env_name}-{self.account}"
-        artifacts_bucket_name = f"{self.env_name}-data-platform-artifacts-{self.account}"
-
-        s3_bucket_arns = [
-            f"arn:aws:s3:::{raw_bucket_name}",
-            f"arn:aws:s3:::{raw_bucket_name}/*",
-            f"arn:aws:s3:::{curated_bucket_name}",
-            f"arn:aws:s3:::{curated_bucket_name}/*",
-            f"arn:aws:s3:::{artifacts_bucket_name}",
-            f"arn:aws:s3:::{artifacts_bucket_name}/*",
-        ]
-
-        return iam.Role(
-            self,
-            "GlueExecutionRole",
-            role_name=f"{self.env_name}-data-platform-glue-role",
-            assumed_by=iam.ServicePrincipal("glue.amazonaws.com"),
-            managed_policies=[
-                iam.ManagedPolicy.from_aws_managed_policy_name("service-role/AWSGlueServiceRole"),
+    def _step_functions_glue_jobs(self) -> list[str]:
+        """Resolve Glue job names the Step Functions role must manage."""
+        names = self._config_string_list(
+            "step_functions_glue_jobs",
+            default=[
+                "daily-prices-data-etl",
+                "daily-prices-compaction",
             ],
-            inline_policies={
-                "S3DataAccess": iam.PolicyDocument(
-                    statements=[
-                        iam.PolicyStatement(
-                            effect=iam.Effect.ALLOW,
-                            actions=[
-                                "s3:GetObject",
-                                "s3:PutObject",
-                                "s3:DeleteObject",
-                                "s3:ListBucket",
-                            ],
-                            resources=s3_bucket_arns,
-                        ),
-                    ]
-                ),
-            },
         )
+        return self._namespaced_resource_names(names)
+
+    def _step_functions_glue_crawlers(self) -> list[str]:
+        """Resolve Glue crawlers triggered by Step Functions workflows."""
+        names = self._config_string_list(
+            "step_functions_glue_crawlers",
+            default=[
+                "curated-data-crawler",
+            ],
+        )
+        return self._namespaced_resource_names(names)
 
     def _create_step_functions_execution_role(self) -> iam.Role:
         """Create Step Functions execution role."""
-        preflight_fn_name = f"{self.env_name}-daily-prices-data-preflight"
-        schema_decider_fn_name = f"{self.env_name}-schema-change-decider"
-        glue_job_arn = f"arn:aws:glue:{self.region}:{self.account}:job/{self.env_name}-daily-prices-data-etl"
-        crawler_arn = f"arn:aws:glue:{self.region}:{self.account}:crawler/{self.env_name}-curated-data-crawler"
+        lambda_function_arns = [self._lambda_function_arn(name) for name in self._step_functions_lambda_functions()]
+        glue_job_arns = [self._glue_job_arn(name) for name in self._step_functions_glue_jobs()]
+        crawler_arns = [self._glue_crawler_arn(name) for name in self._step_functions_glue_crawlers()]
+
+        inline_policies: dict[str, iam.PolicyDocument] = {}
+
+        if lambda_function_arns:
+            inline_policies["LambdaInvoke"] = iam.PolicyDocument(
+                statements=[
+                    iam.PolicyStatement(
+                        effect=iam.Effect.ALLOW,
+                        actions=["lambda:InvokeFunction"],
+                        resources=lambda_function_arns,
+                    ),
+                ]
+            )
+
+        if glue_job_arns:
+            inline_policies["GlueJobManagement"] = iam.PolicyDocument(
+                statements=[
+                    iam.PolicyStatement(
+                        effect=iam.Effect.ALLOW,
+                        actions=[
+                            "glue:StartJobRun",
+                            "glue:GetJobRun",
+                            "glue:BatchStopJobRun",
+                        ],
+                        resources=glue_job_arns,
+                    ),
+                ]
+            )
+
+        if crawler_arns:
+            inline_policies["GlueCrawlerManagement"] = iam.PolicyDocument(
+                statements=[
+                    iam.PolicyStatement(
+                        effect=iam.Effect.ALLOW,
+                        actions=[
+                            "glue:StartCrawler",
+                            "glue:GetCrawler",
+                        ],
+                        resources=crawler_arns,
+                    ),
+                ]
+            )
+
+        inline_policies["CloudWatchLogsDelivery"] = iam.PolicyDocument(
+            statements=[
+                iam.PolicyStatement(
+                    effect=iam.Effect.ALLOW,
+                    actions=[
+                        "logs:CreateLogDelivery",
+                        "logs:GetLogDelivery",
+                        "logs:UpdateLogDelivery",
+                        "logs:DeleteLogDelivery",
+                        "logs:ListLogDeliveries",
+                        "logs:PutResourcePolicy",
+                        "logs:DescribeResourcePolicies",
+                        "logs:DescribeLogGroups",
+                        "logs:DescribeLogStreams",
+                        "logs:CreateLogStream",
+                        "logs:PutLogEvents",
+                    ],
+                    resources=["*"],
+                )
+            ]
+        )
 
         return iam.Role(
             self,
             "StepFunctionsExecutionRole",
             role_name=f"{self.env_name}-data-platform-stepfunctions-role",
             assumed_by=iam.ServicePrincipal("states.amazonaws.com"),
-            inline_policies={
-                "LambdaInvoke": iam.PolicyDocument(
-                    statements=[
-                        iam.PolicyStatement(
-                            effect=iam.Effect.ALLOW,
-                            actions=["lambda:InvokeFunction"],
-                            resources=[
-                                f"arn:aws:lambda:{self.region}:{self.account}:function/{preflight_fn_name}",
-                                f"arn:aws:lambda:{self.region}:{self.account}:function/{schema_decider_fn_name}",
-                            ],
-                        ),
-                    ]
-                ),
-                "GlueJobManagement": iam.PolicyDocument(
-                    statements=[
-                        iam.PolicyStatement(
-                            effect=iam.Effect.ALLOW,
-                            actions=[
-                                "glue:StartJobRun",
-                                "glue:GetJobRun",
-                                "glue:BatchStopJobRun",
-                            ],
-                            resources=[glue_job_arn],
-                        ),
-                    ]
-                ),
-                "GlueCrawlerManagement": iam.PolicyDocument(
-                    statements=[
-                        iam.PolicyStatement(
-                            effect=iam.Effect.ALLOW,
-                            actions=[
-                                "glue:StartCrawler",
-                                "glue:GetCrawler",
-                            ],
-                            resources=[crawler_arn],
-                        ),
-                    ]
-                ),
-            },
+            inline_policies=inline_policies,
         )
 
     def _create_outputs(self) -> None:

@@ -2,22 +2,26 @@
 
 import os
 
-prod_config = {
+from infrastructure.config.types import EnvironmentConfig
+
+prod_config: EnvironmentConfig = {
     "account_id": os.environ.get("CDK_DEFAULT_ACCOUNT"),
     "region": "ap-northeast-2",
     # Set to True to let CDK create the GitHub OIDC provider. Defaults to reusing account-level provider.
     "github_oidc_provider_create": False,
     "lambda_memory": 512,
     "lambda_timeout": 900,
-    "glue_max_capacity": 1,
+    "glue_max_capacity": 2,
     "glue_max_concurrent_runs": 6,
     "step_function_timeout_hours": 4,
     "s3_retention_days": 365,
     "log_retention_days": 90,
     "enable_xray_tracing": True,
     "enable_detailed_monitoring": True,
-    "auto_delete_objects": False,
-    "removal_policy": "retain",
+    "auto_delete_objects": True,
+    "removal_policy": "destroy",
+    "lambda_additional_s3_patterns": [],
+    "glue_additional_s3_patterns": [],
     "backup_retention_days": 30,
     "enable_point_in_time_recovery": True,
     # Ingestion defaults (conservative by default; adjust to production needs)
@@ -46,7 +50,7 @@ prod_config = {
     "batch_tracker_table_name": "",
     "batch_tracker_ttl_days": 7,
     "compaction_worker_type": "G.1X",
-    "compaction_number_workers": 1,
+    "compaction_number_workers": 2,
     "compaction_timeout_minutes": 240,
     "compaction_target_file_mb": 256,
     "compaction_codec": "zstd",
@@ -59,6 +63,18 @@ prod_config = {
         "daily-prices-data-etl",
     ],
     "sfn_max_concurrency": 3,
+    "step_functions_lambda_functions": [
+        "daily-prices-data-preflight",
+        "schema-change-decider",
+        "daily-prices-compaction-guard",
+    ],
+    "step_functions_glue_jobs": [
+        "daily-prices-data-etl",
+        "daily-prices-compaction",
+    ],
+    "step_functions_glue_crawlers": [
+        "curated-data-crawler",
+    ],
     "monitored_state_machines": [
         "daily-prices-data-processing",
     ],

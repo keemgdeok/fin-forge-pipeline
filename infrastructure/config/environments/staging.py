@@ -2,7 +2,9 @@
 
 import os
 
-staging_config = {
+from infrastructure.config.types import EnvironmentConfig
+
+staging_config: EnvironmentConfig = {
     "account_id": os.environ.get("CDK_DEFAULT_ACCOUNT"),
     "region": "ap-northeast-2",
     # Set to True to let CDK create the GitHub OIDC provider. Defaults to reusing account-level provider.
@@ -18,6 +20,8 @@ staging_config = {
     "enable_detailed_monitoring": True,
     "auto_delete_objects": False,
     "removal_policy": "retain",
+    "lambda_additional_s3_patterns": [],
+    "glue_additional_s3_patterns": [],
     # Ingestion defaults
     "ingestion_symbols": ["AAPL", "MSFT", "GOOG"],
     "ingestion_period": "3mo",
@@ -57,6 +61,18 @@ staging_config = {
         "daily-prices-data-etl",
     ],
     "sfn_max_concurrency": 3,
+    "step_functions_lambda_functions": [
+        "daily-prices-data-preflight",
+        "schema-change-decider",
+        "daily-prices-compaction-guard",
+    ],
+    "step_functions_glue_jobs": [
+        "daily-prices-data-etl",
+        "daily-prices-compaction",
+    ],
+    "step_functions_glue_crawlers": [
+        "curated-data-crawler",
+    ],
     "monitored_state_machines": [
         "daily-prices-data-processing",
     ],

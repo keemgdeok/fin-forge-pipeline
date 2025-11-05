@@ -2,7 +2,9 @@
 
 import os
 
-dev_config = {
+from infrastructure.config.types import EnvironmentConfig
+
+dev_config: EnvironmentConfig = {
     "account_id": os.environ.get("CDK_DEFAULT_ACCOUNT"),
     "region": "ap-northeast-2",
     # Set to True to let CDK create the GitHub OIDC provider. Defaults to reusing account-level provider.
@@ -18,6 +20,8 @@ dev_config = {
     "enable_detailed_monitoring": True,
     "auto_delete_objects": True,
     "removal_policy": "destroy",
+    "lambda_additional_s3_patterns": [],
+    "glue_additional_s3_patterns": [],
     # Ingestion defaults (EventBridge -> Lambda input)
     "ingestion_symbols": ["AAPL", "MSFT"],
     "ingestion_period": "1mo",
@@ -57,6 +61,18 @@ dev_config = {
         "daily-prices-data-etl",
     ],
     "sfn_max_concurrency": 3,
+    "step_functions_lambda_functions": [
+        "daily-prices-data-preflight",
+        "schema-change-decider",
+        "daily-prices-compaction-guard",
+    ],
+    "step_functions_glue_jobs": [
+        "daily-prices-data-etl",
+        "daily-prices-compaction",
+    ],
+    "step_functions_glue_crawlers": [
+        "curated-data-crawler",
+    ],
     "monitored_state_machines": [
         "daily-prices-data-processing",
     ],

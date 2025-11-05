@@ -33,7 +33,7 @@ explicit_package_bases = true
 # 소스 루트 지정
 mypy_path = ["src"]
 # Lambda Layer vendored site-packages 제외(정규식)
-exclude = "(?x)(^src/lambda/layers/[^/]+/python/.*$)"
+exclude = "(?x)(^src/lambda/layers/[^/]+/python/.*$|^src/lambda/layers/.*/dependencies/python/.*$)"
 
 [tool.coverage.run]
 branch = true

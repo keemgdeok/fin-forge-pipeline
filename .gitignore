@@ -50,8 +50,8 @@ cdk.out/
 node_modules/
 
 # Lambda Layer vendored site-packages (do not commit)
-src/lambda/layers/market_data_deps/python/*
-!src/lambda/layers/market_data_deps/python/.gitkeep
+src/lambda/layers/data/market/dependencies/python/*
+!src/lambda/layers/data/market/dependencies/python/.gitkeep
 
 # Logs
 *.log
