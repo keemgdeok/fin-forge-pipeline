@@ -67,10 +67,6 @@ class DailyPricesDataIngestionStack(Stack):
         # Worker Lambda (triggered by SQS)
         self.ingestion_function = self._create_worker_function()
 
-        # Grant orchestrator and worker access to the batch tracker table
-        self.batch_tracker_table.grant_read_write_data(self.orchestrator_function)
-        self.batch_tracker_table.grant_read_write_data(self.ingestion_function)
-
         # Event-driven orchestrator trigger (schedule)
         self.ingestion_schedule = self._create_ingestion_schedule()
 
