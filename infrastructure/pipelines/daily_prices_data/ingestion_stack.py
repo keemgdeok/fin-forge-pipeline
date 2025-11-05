@@ -56,6 +56,7 @@ class DailyPricesDataIngestionStack(Stack):
         self.dlq, self.queue = self._create_queues()
 
         # DynamoDB table used to track batch completion across worker Lambdas
+        self.batch_tracker_table_name = self._resolve_batch_tracker_table_name()
         self.batch_tracker_table = self._create_batch_tracker_table()
 
         # Orchestrator Lambda (triggered by schedule)
@@ -101,7 +102,7 @@ class DailyPricesDataIngestionStack(Stack):
                 "ENABLE_GZIP": str(bool(self.config.get("enable_gzip", False))).lower(),
                 "RAW_MANIFEST_BASENAME": str(self.config.get("raw_manifest_basename", "_batch")),
                 "RAW_MANIFEST_SUFFIX": str(self.config.get("raw_manifest_suffix", ".manifest.json")),
-                "BATCH_TRACKING_TABLE": self.batch_tracker_table.table_name,
+                "BATCH_TRACKING_TABLE": self.batch_tracker_table_name,
             },
             reserved_concurrent_executions=reserved_concurrency if reserved_concurrency is not None else None,
         )
@@ -124,7 +125,7 @@ class DailyPricesDataIngestionStack(Stack):
             "QUEUE_URL": self.queue.queue_url,
             "CHUNK_SIZE": str(int(self.config.get("orchestrator_chunk_size", 5))),
             "SQS_SEND_BATCH_SIZE": str(int(self.config.get("sqs_send_batch_size", 10))),
-            "BATCH_TRACKING_TABLE": self.batch_tracker_table.table_name,
+            "BATCH_TRACKING_TABLE": self.batch_tracker_table_name,
             "BATCH_TRACKER_TTL_DAYS": str(int(self.config.get("batch_tracker_ttl_days", 7))),
         }
 
@@ -159,17 +160,13 @@ class DailyPricesDataIngestionStack(Stack):
 
     def _create_batch_tracker_table(self) -> dynamodb.Table:
         """Create DynamoDB table to coordinate batch processing concurrency."""
-        table_name = str(self.config.get("batch_tracker_table_name") or "").strip()
-        if not table_name:
-            table_name = f"{self.env_name}-daily-prices-batch-tracker"
-
         orchestration_mode = str(self.config.get("processing_orchestration_mode", "manual")).lower()
         enable_streams = orchestration_mode == "dynamodb_stream"
 
         table = dynamodb.Table(
             self,
             "BatchTrackerTable",
-            table_name=table_name,
+            table_name=self.batch_tracker_table_name,
             partition_key=dynamodb.Attribute(name="pk", type=dynamodb.AttributeType.STRING),
             billing_mode=dynamodb.BillingMode.PAY_PER_REQUEST,
             time_to_live_attribute="ttl",
@@ -183,6 +180,13 @@ class DailyPricesDataIngestionStack(Stack):
             table.apply_removal_policy(RemovalPolicy.RETAIN)
 
         return table
+
+    def _resolve_batch_tracker_table_name(self) -> str:
+        """Derive the DynamoDB table name from configuration."""
+        table_name = str(self.config.get("batch_tracker_table_name") or "").strip()
+        if table_name:
+            return table_name
+        return f"{self.env_name}-daily-prices-batch-tracker"
 
     def _deploy_symbol_universe_asset(self) -> None:
         """Deploy symbol universe file to the target S3 bucket via CDK asset."""
