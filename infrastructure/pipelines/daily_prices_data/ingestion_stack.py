@@ -93,7 +93,6 @@ class DailyPricesDataIngestionStack(Stack):
             handler="main",
             memory_size=memory,
             timeout=timeout,
-            log_retention=self._log_retention(),
             role=iam.Role.from_role_arn(self, "IngestionWorkerRole", self.lambda_execution_role_arn),
             layers=[self.common_layer, self.market_domain_layer, self.market_data_dependencies_layer],
             environment={
@@ -152,7 +151,6 @@ class DailyPricesDataIngestionStack(Stack):
             handler="main",
             memory_size=int(self.config.get("orchestrator_memory", 256)),
             timeout=Duration.seconds(int(self.config.get("orchestrator_timeout", 60))),
-            log_retention=self._log_retention(),
             role=iam.Role.from_role_arn(self, "IngestionOrchestratorRole", self.lambda_execution_role_arn),
             layers=[self.common_layer],
             environment=env_vars,
