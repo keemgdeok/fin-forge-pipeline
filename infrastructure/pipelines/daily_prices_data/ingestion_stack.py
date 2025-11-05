@@ -8,14 +8,11 @@ from aws_cdk import (
     aws_events as events,
     aws_events_targets as targets,
     aws_iam as iam,
-    aws_logs as logs,
     aws_s3 as s3,
     aws_s3_deployment as s3_deployment,
     aws_sqs as sqs,
-    aws_dynamodb as dynamodb,
     Duration,
     CfnOutput,
-    RemovalPolicy,
 )
 from aws_cdk import aws_lambda_event_sources as lambda_event_sources
 from aws_cdk.aws_lambda_python_alpha import BundlingOptions, PythonFunction, PythonLayerVersion
@@ -56,8 +53,8 @@ class DailyPricesDataIngestionStack(Stack):
         self.dlq, self.queue = self._create_queues()
 
         # DynamoDB table used to track batch completion across worker Lambdas
-        self.batch_tracker_table_name = self._resolve_batch_tracker_table_name()
-        self.batch_tracker_table = self._create_batch_tracker_table()
+        self.batch_tracker_table = shared_storage_stack.batch_tracker_table
+        self.batch_tracker_table_name = self.batch_tracker_table.table_name
 
         # Orchestrator Lambda (triggered by schedule)
         self.orchestrator_function = self._create_orchestrator_function()
@@ -158,36 +155,6 @@ class DailyPricesDataIngestionStack(Stack):
         )
         return function
 
-    def _create_batch_tracker_table(self) -> dynamodb.Table:
-        """Create DynamoDB table to coordinate batch processing concurrency."""
-        orchestration_mode = str(self.config.get("processing_orchestration_mode", "manual")).lower()
-        enable_streams = orchestration_mode == "dynamodb_stream"
-
-        table = dynamodb.Table(
-            self,
-            "BatchTrackerTable",
-            table_name=self.batch_tracker_table_name,
-            partition_key=dynamodb.Attribute(name="pk", type=dynamodb.AttributeType.STRING),
-            billing_mode=dynamodb.BillingMode.PAY_PER_REQUEST,
-            time_to_live_attribute="ttl",
-            stream=dynamodb.StreamViewType.NEW_AND_OLD_IMAGES if enable_streams else None,
-        )
-
-        removal_policy = str(self.config.get("removal_policy", "retain")).lower()
-        if removal_policy == "destroy":
-            table.apply_removal_policy(RemovalPolicy.DESTROY)
-        else:
-            table.apply_removal_policy(RemovalPolicy.RETAIN)
-
-        return table
-
-    def _resolve_batch_tracker_table_name(self) -> str:
-        """Derive the DynamoDB table name from configuration."""
-        table_name = str(self.config.get("batch_tracker_table_name") or "").strip()
-        if table_name:
-            return table_name
-        return f"{self.env_name}-daily-prices-batch-tracker"
-
     def _deploy_symbol_universe_asset(self) -> None:
         """Deploy symbol universe file to the target S3 bucket via CDK asset."""
 
@@ -246,19 +213,6 @@ class DailyPricesDataIngestionStack(Stack):
             enforce_ssl=True,
         )
         return dlq, queue
-
-    def _log_retention(self) -> logs.RetentionDays:
-        """Map integer days from config to CloudWatch Logs retention enum."""
-        retention_map = {
-            1: logs.RetentionDays.ONE_DAY,
-            3: logs.RetentionDays.THREE_DAYS,
-            5: logs.RetentionDays.FIVE_DAYS,
-            7: logs.RetentionDays.ONE_WEEK,
-            14: logs.RetentionDays.TWO_WEEKS,
-            30: logs.RetentionDays.ONE_MONTH,
-            90: logs.RetentionDays.THREE_MONTHS,
-        }
-        return retention_map.get(self.config.get("log_retention_days", 14), logs.RetentionDays.TWO_WEEKS)
 
     def _lambda_memory(self) -> int:
         """Resolve Lambda memory size from config (MB)."""

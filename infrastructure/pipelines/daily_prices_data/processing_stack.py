@@ -18,7 +18,6 @@ from aws_cdk import (
 from constructs import Construct
 from aws_cdk import aws_lambda_event_sources as lambda_event_sources
 from aws_cdk.aws_lambda_python_alpha import BundlingOptions, PythonFunction, PythonLayerVersion
-from typing import Optional
 
 
 class DailyPricesDataProcessingStack(Stack):
@@ -34,7 +33,7 @@ class DailyPricesDataProcessingStack(Stack):
         lambda_execution_role_arn: str,
         glue_execution_role_arn: str,
         step_functions_execution_role_arn: str,
-        batch_tracker_table: Optional[dynamodb.ITable] = None,
+        batch_tracker_table: dynamodb.ITable,
         **kwargs,
     ) -> None:
         super().__init__(scope, construct_id, **kwargs)

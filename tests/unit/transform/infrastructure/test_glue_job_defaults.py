@@ -1,7 +1,5 @@
 from aws_cdk import App
 from aws_cdk.assertions import Template
-from aws_cdk import aws_dynamodb as dynamodb
-
 from infrastructure.core.shared_storage_stack import SharedStorageStack
 from infrastructure.pipelines.daily_prices_data import processing_stack as ps
 
@@ -157,13 +155,6 @@ def test_processing_stack_creates_stream_trigger_when_enabled(monkeypatch) -> No
     monkeypatch.setattr(ps, "PythonFunction", _fake_python_function, raising=False)
 
     shared = SharedStorageStack(app, "SharedStorageDynamo", environment="dev", config=cfg)
-    tracker_table = dynamodb.Table(
-        shared,
-        "BatchTrackerStream",
-        partition_key=dynamodb.Attribute(name="pk", type=dynamodb.AttributeType.STRING),
-        billing_mode=dynamodb.BillingMode.PAY_PER_REQUEST,
-        stream=dynamodb.StreamViewType.NEW_AND_OLD_IMAGES,
-    )
 
     proc = ps.DailyPricesDataProcessingStack(
         app,
@@ -174,7 +165,7 @@ def test_processing_stack_creates_stream_trigger_when_enabled(monkeypatch) -> No
         lambda_execution_role_arn="arn:aws:iam::111122223333:role/lambda",
         glue_execution_role_arn="arn:aws:iam::111122223333:role/glue",
         step_functions_execution_role_arn="arn:aws:iam::111122223333:role/sfn",
-        batch_tracker_table=tracker_table,
+        batch_tracker_table=shared.batch_tracker_table,
     )
 
     template = Template.from_stack(proc)

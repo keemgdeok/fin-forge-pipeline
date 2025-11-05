@@ -97,7 +97,7 @@ daily_prices_processing_stack = DailyPricesDataProcessingStack(
     lambda_execution_role_arn=security_stack.lambda_execution_role.role_arn,
     glue_execution_role_arn=security_stack.glue_execution_role.role_arn,
     step_functions_execution_role_arn=(security_stack.step_functions_execution_role.role_arn),
-    batch_tracker_table=daily_prices_ingestion_stack.batch_tracker_table,
+    batch_tracker_table=shared_storage_stack.batch_tracker_table,
     env=cdk_env,
 )
 
