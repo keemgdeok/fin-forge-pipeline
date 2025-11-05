@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from aws_cdk import Stack, aws_iam as iam, aws_s3 as s3
+from aws_cdk import Stack, aws_dynamodb as dynamodb, aws_iam as iam, aws_s3 as s3
 from constructs import Construct
 
 from infrastructure.config.types import EnvironmentConfig
@@ -22,7 +22,7 @@ class LambdaExecutionRoleConstruct(Construct):
         raw_bucket: s3.IBucket,
         curated_bucket: s3.IBucket,
         artifacts_bucket: s3.IBucket,
-        # batch_tracker_table: dynamodb.ITable,
+        batch_tracker_table: dynamodb.ITable,
     ) -> None:
         super().__init__(scope, construct_id)
         stack = Stack.of(self)
@@ -91,7 +91,10 @@ class LambdaExecutionRoleConstruct(Construct):
 
         sns_topic_arn = f"arn:aws:sns:{region}:{account}:{env_name}-data-platform-alerts"
 
-        # table_stream_arn = getattr(batch_tracker_table, "table_stream_arn", None)
+        table_arn = batch_tracker_table.table_arn
+        table_stream_arn = getattr(batch_tracker_table, "table_stream_arn", None)
+        if not isinstance(table_stream_arn, str) or not table_stream_arn.strip():
+            table_stream_arn = None
 
         self._role = iam.Role(
             self,
@@ -160,46 +163,46 @@ class LambdaExecutionRoleConstruct(Construct):
                         )
                     ]
                 ),
-                # "DynamoDbBatchTrackerAccess": iam.PolicyDocument(
-                #     statements=[
-                #         iam.PolicyStatement(
-                #             effect=iam.Effect.ALLOW,
-                #             actions=[
-                #                 "dynamodb:BatchGetItem",
-                #                 "dynamodb:BatchWriteItem",
-                #                 "dynamodb:ConditionCheckItem",
-                #                 "dynamodb:DeleteItem",
-                #                 "dynamodb:DescribeTable",
-                #                 "dynamodb:GetItem",
-                #                 "dynamodb:PutItem",
-                #                 "dynamodb:Query",
-                #                 "dynamodb:Scan",
-                #                 "dynamodb:UpdateItem",
-                #             ],
-                #             resources=[batch_tracker_table.table_arn],
-                #         ),
-                #         *(
-                #             [
-                #                 iam.PolicyStatement(
-                #                     effect=iam.Effect.ALLOW,
-                #                     actions=[
-                #                         "dynamodb:DescribeStream",
-                #                         "dynamodb:GetRecords",
-                #                         "dynamodb:GetShardIterator",
-                #                     ],
-                #                     resources=[table_stream_arn],
-                #                 )
-                #             ]
-                #             if table_stream_arn
-                #             else []
-                #         ),
-                #         iam.PolicyStatement(
-                #             effect=iam.Effect.ALLOW,
-                #             actions=["dynamodb:ListStreams"],
-                #             resources=["*"],
-                #         ),
-                #     ]
-                # ),
+                "DynamoDbBatchTrackerAccess": iam.PolicyDocument(
+                    statements=[
+                        iam.PolicyStatement(
+                            effect=iam.Effect.ALLOW,
+                            actions=[
+                                "dynamodb:BatchGetItem",
+                                "dynamodb:BatchWriteItem",
+                                "dynamodb:ConditionCheckItem",
+                                "dynamodb:DeleteItem",
+                                "dynamodb:DescribeTable",
+                                "dynamodb:GetItem",
+                                "dynamodb:PutItem",
+                                "dynamodb:Query",
+                                "dynamodb:Scan",
+                                "dynamodb:UpdateItem",
+                            ],
+                            resources=[table_arn],
+                        ),
+                        *(
+                            [
+                                iam.PolicyStatement(
+                                    effect=iam.Effect.ALLOW,
+                                    actions=[
+                                        "dynamodb:DescribeStream",
+                                        "dynamodb:GetRecords",
+                                        "dynamodb:GetShardIterator",
+                                    ],
+                                    resources=[table_stream_arn],
+                                )
+                            ]
+                            if table_stream_arn
+                            else []
+                        ),
+                        iam.PolicyStatement(
+                            effect=iam.Effect.ALLOW,
+                            actions=["dynamodb:ListStreams"],
+                            resources=["*"],
+                        ),
+                    ]
+                ),
                 "CloudWatchPutMetric": iam.PolicyDocument(
                     statements=[
                         iam.PolicyStatement(

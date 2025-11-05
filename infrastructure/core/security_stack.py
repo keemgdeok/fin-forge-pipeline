@@ -40,7 +40,7 @@ class SecurityStack(Stack):
             raw_bucket=self.shared_storage.raw_bucket,
             curated_bucket=self.shared_storage.curated_bucket,
             artifacts_bucket=self.shared_storage.artifacts_bucket,
-            # batch_tracker_table=self.shared_storage.batch_tracker_table,
+            batch_tracker_table=self.shared_storage.batch_tracker_table,
         )
         self.lambda_execution_role = lambda_role_construct.role
 

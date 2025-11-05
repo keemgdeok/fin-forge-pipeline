@@ -16,7 +16,6 @@ from aws_cdk import (
     CfnOutput,
 )
 from constructs import Construct
-from aws_cdk import aws_lambda_event_sources as lambda_event_sources
 from aws_cdk.aws_lambda_python_alpha import BundlingOptions, PythonFunction, PythonLayerVersion
 
 
@@ -516,20 +515,21 @@ class DailyPricesDataProcessingStack(Stack):
             },
         )
 
-        self.batch_tracker_table.grant_read_write_data(lambda_role)
-
         batch_size = int(self.config.get("processing_trigger_batch_size", 10))
         max_batching_window = int(self.config.get("processing_trigger_max_batching_window_seconds", 5))
 
-        trigger_function.add_event_source(
-            lambda_event_sources.DynamoEventSource(
-                self.batch_tracker_table,
-                starting_position=lambda_.StartingPosition.TRIM_HORIZON,
-                batch_size=batch_size,
-                max_batching_window=Duration.seconds(max(0, max_batching_window)),
-                retry_attempts=int(self.config.get("processing_trigger_retry_attempts", 3)),
-                report_batch_item_failures=True,
-            )
+        retry_attempts = int(self.config.get("processing_trigger_retry_attempts", 3))
+        report_batch_item_failures = True
+        lambda_.CfnEventSourceMapping(
+            self,
+            "ProcessingTriggerStreamSource",
+            function_name=trigger_function.function_name,
+            event_source_arn=stream_arn,
+            starting_position=lambda_.StartingPosition.TRIM_HORIZON.value,
+            batch_size=batch_size,
+            maximum_batching_window_in_seconds=max(0, max_batching_window),
+            maximum_retry_attempts=max(0, retry_attempts),
+            function_response_types=["ReportBatchItemFailures"] if report_batch_item_failures else None,
         )
 
         self.processing_completion_trigger = trigger_function
