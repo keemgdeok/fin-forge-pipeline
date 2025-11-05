@@ -1,7 +1,8 @@
 import json
 from typing import cast
 
-from aws_cdk import App, Stack
+from aws_cdk import App, Stack, RemovalPolicy
+from aws_cdk import aws_s3 as s3
 from aws_cdk.assertions import Template
 
 from infrastructure.config.types import EnvironmentConfig
@@ -41,7 +42,18 @@ def test_glue_role_can_read_cdk_asset_bucket() -> None:
     """Glue 실행 역할은 CDK 자산 버킷에서 스크립트를 읽을 수 있어야 한다."""
     app = App()
     stack = Stack(app, "GlueStack")
-    GlueExecutionRoleConstruct(stack, "GlueRole", env_name="prod", config=_cfg())
+    raw_bucket = s3.Bucket(stack, "Raw", removal_policy=RemovalPolicy.DESTROY)
+    curated_bucket = s3.Bucket(stack, "Curated", removal_policy=RemovalPolicy.DESTROY)
+    artifacts_bucket = s3.Bucket(stack, "Artifacts", removal_policy=RemovalPolicy.DESTROY)
+    GlueExecutionRoleConstruct(
+        stack,
+        "GlueRole",
+        env_name="prod",
+        config=_cfg(),
+        raw_bucket=raw_bucket,
+        curated_bucket=curated_bucket,
+        artifacts_bucket=artifacts_bucket,
+    )
     template = Template.from_stack(stack)
 
     role = _find_role(template, "glue-role")
@@ -61,7 +73,18 @@ def test_glue_role_locks_temp_list_prefix() -> None:
     """Glue 역할은 artifacts 버킷의 temp prefix에 대해서만 ListBucket을 허용해야 한다."""
     app = App()
     stack = Stack(app, "GlueStackTemp")
-    GlueExecutionRoleConstruct(stack, "GlueRoleTemp", env_name="dev", config=_cfg())
+    raw_bucket = s3.Bucket(stack, "RawTemp", removal_policy=RemovalPolicy.DESTROY)
+    curated_bucket = s3.Bucket(stack, "CuratedTemp", removal_policy=RemovalPolicy.DESTROY)
+    artifacts_bucket = s3.Bucket(stack, "ArtifactsTemp", removal_policy=RemovalPolicy.DESTROY)
+    GlueExecutionRoleConstruct(
+        stack,
+        "GlueRoleTemp",
+        env_name="dev",
+        config=_cfg(),
+        raw_bucket=raw_bucket,
+        curated_bucket=curated_bucket,
+        artifacts_bucket=artifacts_bucket,
+    )
     template = Template.from_stack(stack)
 
     role = _find_role(template, "glue-role")
@@ -85,7 +108,18 @@ def test_glue_role_can_manage_schema_objects() -> None:
         EnvironmentConfig,
         {"processing_triggers": [{"domain": "market", "table_name": "prices"}]},
     )
-    GlueExecutionRoleConstruct(stack, "GlueRoleSchema", env_name="prod", config=config)
+    raw_bucket = s3.Bucket(stack, "RawSchema", removal_policy=RemovalPolicy.DESTROY)
+    curated_bucket = s3.Bucket(stack, "CuratedSchema", removal_policy=RemovalPolicy.DESTROY)
+    artifacts_bucket = s3.Bucket(stack, "ArtifactsSchema", removal_policy=RemovalPolicy.DESTROY)
+    GlueExecutionRoleConstruct(
+        stack,
+        "GlueRoleSchema",
+        env_name="prod",
+        config=config,
+        raw_bucket=raw_bucket,
+        curated_bucket=curated_bucket,
+        artifacts_bucket=artifacts_bucket,
+    )
     template = Template.from_stack(stack)
 
     role = _find_role(template, "glue-role")

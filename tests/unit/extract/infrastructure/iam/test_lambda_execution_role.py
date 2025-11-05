@@ -1,7 +1,8 @@
 import json
 from typing import cast
 
-from aws_cdk import App, Stack
+from aws_cdk import App, Stack, RemovalPolicy
+from aws_cdk import aws_s3 as s3, aws_dynamodb as dynamodb
 from aws_cdk.assertions import Template
 
 from infrastructure.config.types import EnvironmentConfig
@@ -41,7 +42,27 @@ def test_lambda_role_has_sqs_send_permissions() -> None:
     """Lambda 실행 역할은 SQS SendMessage 권한을 포함해야 한다."""
     app = App()
     stack = Stack(app, "TestStack")
-    LambdaExecutionRoleConstruct(stack, "LambdaRole", env_name="dev", config=_cfg())
+    raw_bucket = s3.Bucket(stack, "Raw", removal_policy=RemovalPolicy.DESTROY)
+    curated_bucket = s3.Bucket(stack, "Curated", removal_policy=RemovalPolicy.DESTROY)
+    artifacts_bucket = s3.Bucket(stack, "Artifacts", removal_policy=RemovalPolicy.DESTROY)
+    tracker_table = dynamodb.Table(
+        stack,
+        "Tracker",
+        partition_key=dynamodb.Attribute(name="pk", type=dynamodb.AttributeType.STRING),
+        billing_mode=dynamodb.BillingMode.PAY_PER_REQUEST,
+        removal_policy=RemovalPolicy.DESTROY,
+        stream=dynamodb.StreamViewType.NEW_AND_OLD_IMAGES,
+    )
+    LambdaExecutionRoleConstruct(
+        stack,
+        "LambdaRole",
+        env_name="dev",
+        config=_cfg(),
+        raw_bucket=raw_bucket,
+        curated_bucket=curated_bucket,
+        artifacts_bucket=artifacts_bucket,
+        batch_tracker_table=tracker_table,
+    )
     template = Template.from_stack(stack)
 
     role = _find_role(template, "lambda-role")
@@ -57,7 +78,27 @@ def test_lambda_role_can_read_cdk_asset_bucket() -> None:
     """Lambda 실행 역할은 CDK 자산 버킷에서 스크립트를 읽을 수 있어야 한다."""
     app = App()
     stack = Stack(app, "TestStackAssets")
-    LambdaExecutionRoleConstruct(stack, "LambdaRoleAssets", env_name="prod", config=_cfg())
+    raw_bucket = s3.Bucket(stack, "RawAssets", removal_policy=RemovalPolicy.DESTROY)
+    curated_bucket = s3.Bucket(stack, "CuratedAssets", removal_policy=RemovalPolicy.DESTROY)
+    artifacts_bucket = s3.Bucket(stack, "ArtifactsAssets", removal_policy=RemovalPolicy.DESTROY)
+    tracker_table = dynamodb.Table(
+        stack,
+        "TrackerAssets",
+        partition_key=dynamodb.Attribute(name="pk", type=dynamodb.AttributeType.STRING),
+        billing_mode=dynamodb.BillingMode.PAY_PER_REQUEST,
+        removal_policy=RemovalPolicy.DESTROY,
+        stream=dynamodb.StreamViewType.NEW_AND_OLD_IMAGES,
+    )
+    LambdaExecutionRoleConstruct(
+        stack,
+        "LambdaRoleAssets",
+        env_name="prod",
+        config=_cfg(),
+        raw_bucket=raw_bucket,
+        curated_bucket=curated_bucket,
+        artifacts_bucket=artifacts_bucket,
+        batch_tracker_table=tracker_table,
+    )
     template = Template.from_stack(stack)
 
     role = _find_role(template, "lambda-role")

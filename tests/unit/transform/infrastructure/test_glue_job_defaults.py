@@ -68,6 +68,7 @@ def test_glue_job_defaults_and_schema_fingerprint_path(monkeypatch) -> None:
         lambda_execution_role_arn="arn:aws:iam::111122223333:role/lambda",
         glue_execution_role_arn="arn:aws:iam::111122223333:role/glue",
         step_functions_execution_role_arn="arn:aws:iam::111122223333:role/sfn",
+        batch_tracker_table=shared.batch_tracker_table,
     )
 
     template = Template.from_stack(proc)
@@ -134,6 +135,7 @@ def test_glue_job_includes_shared_package_via_extra_py_files(monkeypatch) -> Non
         lambda_execution_role_arn="arn:aws:iam::111122223333:role/lambda",
         glue_execution_role_arn="arn:aws:iam::111122223333:role/glue",
         step_functions_execution_role_arn="arn:aws:iam::111122223333:role/sfn",
+        batch_tracker_table=shared.batch_tracker_table,
     )
 
     template = Template.from_stack(proc)

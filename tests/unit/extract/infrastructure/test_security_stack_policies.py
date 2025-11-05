@@ -6,10 +6,11 @@ from aws_cdk.assertions import Template
 
 from infrastructure.config.types import EnvironmentConfig
 from infrastructure.core.security_stack import SecurityStack
+from infrastructure.core.shared_storage_stack import SharedStorageStack
 
 
 def _cfg() -> EnvironmentConfig:
-    return cast(EnvironmentConfig, {})
+    return cast(EnvironmentConfig, {"processing_orchestration_mode": "dynamodb_stream"})
 
 
 def _find_role(template: Template, role_suffix: str) -> dict:
@@ -34,7 +35,14 @@ def test_step_functions_role_invokes_lambda_with_colon_arn_format():
     Step Functions 실행 역할은 람다 ARN을 colon 구분자로 참조해야 한다.
     """
     app = App()
-    stack = SecurityStack(app, "SecStack", environment="prod", config=_cfg())
+    shared = SharedStorageStack(app, "SharedSecProd", environment="prod", config=_cfg())
+    stack = SecurityStack(
+        app,
+        "SecStack",
+        environment="prod",
+        config=_cfg(),
+        shared_storage_stack=shared,
+    )
     template = Template.from_stack(stack)
 
     role = _find_role(template, "stepfunctions-role")
@@ -54,7 +62,14 @@ def test_step_functions_role_includes_all_required_glue_jobs_and_crawlers():
     Step Functions 실행 역할은 구성된 Glue 잡과 크롤러 권한을 모두 포함해야 한다.
     """
     app = App()
-    stack = SecurityStack(app, "SecStack", environment="dev", config=_cfg())
+    shared = SharedStorageStack(app, "SharedSecDev", environment="dev", config=_cfg())
+    stack = SecurityStack(
+        app,
+        "SecStack",
+        environment="dev",
+        config=_cfg(),
+        shared_storage_stack=shared,
+    )
     template = Template.from_stack(stack)
 
     role = _find_role(template, "stepfunctions-role")
@@ -80,9 +95,17 @@ def test_step_functions_role_respects_configuration_overrides():
             "step_functions_lambda_functions": ["custom-mapper"],
             "step_functions_glue_jobs": ["custom-etl"],
             "step_functions_glue_crawlers": ["custom-crawler"],
+            "processing_orchestration_mode": "dynamodb_stream",
         },
     )
-    stack = SecurityStack(app, "SecStack", environment="staging", config=config)
+    shared = SharedStorageStack(app, "SharedSecStaging", environment="staging", config=config)
+    stack = SecurityStack(
+        app,
+        "SecStack",
+        environment="staging",
+        config=config,
+        shared_storage_stack=shared,
+    )
     template = Template.from_stack(stack)
 
     role = _find_role(template, "stepfunctions-role")

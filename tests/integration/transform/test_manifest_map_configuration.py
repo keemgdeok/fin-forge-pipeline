@@ -14,11 +14,21 @@ from dataclasses import dataclass
 from typing import Any, Dict
 
 import pytest
-from aws_cdk import App, Stack, aws_s3 as s3
+from aws_cdk import App, Stack, aws_s3 as s3, aws_dynamodb as dynamodb
 from aws_cdk.assertions import Template
 
 from infrastructure.config.environments.dev import dev_config
 from infrastructure.pipelines.daily_prices_data.processing_stack import DailyPricesDataProcessingStack
+
+
+def _create_tracker_table(scope: Stack) -> dynamodb.Table:
+    return dynamodb.Table(
+        scope,
+        "BatchTrackerStub",
+        partition_key=dynamodb.Attribute(name="pk", type=dynamodb.AttributeType.STRING),
+        billing_mode=dynamodb.BillingMode.PAY_PER_REQUEST,
+        stream=dynamodb.StreamViewType.NEW_AND_OLD_IMAGES,
+    )
 
 
 @dataclass
@@ -28,6 +38,7 @@ class SharedStorageStub:
     raw_bucket: s3.Bucket
     curated_bucket: s3.Bucket
     artifacts_bucket: s3.Bucket
+    batch_tracker_table: dynamodb.Table
 
 
 def _build_processing_stack(config_override: Dict[str, Any] | None = None) -> DailyPricesDataProcessingStack:
@@ -38,6 +49,7 @@ def _build_processing_stack(config_override: Dict[str, Any] | None = None) -> Da
         raw_bucket=s3.Bucket(shared_stack, "RawBucket"),
         curated_bucket=s3.Bucket(shared_stack, "CuratedBucket"),
         artifacts_bucket=s3.Bucket(shared_stack, "ArtifactsBucket"),
+        batch_tracker_table=_create_tracker_table(shared_stack),
     )
 
     config: Dict[str, Any] = dict(dev_config)
@@ -56,6 +68,7 @@ def _build_processing_stack(config_override: Dict[str, Any] | None = None) -> Da
         lambda_execution_role_arn="arn:aws:iam::123456789012:role/lambda-exec",
         glue_execution_role_arn="arn:aws:iam::123456789012:role/glue-exec",
         step_functions_execution_role_arn="arn:aws:iam::123456789012:role/sfn-exec",
+        batch_tracker_table=shared_storage.batch_tracker_table,
     )
     return processing_stack
 
