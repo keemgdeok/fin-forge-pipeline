@@ -45,10 +45,6 @@ class GlueExecutionRoleConstruct(Construct):
             inline_policies={"S3DataAccess": s3_policy},
         )
 
-        raw_bucket.grant_read(self._role)
-        curated_bucket.grant_read_write(self._role)
-        artifacts_bucket.grant_read_write(self._role)
-
     @property
     def role(self) -> iam.Role:
         """Return the created IAM role."""
