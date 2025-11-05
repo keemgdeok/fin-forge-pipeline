@@ -160,46 +160,46 @@ class LambdaExecutionRoleConstruct(Construct):
                         )
                     ]
                 ),
-                "DynamoDbBatchTrackerAccess": iam.PolicyDocument(
-                    statements=[
-                        iam.PolicyStatement(
-                            effect=iam.Effect.ALLOW,
-                            actions=[
-                                "dynamodb:BatchGetItem",
-                                "dynamodb:BatchWriteItem",
-                                "dynamodb:ConditionCheckItem",
-                                "dynamodb:DeleteItem",
-                                "dynamodb:DescribeTable",
-                                "dynamodb:GetItem",
-                                "dynamodb:PutItem",
-                                "dynamodb:Query",
-                                "dynamodb:Scan",
-                                "dynamodb:UpdateItem",
-                            ],
-                            resources=[batch_tracker_table.table_arn],
-                        ),
-                        # *(
-                        #     [
-                        #         iam.PolicyStatement(
-                        #             effect=iam.Effect.ALLOW,
-                        #             actions=[
-                        #                 "dynamodb:DescribeStream",
-                        #                 "dynamodb:GetRecords",
-                        #                 "dynamodb:GetShardIterator",
-                        #             ],
-                        #             resources=[table_stream_arn],
-                        #         )
-                        #     ]
-                        #     if table_stream_arn
-                        #     else []
-                        # ),
-                        iam.PolicyStatement(
-                            effect=iam.Effect.ALLOW,
-                            actions=["dynamodb:ListStreams"],
-                            resources=["*"],
-                        ),
-                    ]
-                ),
+                # "DynamoDbBatchTrackerAccess": iam.PolicyDocument(
+                #     statements=[
+                #         iam.PolicyStatement(
+                #             effect=iam.Effect.ALLOW,
+                #             actions=[
+                #                 "dynamodb:BatchGetItem",
+                #                 "dynamodb:BatchWriteItem",
+                #                 "dynamodb:ConditionCheckItem",
+                #                 "dynamodb:DeleteItem",
+                #                 "dynamodb:DescribeTable",
+                #                 "dynamodb:GetItem",
+                #                 "dynamodb:PutItem",
+                #                 "dynamodb:Query",
+                #                 "dynamodb:Scan",
+                #                 "dynamodb:UpdateItem",
+                #             ],
+                #             resources=[batch_tracker_table.table_arn],
+                #         ),
+                #         *(
+                #             [
+                #                 iam.PolicyStatement(
+                #                     effect=iam.Effect.ALLOW,
+                #                     actions=[
+                #                         "dynamodb:DescribeStream",
+                #                         "dynamodb:GetRecords",
+                #                         "dynamodb:GetShardIterator",
+                #                     ],
+                #                     resources=[table_stream_arn],
+                #                 )
+                #             ]
+                #             if table_stream_arn
+                #             else []
+                #         ),
+                #         iam.PolicyStatement(
+                #             effect=iam.Effect.ALLOW,
+                #             actions=["dynamodb:ListStreams"],
+                #             resources=["*"],
+                #         ),
+                #     ]
+                # ),
                 "CloudWatchPutMetric": iam.PolicyDocument(
                     statements=[
                         iam.PolicyStatement(

@@ -474,6 +474,13 @@ class DailyPricesDataProcessingStack(Stack):
         if not stream_arn:
             raise ValueError("Batch tracker table must have streams enabled for dynamodb_stream mode")
 
+        lambda_role = iam.Role.from_role_arn(
+            self,
+            "ProcessingTriggerRoleImport",
+            self.lambda_execution_role_arn,
+            mutable=True,
+        )
+
         trigger_function = PythonFunction(
             self,
             "ProcessingCompletionTrigger",
@@ -485,12 +492,13 @@ class DailyPricesDataProcessingStack(Stack):
             memory_size=int(self.config.get("lambda_memory", 512)),
             timeout=Duration.seconds(int(self.config.get("processing_trigger_timeout", 60))),
             log_retention=self._log_retention(),
-            role=iam.Role.from_role_arn(
-                self,
-                "ProcessingTriggerRole",
-                self.lambda_execution_role_arn,
-                mutable=True,
-            ),
+            # role=iam.Role.from_role_arn(
+            #     self,
+            #     "ProcessingTriggerRole",
+            #     self.lambda_execution_role_arn,
+            #     mutable=True,
+            # ),
+            role=lambda_role,
             layers=[self.common_layer],
             environment={
                 "ENVIRONMENT": self.env_name,
@@ -507,6 +515,8 @@ class DailyPricesDataProcessingStack(Stack):
                 "DEFAULT_FILE_TYPE": str(self.config.get("ingestion_file_format", "json")),
             },
         )
+
+        self.batch_tracker_table.grant_read_write_data(lambda_role)
 
         batch_size = int(self.config.get("processing_trigger_batch_size", 10))
         max_batching_window = int(self.config.get("processing_trigger_max_batching_window_seconds", 5))
