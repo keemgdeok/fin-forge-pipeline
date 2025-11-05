@@ -3,7 +3,7 @@ import pytest
 from tests.fixtures.data_builders import build_ingestion_event
 
 
-def test_ingestion_symbols_parsing(env_dev, load_module) -> None:
+def test_ingestion_symbols_parsing(env_dev, load_module, yf_stub, s3_stub) -> None:
     """
     Given: 혼합 심볼 목록(공백/숫자 포함)
     When: 핸들러가 이벤트를 처리하면
@@ -12,6 +12,8 @@ def test_ingestion_symbols_parsing(env_dev, load_module) -> None:
     env_dev(raw_bucket="raw-bucket-dev")
 
     main = load_module("src/lambda/functions/data_ingestion/handler.py")["main"]
+    yf_stub(["AAPL", "MSFT"])
+    s3_mock = s3_stub(keycount=0, head_ok=False)
     event = build_ingestion_event(symbols=["AAPL", " ", 123, "MSFT"], period="1y", file_format="parquet")
 
     resp = main(event, None)
@@ -19,6 +21,7 @@ def test_ingestion_symbols_parsing(env_dev, load_module) -> None:
     body = resp["body"]
     assert body["symbols_processed"] == ["AAPL", "MSFT"]
     assert "invalid_symbols" in body
+    assert s3_mock.put_calls, "Expected ingestion to attempt S3 writes"
 
 
 def test_ingestion_does_not_call_stepfunctions(env_dev, load_module, yf_stub, s3_stub) -> None:
@@ -52,7 +55,7 @@ def test_ingestion_does_not_call_stepfunctions(env_dev, load_module, yf_stub, s3
     ],
 )
 def test_ingestion_symbols_validation_parametrized(
-    env_dev, load_module, symbols: List[Any], expected: List[str]
+    env_dev, load_module, yf_stub, s3_stub, symbols: List[Any], expected: List[str]
 ) -> None:
     """
     Given: 다양한 심볼 입력 조합
@@ -63,7 +66,8 @@ def test_ingestion_symbols_validation_parametrized(
     main = load_module("src/lambda/functions/data_ingestion/handler.py")["main"]
 
     event: Dict[str, Any] = build_ingestion_event(symbols=symbols, file_format="parquet")
-
+    yf_stub(expected)
+    s3_stub(keycount=0, head_ok=False)
     resp = main(event, None)
     assert resp["statusCode"] == 200
     assert resp["body"]["symbols_processed"] == expected
