@@ -10,6 +10,7 @@ from infrastructure.config.types import EnvironmentConfig
 from infrastructure.core.iam import utils as iam_utils
 from infrastructure.core.iam.glue_execution_role import GlueExecutionRoleConstruct
 from infrastructure.core.iam.lambda_execution_role import LambdaExecutionRoleConstruct
+from infrastructure.core.shared_storage_stack import SharedStorageStack
 
 
 class SecurityStack(Stack):
@@ -21,12 +22,14 @@ class SecurityStack(Stack):
         construct_id: str,
         environment: str,
         config: EnvironmentConfig,
+        shared_storage_stack: SharedStorageStack,
         **kwargs,
     ) -> None:
         super().__init__(scope, construct_id, **kwargs)
 
         self.env_name = environment
         self.config: EnvironmentConfig = config
+        self.shared_storage = shared_storage_stack
 
         # Core execution roles
         lambda_role_construct = LambdaExecutionRoleConstruct(
@@ -34,6 +37,10 @@ class SecurityStack(Stack):
             "LambdaExecutionRole",
             env_name=self.env_name,
             config=self.config,
+            raw_bucket=self.shared_storage.raw_bucket,
+            curated_bucket=self.shared_storage.curated_bucket,
+            artifacts_bucket=self.shared_storage.artifacts_bucket,
+            batch_tracker_table=self.shared_storage.batch_tracker_table,
         )
         self.lambda_execution_role = lambda_role_construct.role
 
@@ -42,6 +49,9 @@ class SecurityStack(Stack):
             "GlueExecutionRole",
             env_name=self.env_name,
             config=self.config,
+            raw_bucket=self.shared_storage.raw_bucket,
+            curated_bucket=self.shared_storage.curated_bucket,
+            artifacts_bucket=self.shared_storage.artifacts_bucket,
         )
         self.glue_execution_role = glue_role_construct.role
 

@@ -41,21 +41,22 @@ stack_prefix = f"DataPlatform-{environment}"
 # CORE INFRASTRUCTURE LAYER
 # ========================================
 
-# Security Foundation - IAM roles, policies, least privilege
-security_stack = SecurityStack(
-    app,
-    f"{stack_prefix}-Core-Security",
-    environment=environment,
-    config=config,
-    env=cdk_env,
-)
-
 # Shared Storage - S3 buckets, DynamoDB tables for platform-wide use
 shared_storage_stack = SharedStorageStack(
     app,
     f"{stack_prefix}-Core-SharedStorage",
     environment=environment,
     config=config,
+    env=cdk_env,
+)
+
+# Security Foundation - IAM roles, policies, least privilege
+security_stack = SecurityStack(
+    app,
+    f"{stack_prefix}-Core-Security",
+    environment=environment,
+    config=config,
+    shared_storage_stack=shared_storage_stack,
     env=cdk_env,
 )
 
@@ -135,6 +136,7 @@ observability_stack.add_ingestion_pipeline_monitoring(
 
 # Core dependencies - Remove circular dependency by not declaring explicit dependency
 catalog_stack.add_dependency(shared_storage_stack)
+security_stack.add_dependency(shared_storage_stack)
 
 # Pipeline dependencies - Remove Security dependencies to avoid circular references
 daily_prices_ingestion_stack.add_dependency(shared_storage_stack)
