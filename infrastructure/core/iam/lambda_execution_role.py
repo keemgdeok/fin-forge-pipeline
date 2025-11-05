@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from aws_cdk import Stack, aws_iam as iam, aws_s3 as s3, aws_dynamodb as dynamodb
+from aws_cdk import Stack, aws_iam as iam, aws_s3 as s3
 from constructs import Construct
 
 from infrastructure.config.types import EnvironmentConfig
@@ -22,7 +22,7 @@ class LambdaExecutionRoleConstruct(Construct):
         raw_bucket: s3.IBucket,
         curated_bucket: s3.IBucket,
         artifacts_bucket: s3.IBucket,
-        batch_tracker_table: dynamodb.ITable,
+        # batch_tracker_table: dynamodb.ITable,
     ) -> None:
         super().__init__(scope, construct_id)
         stack = Stack.of(self)
