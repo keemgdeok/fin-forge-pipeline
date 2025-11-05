@@ -91,7 +91,7 @@ class LambdaExecutionRoleConstruct(Construct):
 
         sns_topic_arn = f"arn:aws:sns:{region}:{account}:{env_name}-data-platform-alerts"
 
-        table_stream_arn = getattr(batch_tracker_table, "table_stream_arn", None)
+        # table_stream_arn = getattr(batch_tracker_table, "table_stream_arn", None)
 
         self._role = iam.Role(
             self,
@@ -178,21 +178,21 @@ class LambdaExecutionRoleConstruct(Construct):
                             ],
                             resources=[batch_tracker_table.table_arn],
                         ),
-                        *(
-                            [
-                                iam.PolicyStatement(
-                                    effect=iam.Effect.ALLOW,
-                                    actions=[
-                                        "dynamodb:DescribeStream",
-                                        "dynamodb:GetRecords",
-                                        "dynamodb:GetShardIterator",
-                                    ],
-                                    resources=[table_stream_arn],
-                                )
-                            ]
-                            if table_stream_arn
-                            else []
-                        ),
+                        # *(
+                        #     [
+                        #         iam.PolicyStatement(
+                        #             effect=iam.Effect.ALLOW,
+                        #             actions=[
+                        #                 "dynamodb:DescribeStream",
+                        #                 "dynamodb:GetRecords",
+                        #                 "dynamodb:GetShardIterator",
+                        #             ],
+                        #             resources=[table_stream_arn],
+                        #         )
+                        #     ]
+                        #     if table_stream_arn
+                        #     else []
+                        # ),
                         iam.PolicyStatement(
                             effect=iam.Effect.ALLOW,
                             actions=["dynamodb:ListStreams"],

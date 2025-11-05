@@ -489,7 +489,7 @@ class DailyPricesDataProcessingStack(Stack):
                 self,
                 "ProcessingTriggerRole",
                 self.lambda_execution_role_arn,
-                mutable=False,
+                mutable=True,
             ),
             layers=[self.common_layer],
             environment={
