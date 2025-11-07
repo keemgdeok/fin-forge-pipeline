@@ -4,7 +4,7 @@
 
 <div align="center">
 
-# <code>❯ fin-forge-etl </code>
+# <code>❯ Fin-Forge-ETL </code>
 
 <em>Serverless financial data pipelines delivered as code-first products on AWS</em>
 
@@ -46,7 +46,7 @@ ______________________________________________________________________
 
 ## Table of Contents
 
-- [❯  ](#-fin-forge-etl-)
+- [❯fin-forge-etl](#-fin-forge-etl-)
   - [Table of Contents](#table-of-contents)
   - [Architecture](#architecture)
     - [End-to-end flow](#end-to-end-flow)
