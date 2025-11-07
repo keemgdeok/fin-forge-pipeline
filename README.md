@@ -4,7 +4,7 @@
 
 <div align="center">
 
-# <code>❯ fin-forge-pipeline </code>
+# <code>❯ fin-forge-etl </code>
 
 <em>Serverless financial data pipelines delivered as code-first products on AWS</em>
 
@@ -46,7 +46,7 @@ ______________________________________________________________________
 
 ## Table of Contents
 
-- [❯ fin-forge-pipeline ](#-fin-forge-pipeline-)
+- [❯  ](#-fin-forge-etl-)
   - [Table of Contents](#table-of-contents)
   - [Architecture](#architecture)
     - [End-to-end flow](#end-to-end-flow)
@@ -146,8 +146,8 @@ ______________________________________________________________________
 
 1. **Repository Clone**
    ```bash
-   git clone https://github.com/keemgdeok/fin-forge-pipeline.git
-   cd fin-forge-pipeline
+   git clone https://github.com/keemgdeok/fin-forge-etl.git
+   cd fin-forge-etl
    ```
 1. **Virtual Environment 생성 및 활성화**
    ```bash
