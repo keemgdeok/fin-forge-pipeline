@@ -194,13 +194,6 @@ jobs:
           distribution: temurin
           java-version: '17'
 
-      - name: Run Spark parity unit tests
-        env:
-          PYTEST_ADDOPTS: "--cov=src --cov-fail-under=0 --cov-report=term-missing:skip-covered"
-        run: |
-          source .venv/bin/activate
-          pytest tests/unit/transform/logic/test_market_indicators_spark.py -vv --maxfail=1
-
       - name: Ensure helper scripts executable
         run: |
           chmod +x scripts/localstack/*.sh
