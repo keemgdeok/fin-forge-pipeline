@@ -5,10 +5,8 @@ from aws_cdk import (
     aws_cloudwatch as cloudwatch,
     aws_sns as sns,
     aws_cloudwatch_actions as cw_actions,
-    aws_kms as kms,
     aws_lambda as _lambda,
     aws_sqs as sqs,
-    RemovalPolicy,
     # aws_logs as logs,  # OPTIONAL: Only if custom log groups needed
     Duration,
     CfnOutput,
@@ -155,25 +153,11 @@ class ObservabilityStack(Stack):
 
     def _create_alerts_topic(self) -> sns.Topic:
         """Create single SNS topic for all alerts - simplified for small teams."""
-        # KMS key for topic encryption (basic hardening)
-        key_removal = (
-            RemovalPolicy.RETAIN
-            if (self.env_name == "prod" or str(self.config.get("removal_policy", "retain")).lower() == "retain")
-            else RemovalPolicy.DESTROY
-        )
-        topic_key = kms.Key(
-            self,
-            "AlertsTopicKey",
-            enable_key_rotation=True,
-            removal_policy=key_removal,
-        )
-
         return sns.Topic(
             self,
             "AlertsTopic",
             topic_name=f"{self.env_name}-data-platform-alerts",
             display_name="Data Platform Alerts",
-            master_key=topic_key,
         )
 
     def _create_platform_dashboard(self) -> cloudwatch.Dashboard:
